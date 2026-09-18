@@ -1,0 +1,142 @@
+/**
+ * Sahne sozlesmesi: config/scene.json sekli ve Api'nin SSE ile yayimladigi olaylar.
+ * Kaynak: docs/SCENE.md. Api tarafi: src/MrHobist.AITeam.Api/Scene/SceneEndpoints.cs
+ * (EventTypes). Yeni olay turu iki yere de SONA eklenir.
+ */
+
+export type Facing = 'up' | 'down' | 'left' | 'right' | 'upleft' | 'upright' | 'downleft' | 'downright'
+
+export interface Pt { x: number; y: number }
+export interface SpotDef extends Pt { facing?: Facing }
+/** Oturulabilir yer. `prop` verilirse oturan, o prop'un hemen ardina cizilir; yoksa ayaklarina gore siralanir. */
+export interface SeatDef extends Pt { facing: Facing; prop?: string }
+
+export type PropLayer = 'floor' | 'wall' | 'object'
+
+export interface PropDef {
+  id: string
+  /** atlas tileset kare adi; `@sofaSet` gibi `@` ile baslayanlar tekil gorseller. */
+  sprite: string
+  x: number
+  y: number
+  w: number
+  /** Verilirse oran bozulur (esnetme); verilmezse sprite oranindan hesaplanir. */
+  h?: number
+  layer: PropLayer
+  /** Siralama anahtari (alt kenar yerine). Masa ustundeki monitor icin masa alt kenari + 1. */
+  sortY?: number
+}
+
+export interface AgentDef {
+  key: string
+  name: string
+  /** atlas.characters anahtari. */
+  sprite: string
+  home: { seat?: string; spot?: string }
+}
+
+export interface SceneConfig {
+  world: { w: number; h: number }
+  /** Verilirse arka plan bu gorseldir (atlas.background); floor/walls cizilmez. */
+  background?: { image: string }
+  /** Arka plandan kesilip varliklarin ONUNE cizilen dikdortgenler (cam duvar, masa onu). */
+  overlays?: [number, number, number, number][]
+  floor?: { tiles: string[]; tileSize: number; rect: [number, number, number, number] }
+  /** Yuruyus alani; floor yoksa bu zorunludur. */
+  walkable: [number, number, number, number]
+  walls?: {
+    thickness: number
+    colorOuter: string
+    colorInner: string
+    colorTop: string
+    gate: { from: number; to: number }
+    hedges: [number, number, number][]
+    columns: [number, number, number, number][]
+  }
+  props: PropDef[]
+  door?: { x: number; y: number; h: number }
+  board: { x: number; y: number; w: number; h: number; title: string }
+  seats: Record<string, SeatDef>
+  spots: Record<string, SpotDef>
+  blocked: [number, number, number, number][]
+  agents: AgentDef[]
+  cat: { bed: Pt; spots: Pt[] }
+}
+
+export type StageKind = 'analyze' | 'design' | 'implement' | 'review' | 'handoff'
+
+export interface StageDef {
+  id: string
+  title: string
+  kind: StageKind
+  role: string
+  officeRole: string
+  description: string
+}
+
+export interface WorkflowConfig {
+  maxReviewRounds: number
+  stages: StageDef[]
+}
+
+export type AgentState = 'idle' | 'working' | 'thinking' | 'blocked' | 'waiting' | 'done'
+export type TaskState = 'queued' | 'active' | 'blocked' | 'done'
+export type BubbleKind = 'talk' | 'ask' | 'alert'
+export type MeetKind = 'handoff' | 'ask' | 'reject'
+export type DoorState = 'closed' | 'half' | 'open'
+export type CatAction = 'sleep' | 'wander' | 'sit'
+
+export interface BoardTask {
+  id: string
+  title: string
+  /** workflow.stages[].id */
+  stage: string
+  state: TaskState
+}
+
+export type SceneEvent =
+  | { type: 'agent.state'; data: { agent: string; state: AgentState; note?: string } }
+  | { type: 'agent.say'; data: { agent: string; kind: BubbleKind; text?: string; ms?: number } }
+  | { type: 'agent.goto'; data: { agent: string; spot: string } }
+  | { type: 'agent.home'; data: { agent: string } }
+  | { type: 'meet'; data: { from: string; to: string; kind: MeetKind; ms?: number } }
+  | { type: 'board.set'; data: { tasks: BoardTask[] } }
+  | { type: 'board.move'; data: { task: string; stage: string; state: TaskState } }
+  | { type: 'run.stage'; data: { stage: string; task: string; round: number } }
+  | { type: 'cat'; data: { action: CatAction; spot?: number } }
+  | { type: 'door'; data: { state: DoorState } }
+
+export const EVENT_TYPES: ReadonlyArray<SceneEvent['type']> = [
+  'agent.state', 'agent.say', 'agent.goto', 'agent.home', 'meet',
+  'board.set', 'board.move', 'run.stage', 'cat', 'door',
+]
+
+export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'mock'
+
+/** Rol -> renk. Board notlari ve HUD ayni tabloyu okur. */
+export const ROLE_HEX: Record<string, string> = {
+  analyst: '#4f8ef7',
+  designer: '#e0699a',
+  organizer: '#d9a13a',
+  developer: '#35b98a',
+  tester: '#b58ad8',
+  manager: '#c65c5c',
+}
+
+export const STATE_LABEL: Record<AgentState, string> = {
+  idle: 'boşta',
+  working: 'çalışıyor',
+  thinking: 'düşünüyor',
+  blocked: 'takıldı',
+  waiting: 'bekliyor',
+  done: 'bitti',
+}
+
+export const STATE_HEX: Record<AgentState, string> = {
+  idle: '#7b87a0',
+  working: '#35b98a',
+  thinking: '#4f8ef7',
+  blocked: '#e05252',
+  waiting: '#d99b3a',
+  done: '#a3adc4',
+}

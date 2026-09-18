@@ -1,0 +1,689 @@
+{
+  "worldScale": 2,
+  "characters": {
+    "shirt-tie": {
+      "walk": {
+        "image": "char-shirt-tie-walk.png",
+        "frameW": 90,
+        "frameH": 162,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-shirt-tie-sit.png",
+        "frameW": 83,
+        "frameH": 138,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-shirt-tie-type.png",
+        "frameW": 89,
+        "frameH": 160,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "green-hoodie": {
+      "walk": {
+        "image": "char-green-hoodie-walk.png",
+        "frameW": 92,
+        "frameH": 163,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-green-hoodie-sit.png",
+        "frameW": 87,
+        "frameH": 140,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-green-hoodie-type.png",
+        "frameW": 81,
+        "frameH": 150,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "ponytail": {
+      "walk": {
+        "image": "char-ponytail-walk.png",
+        "frameW": 97,
+        "frameH": 161,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-ponytail-sit.png",
+        "frameW": 87,
+        "frameH": 143,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-ponytail-type.png",
+        "frameW": 90,
+        "frameH": 150,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "bun": {
+      "walk": {
+        "image": "char-bun-walk.png",
+        "frameW": 83,
+        "frameH": 158,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-bun-sit.png",
+        "frameW": 82,
+        "frameH": 137,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-bun-type.png",
+        "frameW": 76,
+        "frameH": 151,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "blond-maroon": {
+      "walk": {
+        "image": "char-blond-maroon-walk.png",
+        "frameW": 88,
+        "frameH": 159,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-blond-maroon-sit.png",
+        "frameW": 81,
+        "frameH": 132,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-blond-maroon-type.png",
+        "frameW": 88,
+        "frameH": 160,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "curly-yellow": {
+      "walk": {
+        "image": "char-curly-yellow-walk.png",
+        "frameW": 91,
+        "frameH": 160,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-curly-yellow-sit.png",
+        "frameW": 89,
+        "frameH": 147,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-curly-yellow-type.png",
+        "frameW": 86,
+        "frameH": 167,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "hipster": {
+      "walk": {
+        "image": "char-hipster-walk.png",
+        "frameW": 104,
+        "frameH": 184,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-hipster-sit.png",
+        "frameW": 77,
+        "frameH": 125,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-hipster-type.png",
+        "frameW": 68,
+        "frameH": 141,
+        "cols": 6,
+        "rows": 1
+      }
+    }
+  },
+  "cat": {
+    "walk": {
+      "image": "cat-walk.png",
+      "frameW": 87,
+      "frameH": 94,
+      "cols": 3,
+      "rows": 4,
+      "dirRows": {
+        "down": 0,
+        "left": 1,
+        "right": 2,
+        "up": 3
+      }
+    },
+    "sleep": {
+      "image": "cat-sleep.png",
+      "w": 86,
+      "h": 68
+    },
+    "sit": {
+      "image": "cat-sit.png",
+      "w": 51,
+      "h": 92
+    },
+    "lie": {
+      "image": "cat-lie.png",
+      "w": 44,
+      "h": 112
+    }
+  },
+  "fx": {
+    "bubble": {
+      "image": "bubble.png",
+      "frameW": 94,
+      "frameH": 87,
+      "cols": 3,
+      "rows": 1
+    },
+    "door": {
+      "image": "door.png",
+      "frameW": 171,
+      "frameH": 262,
+      "cols": 3,
+      "rows": 1
+    }
+  },
+  "objects": {
+    "sofaSet": {
+      "image": "sofa-set.png",
+      "w": 600,
+      "h": 399
+    },
+    "tileset": {
+      "image": "objects.png",
+      "frames": {
+        "meeting-table": {
+          "x": 0,
+          "y": 0,
+          "w": 292,
+          "h": 222
+        },
+        "desk-double": {
+          "x": 294,
+          "y": 0,
+          "w": 398,
+          "h": 218
+        },
+        "sofa-cat": {
+          "x": 694,
+          "y": 0,
+          "w": 331,
+          "h": 205
+        },
+        "sprint-board": {
+          "x": 1027,
+          "y": 0,
+          "w": 347,
+          "h": 192
+        },
+        "door-a": {
+          "x": 1376,
+          "y": 0,
+          "w": 107,
+          "h": 191
+        },
+        "glass-wide": {
+          "x": 1485,
+          "y": 0,
+          "w": 155,
+          "h": 190
+        },
+        "glass-mid": {
+          "x": 1642,
+          "y": 0,
+          "w": 101,
+          "h": 190
+        },
+        "glass-narrow": {
+          "x": 1745,
+          "y": 0,
+          "w": 82,
+          "h": 189
+        },
+        "bookshelf": {
+          "x": 1829,
+          "y": 0,
+          "w": 166,
+          "h": 178
+        },
+        "water-cooler": {
+          "x": 0,
+          "y": 224,
+          "w": 73,
+          "h": 176
+        },
+        "window-1": {
+          "x": 75,
+          "y": 224,
+          "w": 94,
+          "h": 174
+        },
+        "window-2": {
+          "x": 171,
+          "y": 224,
+          "w": 95,
+          "h": 174
+        },
+        "window-3": {
+          "x": 268,
+          "y": 224,
+          "w": 95,
+          "h": 174
+        },
+        "window-4": {
+          "x": 365,
+          "y": 224,
+          "w": 95,
+          "h": 174
+        },
+        "window-e": {
+          "x": 462,
+          "y": 224,
+          "w": 50,
+          "h": 174
+        },
+        "desk-plant-mug": {
+          "x": 514,
+          "y": 224,
+          "w": 199,
+          "h": 170
+        },
+        "desk-monitor": {
+          "x": 715,
+          "y": 224,
+          "w": 182,
+          "h": 167
+        },
+        "lamp": {
+          "x": 899,
+          "y": 224,
+          "w": 65,
+          "h": 166
+        },
+        "desk-chair": {
+          "x": 966,
+          "y": 224,
+          "w": 139,
+          "h": 165
+        },
+        "coffee-machine": {
+          "x": 1107,
+          "y": 224,
+          "w": 250,
+          "h": 150
+        },
+        "door-b": {
+          "x": 1359,
+          "y": 224,
+          "w": 83,
+          "h": 150
+        },
+        "plant-large-a": {
+          "x": 1444,
+          "y": 224,
+          "w": 102,
+          "h": 149
+        },
+        "coffee-bar": {
+          "x": 1548,
+          "y": 224,
+          "w": 306,
+          "h": 143
+        },
+        "plant-large-b": {
+          "x": 1856,
+          "y": 224,
+          "w": 101,
+          "h": 143
+        },
+        "desk-wide": {
+          "x": 0,
+          "y": 402,
+          "w": 160,
+          "h": 141
+        },
+        "printer": {
+          "x": 162,
+          "y": 402,
+          "w": 112,
+          "h": 141
+        },
+        "chair-a": {
+          "x": 276,
+          "y": 402,
+          "w": 78,
+          "h": 126
+        },
+        "chair-c": {
+          "x": 356,
+          "y": 402,
+          "w": 73,
+          "h": 121
+        },
+        "chair-d": {
+          "x": 431,
+          "y": 402,
+          "w": 86,
+          "h": 116
+        },
+        "chair-b": {
+          "x": 519,
+          "y": 402,
+          "w": 83,
+          "h": 112
+        },
+        "chair-side": {
+          "x": 604,
+          "y": 402,
+          "w": 74,
+          "h": 110
+        },
+        "divider-gray": {
+          "x": 680,
+          "y": 402,
+          "w": 55,
+          "h": 106
+        },
+        "divider-blue-b": {
+          "x": 737,
+          "y": 402,
+          "w": 53,
+          "h": 102
+        },
+        "divider-blue-a": {
+          "x": 792,
+          "y": 402,
+          "w": 53,
+          "h": 101
+        },
+        "counter-a": {
+          "x": 847,
+          "y": 402,
+          "w": 124,
+          "h": 100
+        },
+        "plant-medium": {
+          "x": 973,
+          "y": 402,
+          "w": 71,
+          "h": 98
+        },
+        "counter-b": {
+          "x": 1046,
+          "y": 402,
+          "w": 96,
+          "h": 94
+        },
+        "plant-hanging": {
+          "x": 1144,
+          "y": 402,
+          "w": 52,
+          "h": 91
+        },
+        "floor-mat": {
+          "x": 1198,
+          "y": 402,
+          "w": 162,
+          "h": 86
+        },
+        "stool-a": {
+          "x": 1362,
+          "y": 402,
+          "w": 61,
+          "h": 85
+        },
+        "stool-b": {
+          "x": 1425,
+          "y": 402,
+          "w": 60,
+          "h": 84
+        },
+        "stool-c": {
+          "x": 1487,
+          "y": 402,
+          "w": 60,
+          "h": 84
+        },
+        "painting": {
+          "x": 1549,
+          "y": 402,
+          "w": 79,
+          "h": 83
+        },
+        "monitor-a": {
+          "x": 1630,
+          "y": 402,
+          "w": 92,
+          "h": 81
+        },
+        "monitor-b": {
+          "x": 1724,
+          "y": 402,
+          "w": 102,
+          "h": 81
+        },
+        "floor-a": {
+          "x": 1828,
+          "y": 402,
+          "w": 96,
+          "h": 80
+        },
+        "floor-b": {
+          "x": 1926,
+          "y": 402,
+          "w": 87,
+          "h": 80
+        },
+        "floor-c-1": {
+          "x": 0,
+          "y": 545,
+          "w": 96,
+          "h": 80
+        },
+        "floor-c-2": {
+          "x": 98,
+          "y": 545,
+          "w": 97,
+          "h": 80
+        },
+        "monitor-off": {
+          "x": 197,
+          "y": 545,
+          "w": 79,
+          "h": 79
+        },
+        "trash": {
+          "x": 278,
+          "y": 545,
+          "w": 53,
+          "h": 78
+        },
+        "bench": {
+          "x": 333,
+          "y": 545,
+          "w": 235,
+          "h": 78
+        },
+        "plant-a": {
+          "x": 570,
+          "y": 545,
+          "w": 53,
+          "h": 74
+        },
+        "plant-e": {
+          "x": 625,
+          "y": 545,
+          "w": 63,
+          "h": 72
+        },
+        "laptop": {
+          "x": 690,
+          "y": 545,
+          "w": 100,
+          "h": 71
+        },
+        "wall-shelf": {
+          "x": 792,
+          "y": 545,
+          "w": 131,
+          "h": 69
+        },
+        "plant-d": {
+          "x": 925,
+          "y": 545,
+          "w": 53,
+          "h": 66
+        },
+        "book-purple": {
+          "x": 980,
+          "y": 545,
+          "w": 46,
+          "h": 61
+        },
+        "books-green": {
+          "x": 1028,
+          "y": 545,
+          "w": 62,
+          "h": 59
+        },
+        "binder": {
+          "x": 1092,
+          "y": 545,
+          "w": 55,
+          "h": 58
+        },
+        "books-red": {
+          "x": 1149,
+          "y": 545,
+          "w": 48,
+          "h": 57
+        },
+        "plant-c": {
+          "x": 1199,
+          "y": 545,
+          "w": 41,
+          "h": 51
+        },
+        "plant-b": {
+          "x": 1242,
+          "y": 545,
+          "w": 36,
+          "h": 47
+        },
+        "mug-white": {
+          "x": 1280,
+          "y": 545,
+          "w": 43,
+          "h": 46
+        },
+        "mug-red": {
+          "x": 1325,
+          "y": 545,
+          "w": 37,
+          "h": 40
+        }
+      }
+    }
+  },
+  "background": {
+    "image": "background.png",
+    "w": 1292,
+    "h": 1218
+  }
+}

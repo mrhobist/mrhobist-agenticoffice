@@ -1,0 +1,38 @@
+# .NET
+bin/
+obj/
+*.user
+artifacts/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+.nuxt/
+.output/
+dist/
+
+# Sirlar
+.env
+.env.local
+appsettings.Development.json
+
+# Calisma ciktilari (dosya tabanli depo)
+runs/
+logs/
+*.log
+
+# Sprite pipeline debug output
+assets/_inspect/
+
+# IDE
+.vs/
+.idea/
+
+# Python paket meta
+*.egg-info/

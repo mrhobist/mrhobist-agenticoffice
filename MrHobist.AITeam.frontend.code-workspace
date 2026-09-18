@@ -1,0 +1,28 @@
+{
+  "folders": [
+    { "name": "runtime (Python)", "path": "runtime" },
+    { "name": "ui (Nuxt)", "path": "ui" },
+    { "name": "docs", "path": "docs" }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/node_modules": true,
+      "**/.nuxt": true,
+      "**/.output": true
+    },
+    "python.defaultInterpreterPath": "${workspaceFolder:runtime (Python)}/.venv/Scripts/python.exe",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["."],
+    "editor.formatOnSave": false,
+    "files.eol": "\n"
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "Vue.volar",
+      "dbaeumer.vscode-eslint"
+    ]
+  }
+}

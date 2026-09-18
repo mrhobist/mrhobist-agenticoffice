@@ -1,0 +1,18 @@
+[project]
+name = "mrhobist-aiteam-runtime"
+version = "0.1.0"
+description = "LLM cagri katmani. Durum tutmaz, veritabani gormez, is kurali bilmez."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.120",
+    "uvicorn[standard]>=0.38",
+    "httpx>=0.28",
+    "pydantic>=2.11",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4", "pytest-asyncio>=1.0", "respx>=0.22"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

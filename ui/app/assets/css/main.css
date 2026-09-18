@@ -1,0 +1,22 @@
+:root {
+  --bg: #12151c;
+  --surface: #191d26;
+  --surface-2: #222736;
+  --rule: #2f3648;
+  --ink: #e8ecf5;
+  --ink-2: #c2c9d8;
+  --ink-3: #7f889c;
+  --r-ctl: 6px;
+  color-scheme: dark;
+}
+
+html, body, #__nuxt { height: 100%; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.4 "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }

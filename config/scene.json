@@ -1,0 +1,70 @@
+{
+  "_comment": "Canli ofis sahnesi. Koordinatlar arka plan gorselinin pikselidir (1292x1218, assets/raw/background.png). Api GET /api/v1/scene ile oldugu gibi sunar; UI kopya tutmaz. Arka plan sabit bir resimdir; uzerine yalniz eksikler (monitorler, kapi, pano) sprite olarak konur. overlays: arka plandan kesilip varliklarin ONUNE cizilen bolgeler (cam duvar onu). Sema: docs/SCENE.md.",
+  "world": { "w": 1292, "h": 1218 },
+  "background": { "image": "background.png" },
+  "walkable": [28, 62, 1236, 1000],
+  "overlays": [
+    [352, 344, 272, 20]
+  ],
+  "props": [
+    { "id": "monA1", "sprite": "monitor-a", "x": 300, "y": 476, "w": 58, "layer": "object", "sortY": 480 },
+    { "id": "monA2", "sprite": "monitor-b", "x": 470, "y": 476, "w": 62, "layer": "object", "sortY": 480 },
+    { "id": "monB1", "sprite": "monitor-a", "x": 692, "y": 346, "w": 54, "layer": "object", "sortY": 350 },
+    { "id": "monB2", "sprite": "monitor-off", "x": 826, "y": 348, "w": 48, "layer": "object", "sortY": 350 },
+    { "id": "mugA", "sprite": "mug-white", "x": 545, "y": 540, "w": 18, "layer": "object", "sortY": 545 },
+    { "id": "laptopM", "sprite": "laptop", "x": 500, "y": 236, "w": 40, "layer": "object", "sortY": 300 }
+  ],
+  "door": { "x": 20, "y": 520, "h": 112 },
+  "board": { "x": 985, "y": 262, "w": 272, "h": 168, "title": "SPRINT" },
+  "seats": {
+    "deskA-left":  { "x": 328, "y": 668, "facing": "up" },
+    "deskA-right": { "x": 498, "y": 668, "facing": "up" },
+    "deskB-left":  { "x": 720, "y": 534, "facing": "up" },
+    "deskB-right": { "x": 852, "y": 534, "facing": "up" },
+    "meeting":     { "x": 487, "y": 338, "facing": "up" }
+  },
+  "spots": {
+    "coffee":   { "x": 180, "y": 360, "facing": "up" },
+    "board":    { "x": 950, "y": 420, "facing": "right" },
+    "water":    { "x": 130, "y": 745, "facing": "left" },
+    "sofa":     { "x": 1130, "y": 775, "facing": "up" },
+    "meeting":  { "x": 487, "y": 400, "facing": "up" },
+    "door":     { "x": 130, "y": 585, "facing": "left" },
+    "entrance": { "x": 650, "y": 975, "facing": "up" },
+    "deskA":    { "x": 413, "y": 720, "facing": "up" },
+    "deskB":    { "x": 785, "y": 590, "facing": "up" },
+    "window":   { "x": 900, "y": 290, "facing": "up" }
+  },
+  "blocked": [
+    [24, 92, 308, 232],
+    [352, 112, 272, 250],
+    [245, 468, 337, 172],
+    [648, 338, 270, 166],
+    [1012, 512, 246, 232],
+    [1224, 500, 44, 112],
+    [26, 676, 64, 116],
+    [28, 940, 84, 116],
+    [444, 928, 74, 100],
+    [774, 928, 76, 100],
+    [618, 200, 576, 44],
+    [632, 148, 54, 74],
+    [1138, 168, 52, 84],
+    [448, 1022, 84, 196],
+    [768, 1022, 92, 196]
+  ],
+  "agents": [
+    { "key": "analyst",   "name": "Analist",     "sprite": "shirt-tie",    "home": { "seat": "deskA-left" } },
+    { "key": "designer",  "name": "Tasarımcı",   "sprite": "ponytail",     "home": { "seat": "deskA-right" } },
+    { "key": "tester",    "name": "Testçi",      "sprite": "bun",          "home": { "seat": "deskB-left" } },
+    { "key": "developer", "name": "Developer",   "sprite": "green-hoodie", "home": { "seat": "deskB-right" } },
+    { "key": "manager",   "name": "Manager",     "sprite": "blond-maroon", "home": { "seat": "meeting" } },
+    { "key": "organizer", "name": "Organizatör", "sprite": "curly-yellow", "home": { "spot": "board" } }
+  ],
+  "cat": {
+    "bed": { "x": 1128, "y": 590 },
+    "spots": [
+      { "x": 900, "y": 300 }, { "x": 650, "y": 970 }, { "x": 413, "y": 740 },
+      { "x": 190, "y": 400 }, { "x": 1130, "y": 800 }, { "x": 560, "y": 570 }
+    ]
+  }
+}

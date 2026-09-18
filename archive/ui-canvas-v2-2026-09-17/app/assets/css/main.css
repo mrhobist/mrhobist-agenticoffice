@@ -1,0 +1,32 @@
+/* Tasarim token'lari. Renk yalniz burada tanimlanir; bilesenler degiskeni kullanir. */
+:root {
+  --bg:        #0f1115;
+  --surface:   #171a21;
+  --surface-2: #1e222b;
+  --rule:      #2a2f3a;
+  --ink:       #e7e9ee;
+  --ink-2:     #a3a9b8;
+  --ink-3:     #6d7484;
+
+  --ok:     #35b98a;
+  --warn:   #d99b3a;
+  --danger: #e05252;
+
+  --r-panel: 12px;
+  --r-ctl: 8px;
+  --shadow-panel: 0 8px 30px rgb(0 0 0 / 45%);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #__nuxt {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }

@@ -1,0 +1,6 @@
+@MrHobist.AITeam.Api_HostAddress = http://localhost:5201
+
+GET {{MrHobist.AITeam.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
