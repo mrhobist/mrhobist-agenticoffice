@@ -36,7 +36,8 @@
       "y": 476,
       "w": 58,
       "layer": "object",
-      "sortY": 480
+      "sortY": 480,
+      "spriteOff": "monitor-off"
     },
     {
       "id": "monA2",
@@ -45,7 +46,8 @@
       "y": 476,
       "w": 62,
       "layer": "object",
-      "sortY": 480
+      "sortY": 480,
+      "spriteOff": "monitor-off"
     },
     {
       "id": "monB1",
@@ -54,16 +56,18 @@
       "y": 346,
       "w": 54,
       "layer": "object",
-      "sortY": 350
+      "sortY": 350,
+      "spriteOff": "monitor-off"
     },
     {
       "id": "monB2",
-      "sprite": "monitor-off",
+      "sprite": "monitor-a",
       "x": 826,
       "y": 348,
       "w": 48,
       "layer": "object",
-      "sortY": 350
+      "sortY": 350,
+      "spriteOff": "monitor-off"
     },
     {
       "id": "mugA",
@@ -85,11 +89,11 @@
     }
   ],
   "door": {
-    "x": 1192,
-    "y": 0,
-    "w": 76,
-    "h": 97,
-    "_comment": "Sag ust: pencere bitimi ile sag duvar arasindaki duvar parcasini tamamen doldurur. Giris/cikislar buradan (agent.enter / agent.leave)."
+    "x": 1186,
+    "y": -10,
+    "w": 84,
+    "h": 128,
+    "_comment": "Sag ust: pencere bitimi ile sag duvar arasi; duvar on yuzunu de kaplar. Giris/cikislar buradan (agent.enter / agent.leave)."
   },
   "board": {
     "x": 985,
@@ -102,22 +106,26 @@
     "deskA-left": {
       "x": 328,
       "y": 668,
-      "facing": "up"
+      "facing": "up",
+      "monitor": "monA1"
     },
     "deskA-right": {
       "x": 498,
       "y": 668,
-      "facing": "up"
+      "facing": "up",
+      "monitor": "monA2"
     },
     "deskB-left": {
       "x": 720,
       "y": 534,
-      "facing": "up"
+      "facing": "up",
+      "monitor": "monB1"
     },
     "deskB-right": {
       "x": 852,
       "y": 534,
-      "facing": "up"
+      "facing": "up",
+      "monitor": "monB2"
     },
     "meeting": {
       "x": 487,
@@ -128,33 +136,51 @@
   "spots": {
     "coffee": {
       "x": 180,
-      "y": 360,
-      "facing": "up"
+      "y": 362,
+      "look": {
+        "x": 180,
+        "y": 300
+      }
     },
     "board": {
       "x": 950,
       "y": 420,
-      "facing": "right"
+      "look": {
+        "x": 1120,
+        "y": 360
+      }
     },
     "water": {
-      "x": 130,
-      "y": 745,
-      "facing": "left"
+      "x": 122,
+      "y": 738,
+      "look": {
+        "x": 58,
+        "y": 720
+      }
     },
     "sofa": {
       "x": 1130,
       "y": 775,
-      "facing": "up"
+      "look": {
+        "x": 1130,
+        "y": 600
+      }
     },
     "meeting": {
       "x": 487,
       "y": 400,
-      "facing": "up"
+      "look": {
+        "x": 487,
+        "y": 300
+      }
     },
     "door": {
-      "x": 1232,
-      "y": 150,
-      "facing": "up"
+      "x": 1228,
+      "y": 170,
+      "look": {
+        "x": 1228,
+        "y": 100
+      }
     },
     "entrance": {
       "x": 650,
@@ -174,7 +200,10 @@
     "window": {
       "x": 900,
       "y": 290,
-      "facing": "up"
+      "look": {
+        "x": 900,
+        "y": 150
+      }
     }
   },
   "blocked": [
@@ -269,10 +298,10 @@
       196
     ],
     [
-      1190,
+      1186,
       0,
-      80,
-      96
+      84,
+      120
     ]
   ],
   "agents": [
@@ -327,8 +356,9 @@
   ],
   "cat": {
     "bed": {
-      "x": 1128,
-      "y": 590
+      "x": 1130,
+      "y": 602,
+      "_comment": "Koltuk minderi. Engelli alanda oldugu icin kedi yola en yakin acik hucreye gelir, sonra buraya kayar."
     },
     "spots": [
       {

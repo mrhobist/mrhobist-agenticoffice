@@ -33,10 +33,27 @@ const apiBase = useRuntimeConfig().public.apiBase as string
 let world: World | null = null
 let feed: { stop: () => void } | null = null
 let raf = 0
-let last = 0
 let view = { scale: 1, ox: 0, oy: 0 }
 let ro: ResizeObserver | null = null
 let agentsTimer: ReturnType<typeof setInterval> | undefined
+let simTimer: ReturnType<typeof setInterval> | undefined
+let simLast = 0
+
+/**
+ * Simulasyon adimi, cizimden BAGIMSIZ. Sekme gizliyken requestAnimationFrame durur;
+ * setInterval (kisitli da olsa) calisir ve gecen sureyi sabit adimlarla telafi eder.
+ * Boylece arka planda kalan sahne donmaz, donusunde ajanlar yerlerine varmis olur.
+ */
+function step(now: number) {
+  if (!world) return
+  let elapsed = Math.min(5, (now - simLast) / 1000)
+  simLast = now
+  while (elapsed > 0) {
+    const dt = Math.min(0.05, elapsed)
+    world.update(dt, now)
+    elapsed -= dt
+  }
+}
 
 function toWorld(ev: MouseEvent) {
   const r = cv.value!.getBoundingClientRect()
@@ -75,9 +92,7 @@ function fit() {
 function frame(now: number) {
   raf = requestAnimationFrame(frame)
   if (!world || !cv.value) return
-  const dt = Math.min(0.05, (now - last) / 1000 || 0)
-  last = now
-  world.update(dt, now)
+  step(now)
 
   const ctx = cv.value.getContext('2d')!
   const dpr = cv.value.width / cv.value.clientWidth
@@ -105,11 +120,15 @@ async function boot() {
     return
   }
   world.onHud = h => emit('hud', h)
+  // Gelistirme: konsoldan sahneyi sorgulamak icin (uretimde yok).
+  if (import.meta.dev) (window as unknown as { __world?: World }).__world = world
   ready.value = true
   fit()
   feed = connectFeed(apiBase, (e: SceneEvent) => { world?.apply(e); publishAgents() }, s => emit('status', s))
   agentsTimer = setInterval(publishAgents, 1500)
-  last = performance.now()
+  simLast = performance.now()
+  clearInterval(simTimer)
+  simTimer = setInterval(() => step(performance.now()), 200)
   cancelAnimationFrame(raf)
   raf = requestAnimationFrame(frame)
 }
@@ -125,6 +144,7 @@ onBeforeUnmount(() => {
   feed?.stop()
   ro?.disconnect()
   clearInterval(agentsTimer)
+  clearInterval(simTimer)
 })
 </script>
 

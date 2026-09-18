@@ -267,12 +267,13 @@ export class Cat {
 
   constructor(readonly bed: Pt, readonly spots: Pt[]) {
     this.pos = { ...bed }
+    this.nextAt = performance.now() + 45_000 + Math.random() * 60_000
   }
 
   /** Arka uctan komut: plani sifirla. */
   command(action: CatAction, spotIdx: number | undefined, now: number, nav: NavGrid): void {
     this.plan = []
-    if (action === 'sleep') { this.goto(this.bed, nav, () => { this.mode = 'sleep'; this.nextAt = now + 60_000 }) }
+    if (action === 'sleep') { this.goto(this.bed, nav, () => { this.mode = 'sleep'; this.nextAt = performance.now() + 120_000 }) }
     else if (action === 'sit') { this.mode = 'sit'; this.nextAt = now + 15_000 }
     else {
       const s = this.spots[spotIdx ?? Math.floor(Math.random() * this.spots.length)] ?? this.bed
@@ -280,17 +281,29 @@ export class Cat {
     }
   }
 
+  /** Hedef engelli alandaysa (koltuk) yol en yakin acik hucrede biter; varinca hedefe kayilir. */
+  private snapTo: Pt | null = null
+
   private goto(to: Pt, nav: NavGrid, then: () => void): void {
     this.mode = 'walk'
     this.path = nav.path(this.pos, to)
+    this.snapTo = nav.isOpenAt(to) ? null : to
     this.walkT = 0
     this.plan = [then]
+  }
+
+  private arrived(now: number, fallbackMs: number): void {
+    if (this.snapTo) { this.pos = { ...this.snapTo }; this.snapTo = null }
+    this.mode = 'sit'
+    this.nextAt = now + fallbackMs
+    const next = this.plan.shift()
+    if (next) next()
   }
 
   update(dt: number, now: number, nav: NavGrid): void {
     if (this.mode === 'walk') {
       const next = this.path[0]
-      if (!next) { this.mode = 'sit'; this.nextAt = now + 5000; (this.plan.shift() ?? (() => {}))(); return }
+      if (!next) { this.arrived(now, 5000); return }
       const dx = next.x - this.pos.x
       const dy = next.y - this.pos.y
       const dist = Math.hypot(dx, dy)
@@ -298,7 +311,7 @@ export class Cat {
       if (dist <= step) {
         this.pos = { ...next }
         this.path.shift()
-        if (!this.path.length) { this.mode = 'sit'; this.nextAt = now + 6000 + Math.random() * 6000; (this.plan.shift() ?? (() => {}))() }
+        if (!this.path.length) this.arrived(now, 6000 + Math.random() * 6000)
       } else {
         this.pos.x += (dx / dist) * step
         this.pos.y += (dy / dist) * step
@@ -312,13 +325,12 @@ export class Cat {
     if (this.mode === 'sleep') {
       const s = this.spots[Math.floor(Math.random() * this.spots.length)] ?? this.bed
       this.goto(s, nav, () => { this.mode = Math.random() < 0.3 ? 'lie' : 'sit'; this.nextAt = now + 8000 + Math.random() * 10_000 })
-    } else if (Math.random() < 0.55) {
+    } else if (Math.random() < 0.35) {
       const s = this.spots[Math.floor(Math.random() * this.spots.length)] ?? this.bed
       this.goto(s, nav, () => { this.mode = 'sit'; this.nextAt = now + 6000 + Math.random() * 8000 })
     } else {
-      this.goto(this.bed, nav, () => { this.mode = 'sleep'; this.nextAt = now + 30_000 + Math.random() * 40_000 })
+      this.goto(this.bed, nav, () => { this.mode = 'sleep'; this.nextAt = performance.now() + 60_000 + Math.random() * 90_000 })
     }
-    if (this.mode === 'sleep') this.nextAt = now + 30_000 + Math.random() * 40_000
   }
 
   draw(ctx: CanvasRenderingContext2D, sprites: Sprites, now: number): void {

@@ -7,9 +7,10 @@
 export type Facing = 'up' | 'down' | 'left' | 'right' | 'upleft' | 'upright' | 'downleft' | 'downright'
 
 export interface Pt { x: number; y: number }
-export interface SpotDef extends Pt { facing?: Facing }
+/** Durak. `look` verilirse varan ajan ORAYA bakar (durdugu noktaya gore hesaplanir); yoksa `facing`. */
+export interface SpotDef extends Pt { facing?: Facing; look?: Pt }
 /** Oturulabilir yer. `prop` verilirse oturan, o prop'un hemen ardina cizilir; yoksa ayaklarina gore siralanir. */
-export interface SeatDef extends Pt { facing: Facing; prop?: string }
+export interface SeatDef extends Pt { facing: Facing; prop?: string; /** Oturulunca acilan monitor prop id'si. */ monitor?: string }
 
 export type PropLayer = 'floor' | 'wall' | 'object'
 
@@ -25,6 +26,8 @@ export interface PropDef {
   layer: PropLayer
   /** Siralama anahtari (alt kenar yerine). Masa ustundeki monitor icin masa alt kenari + 1. */
   sortY?: number
+  /** Verilirse: bu prop bir koltugun monitorudur; koltuk bossa bu sprite cizilir (ekran kapali). */
+  spriteOff?: string
 }
 
 export interface AgentDef {

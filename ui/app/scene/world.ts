@@ -1,4 +1,4 @@
-import type { AgentState, MeetKind, Pt, PropDef, SceneConfig, SceneEvent, SeatDef, WorkflowConfig } from './contract'
+import type { AgentState, Facing, MeetKind, Pt, PropDef, SceneConfig, SceneEvent, SeatDef, WorkflowConfig } from './contract'
 import { Sprites } from './atlas'
 import { NavGrid } from './nav'
 import { Agent, Cat, Door, type Action } from './entities'
@@ -54,6 +54,7 @@ export class World {
       const home = this.homeOf(def.key)
       const a = new Agent(def, sheets, home.pos)
       if (home.seat) { a.seated = home.seat; a.facing = home.seat.facing }
+      else if (home.look) a.faceTo(home.look)
       else if (home.facing) a.facing = home.facing
       a.ambientReadyAt = performance.now() + 8000 + Math.random() * 30_000
       this.agents.set(def.key, a)
@@ -99,7 +100,7 @@ export class World {
         const a = this.agents.get(e.data.agent)
         const s = this.cfg.spots[e.data.spot]
         if (!a || !s) return
-        a.command([{ t: 'walk', to: this.freeNear(s, a) }, ...(s.facing ? [{ t: 'face', dir: s.facing } as Action] : [])], now)
+        a.command([{ t: 'walk', to: this.freeNear(s, a) }, ...this.arrive(a, s)], now)
         break
       }
       case 'agent.home': {
@@ -183,7 +184,14 @@ export class World {
     return this.nav.nearestOpen(p)
   }
 
-  private homeOf(key: string): { pos: Pt; seat?: SeatDef; facing?: SeatDef['facing'] } {
+  /** Duraga varinca bakis: `look` varsa durulan noktadan oraya, yoksa sabit `facing`. */
+  private arrive(a: Agent, s: { facing?: Facing; look?: Pt }): Action[] {
+    if (s.look) { const look = s.look; return [{ t: 'call', fn: () => a.faceTo(look) }] }
+    if (s.facing) return [{ t: 'face', dir: s.facing }]
+    return []
+  }
+
+  private homeOf(key: string): { pos: Pt; seat?: SeatDef; facing?: Facing; look?: Pt } {
     const def = this.cfg.agents.find(a => a.key === key)
     if (def?.home.seat) {
       const seat = this.cfg.seats[def.home.seat]
@@ -191,7 +199,7 @@ export class World {
     }
     if (def?.home.spot) {
       const spot = this.cfg.spots[def.home.spot]
-      if (spot) return { pos: { x: spot.x, y: spot.y }, facing: spot.facing }
+      if (spot) return { pos: { x: spot.x, y: spot.y }, facing: spot.facing, look: spot.look }
     }
     return { pos: { x: this.cfg.world.w / 2, y: this.cfg.world.h / 2 } }
   }
@@ -202,7 +210,7 @@ export class World {
       const approach = this.nav.nearestOpen(home.seat)
       return [{ t: 'walk', to: approach }, { t: 'sit', seat: home.seat }]
     }
-    return [{ t: 'walk', to: this.freeNear(home.pos, a) }, ...(home.facing ? [{ t: 'face', dir: home.facing } as Action] : [])]
+    return [{ t: 'walk', to: this.freeNear(home.pos, a) }, ...this.arrive(a, home)]
   }
 
   /** `from`, `to`'nun yanina yurur; konusurlar; `from` evine doner. */
@@ -253,7 +261,7 @@ export class World {
       if (!s) return []
       return [
         { t: 'walk', to: this.freeNear(s, a) },
-        ...(s.facing ? [{ t: 'face', dir: s.facing } as Action] : []),
+        ...this.arrive(a, s),
         ...(talk ? [{ t: 'say', kind: 'talk', ms: Math.min(dwell, 3000) } as Action] : []),
         { t: 'wait', ms: dwell },
         ...this.goHome(a),
@@ -299,10 +307,19 @@ export class World {
     type Item = { y: number; draw: () => void }
     const items: Item[] = []
     const propBottom = new Map<string, number>()
+    const litMonitors = new Set<string>()
+    for (const a of this.agents.values()) if (a.seated?.monitor && !a.offstage) litMonitors.add(a.seated.monitor)
     for (const p of this.props) {
       if (p.layer !== 'object') continue
       propBottom.set(p.id, p.y + p.h)
-      items.push({ y: p.sortY ?? p.y + p.h, draw: () => this.sprites.drawObject(ctx, p.sprite, p.x, p.y, p.w, p.h) })
+      const off = p.spriteOff && !litMonitors.has(p.id) ? p.spriteOff : null
+      items.push({ y: p.sortY ?? p.y + p.h, draw: () => {
+        if (!off) { this.sprites.drawObject(ctx, p.sprite, p.x, p.y, p.w, p.h); return }
+        // Kapali ekran: ayni genislik, kendi orani, alt kenara hizali.
+        const sz = this.sprites.objectSize(off)
+        const h2 = (p.w * sz.h) / sz.w
+        this.sprites.drawObject(ctx, off, p.x, p.y + p.h - h2, p.w, h2)
+      } })
     }
     // Arka plandan kesitler (cam duvar onu gibi): varliklarin onune, alt kenara gore.
     const bgMeta = this.cfg.background ? this.sprites.atlas.background : undefined

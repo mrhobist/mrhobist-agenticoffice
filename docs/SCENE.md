@@ -81,8 +81,8 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `floor`, `walls` | arka plan yoksa prosedürel zemin/duvar (V1 yolu, hâlâ çalışır) |
 | `props[]` | `sprite` (tileset adı ya da `@sofaSet`), `x y w [h]`, `layer`, `sortY` (masa üstü monitör için) |
 | `door`, `board` | kapı ve pano dikdörtgenleri |
-| `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `prop` verilirse o prop'un ardına çizilir |
-| `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB` |
+| `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `monitor` → oturulunca açılan, kalkınca kapanan monitör prop'u (`props[].spriteOff`) |
+| `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing` |
 | `blocked[]` | yürünemez dikdörtgenler; yol bulma bunlardan ızgara kurar |
 | `agents[]` | rol → sprite → ev (`seat` ya da `spot`) |
 | `cat` | yatak ve gezinti noktaları |
@@ -107,6 +107,14 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `door` | `state` | kapı; 6 s sonra kapanır |
 | `agent.leave` / `agent.enter` | `agent` | sağ üstteki kapıya yürür ve sahneden çıkar / kapıdan girip evine yürür. Dışarıdaki ajan çizilmez, ambient almaz, `meet` hedefi olamaz |
 | `clock.set` | `hour: 0-24 \| null` | pencere manzarasının saati; `null` gerçek yerel saat |
+
+**Simülasyon çizimden bağımsızdır.** `requestAnimationFrame` sekme gizliyken durur; simülasyon
+200 ms'lik `setInterval` ile sabit adımlarla (50 ms, en çok 5 s telafi) ayrıca ilerletilir. Sekme
+arka planda kalsa da ajanlar yerlerine varır. Geliştirmede `window.__world` sahneyi konsoldan
+sorgulamak için açıktır.
+
+**Kedi koltukta uyur.** Yatak koltuğun engelli alanında olduğu için yol en yakın açık hücrede
+biter; varınca yatağa kayılır (`snapTo`). Uyku 60–150 s, gezinti kısa; komutla `sleep` 120 s.
 
 **Aynı noktada iki kişi durmaz.** Her yürüyüş hedefi `freeNear` ile seçilir: başka bir ajanın
 durduğu ya da hedeflediği noktaya 26 px'den yakınsa 28/52/76 px halkalarda boş bir açık hücre
