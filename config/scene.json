@@ -189,6 +189,26 @@
       "w": 34,
       "layer": "object",
       "sortY": 498
+    },
+    {
+      "id": "monC1",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 708,
+      "y": 646,
+      "w": 58,
+      "layer": "object",
+      "sortY": 790
+    },
+    {
+      "id": "monC2",
+      "sprite": "monitor-b",
+      "spriteOff": "monitor-off",
+      "x": 874,
+      "y": 646,
+      "w": 62,
+      "layer": "object",
+      "sortY": 790
     }
   ],
   "door": {
@@ -199,10 +219,10 @@
     "_comment": "Sag ust girinti: sol kenar pencere pervazi (1182), ust kenar duvar yuzu bandi (y 68), sag kenar dis duvar (1289), alt kenar bitki dibi (250). Giris/cikislar buradan."
   },
   "board": {
-    "x": 985,
-    "y": 262,
-    "w": 272,
-    "h": 168,
+    "x": 1060,
+    "y": 286,
+    "w": 190,
+    "h": 118,
     "title": "SPRINT"
   },
   "seats": {
@@ -219,13 +239,13 @@
       "monitor": "monA2"
     },
     "deskB-left": {
-      "x": 720,
+      "x": 734,
       "y": 534,
       "facing": "up",
       "monitor": "monB1"
     },
     "deskB-right": {
-      "x": 852,
+      "x": 902,
       "y": 534,
       "facing": "up",
       "monitor": "monB2"
@@ -258,20 +278,21 @@
       }
     },
     "board": {
-      "x": 950,
+      "x": 1000,
       "y": 420,
       "look": {
-        "x": 1120,
-        "y": 360
+        "x": 1150,
+        "y": 350
       }
     },
     "water": {
-      "x": 122,
-      "y": 738,
+      "x": 62,
+      "y": 832,
       "look": {
         "x": 58,
-        "y": 720
-      }
+        "y": 760
+      },
+      "_comment": "Sebilin altinda, sirt sol alttaki bitkiye donuk."
     },
     "sofa": {
       "x": 1130,
@@ -476,6 +497,22 @@
       "sprite": "curly-yellow",
       "home": {
         "spot": "board"
+      }
+    },
+    {
+      "key": "intern",
+      "name": "Stajyer",
+      "sprite": "hipster",
+      "home": {
+        "seat": "deskC-left"
+      }
+    },
+    {
+      "key": "devops",
+      "name": "DevOps",
+      "sprite": "blue-hoodie",
+      "home": {
+        "seat": "deskC-right"
       }
     }
   ],

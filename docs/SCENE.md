@@ -33,6 +33,7 @@ etiketli opak görsellerdir.
 | Monitör, laptop, kupa | V1 tileset | arka planda olmayanlar sprite olarak konur |
 | Pano, notlar | — | prosedürel |
 
+`blue-hoodie`, `sim2`'nin yeşil kapüşonu ton kaydırmasıyla maviye çevrilmiş türevidir (8. karakter).
 V1'in 4 insan sayfası ve türetilmiş 2 renk varyantı artık atlasa girmez (stil V2'yle
 uyuşmuyor); ham dosyalar durur. `sim7`/`karma` çok karakterli küçük ölçekli kataloglar,
 kullanılmadı.
@@ -84,7 +85,7 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `monitor` → oturulunca açılan, kalkınca kapanan monitör prop'u (`props[].spriteOff`) |
 | `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing` |
 | `blocked[]` | yürünemez dikdörtgenler; yol bulma bunlardan ızgara kurar |
-| `agents[]` | rol → sprite → ev (`seat` ya da `spot`) |
+| `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Sahne ajanı iş akışı rolünden fazla olabilir (`intern`, `devops` yalnız sahnede yaşar; olay almazlarsa ambient davranır) |
 | `cat` | yatak ve gezinti noktaları |
 
 `object` katmanı varlıklarla birlikte **alt kenara göre** sıralanır; oturan ajan, masasının

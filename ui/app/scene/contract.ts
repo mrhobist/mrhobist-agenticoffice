@@ -131,6 +131,8 @@ export const ROLE_HEX: Record<string, string> = {
   developer: '#35b98a',
   tester: '#b58ad8',
   manager: '#c65c5c',
+  intern: '#7fa6c9',
+  devops: '#4f7fd9',
 }
 
 export const STATE_LABEL: Record<AgentState, string> = {

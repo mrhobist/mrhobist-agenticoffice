@@ -339,14 +339,16 @@ PANEL_FRAMES = {"SIT": 8, "TYPE": 6}
 DIR_ROWS_8 = {"down": 0, "downleft": 1, "left": 2, "upleft": 3, "up": 4, "upright": 5, "right": 6, "downright": 7}
 CHAR_V2_HEIGHT_WORLD = 78
 
-CHARACTERS_V2: dict[str, str] = {
-    "shirt-tie": "sim1.png",
-    "green-hoodie": "sim2.png",
-    "ponytail": "sim3.png",
-    "bun": "sim4.png",
-    "blond-maroon": "sim5.png",
-    "curly-yellow": "sim6.png",
-    "hipster": "sim8.png",
+# key -> (catalog file, optional recolor (hue_band, hue_to)); recolor derives an extra outfit.
+CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | None]] = {
+    "shirt-tie": ("sim1.png", None),
+    "green-hoodie": ("sim2.png", None),
+    "ponytail": ("sim3.png", None),
+    "bun": ("sim4.png", None),
+    "blond-maroon": ("sim5.png", None),
+    "curly-yellow": ("sim6.png", None),
+    "hipster": ("sim8.png", None),
+    "blue-hoodie": ("sim2.png", ((55, 115), 150)),
 }
 
 
@@ -424,8 +426,10 @@ def panel_frames(img: Image.Image, box: tuple[int, int, int, int], expected: int
     return [out.crop(b) for b in grid]
 
 
-def build_character_v2(key: str, file: str) -> dict:
-    img = Image.open(CATALOGS / file)
+def build_character_v2(key: str, file: str, recolor_spec: tuple[tuple[int, int], int] | None = None) -> dict:
+    img = Image.open(CATALOGS / file).convert("RGBA")
+    if recolor_spec:
+        img = recolor(img, recolor_spec[0], recolor_spec[1])
     panels = catalog_panels(img)
     frames: dict[str, list[Image.Image]] = {}
     for name, box in zip(PANEL_ORDER, panels):
@@ -502,9 +506,9 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     atlas: dict = {"worldScale": WORLD_SCALE, "characters": {}, "cat": {}, "fx": {}, "objects": {}}
 
-    for key, file in CHARACTERS_V2.items():
+    for key, (file, spec) in CHARACTERS_V2.items():
         try:
-            atlas["characters"][key] = build_character_v2(key, file)
+            atlas["characters"][key] = build_character_v2(key, file, spec)
         except ValueError as ex:
             print(f"WARNING: character {key} skipped: {ex}", file=sys.stderr)
             continue

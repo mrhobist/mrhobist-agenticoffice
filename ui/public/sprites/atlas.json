@@ -231,6 +231,39 @@
         "cols": 6,
         "rows": 1
       }
+    },
+    "blue-hoodie": {
+      "walk": {
+        "image": "char-blue-hoodie-walk.png",
+        "frameW": 92,
+        "frameH": 163,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-blue-hoodie-sit.png",
+        "frameW": 87,
+        "frameH": 140,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-blue-hoodie-type.png",
+        "frameW": 81,
+        "frameH": 150,
+        "cols": 6,
+        "rows": 1
+      }
     }
   },
   "cat": {
