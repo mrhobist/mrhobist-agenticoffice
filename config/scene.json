@@ -89,11 +89,11 @@
     }
   ],
   "door": {
-    "x": 1190,
-    "y": 90,
-    "w": 99,
-    "h": 160,
-    "_comment": "Sag ust girinti: sol alt kosesi pencere yanindaki bitkide (1190,250), sag ust kosesi duvar blogunun altinda (1289,90). Giris/cikislar buradan."
+    "x": 1182,
+    "y": 68,
+    "w": 107,
+    "h": 182,
+    "_comment": "Sag ust girinti: sol kenar pencere pervazi (1182), ust kenar duvar yuzu bandi (y 68), sag kenar dis duvar (1289), alt kenar bitki dibi (250). Giris/cikislar buradan."
   },
   "board": {
     "x": 985,
