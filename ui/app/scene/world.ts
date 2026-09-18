@@ -481,8 +481,6 @@ export class World {
     const alpha = this.specialOverride ? 1 : Math.min(1, phase)
     ctx.save()
     ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()
-    ctx.fillStyle = '#1d222c'
-    ctx.fillRect(x, y, w, h)
     ctx.fillStyle = '#f0c26a'
     ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif'
     ctx.textAlign = 'left'

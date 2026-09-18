@@ -464,9 +464,19 @@ def erase_regions(bg: Image.Image) -> Image.Image:
     cfg = json.loads((ROOT / "config" / "scene.json").read_text(encoding="utf-8"))
     rects = (cfg.get("background") or {}).get("erase") or []
     out = bg.convert("RGBA").copy()
-    for x, y, w, h, dx, dy in rects:
-        donor = out.crop((x + dx, y + dy, x + dx + w, y + dy + h))
-        out.paste(donor, (x, y))
+    for r in rects:
+        if len(r) == 6:
+            x, y, w, h, dx, dy = r
+            donor = out.crop((x + dx, y + dy, x + dx + w, y + dy + h))
+            out.paste(donor, (x, y))
+        else:
+            # Tiled: repeat a small donor patch (sx, sy, sw, sh) across the target rect.
+            x, y, w, h, sx, sy, sw, sh = r
+            patch = out.crop((sx, sy, sx + sw, sy + sh))
+            for ty in range(y, y + h, sh):
+                for tx in range(x, x + w, sw):
+                    piece = patch.crop((0, 0, min(sw, x + w - tx), min(sh, y + h - ty)))
+                    out.paste(piece, (tx, ty))
     return out
 
 

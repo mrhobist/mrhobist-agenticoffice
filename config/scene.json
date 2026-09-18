@@ -22,9 +22,19 @@
         176,
         0,
         240
+      ],
+      [
+        85,
+        66,
+        178,
+        33,
+        130,
+        80,
+        60,
+        14
       ]
     ],
-    "_comment": "erase: [x,y,w,h,dx,dy] — build-sprites bu dikdortgenleri (dx,dy) kadar otelenmis temiz zemin kopyasiyla kaplar; arka plandaki eski masalar boyle silinir, yerlerine props masalari gelir."
+    "_comment": "erase: [x,y,w,h,dx,dy] otelenmis kopya; [x,y,w,h,sx,sy,sw,sh] donor yamayi doseyerek doldurur (kahve barinin ahsap arka panosu duvara ve menu tahtasina hizalanir)."
   },
   "window": {
     "x": 610,
@@ -219,14 +229,14 @@
     "_comment": "Sag ust girinti: sol kenar pencere pervazi (1182), ust kenar duvar yuzu bandi (y 68), sag kenar dis duvar (1289), alt kenar bitki dibi (250). Giris/cikislar buradan."
   },
   "board": {
-    "x": 1075,
-    "y": 300,
+    "x": 1092,
+    "y": 296,
     "w": 170,
     "h": 106,
     "title": "SPRINT",
-    "angle": -9,
+    "angle": -14,
     "legs": 46,
-    "_comment": "Ayakli tahta: zeminde durur, hafif capraz. angle derece, legs ayak yuksekligi (dunya px)."
+    "_comment": "Ayakli tahta: sag duvara dayali, arkasi duvara donuk capraz (angle -14: sag ucu geride)."
   },
   "seats": {
     "deskA-left": {
@@ -473,10 +483,10 @@
       152
     ],
     [
-      1070,
-      290,
-      180,
-      165
+      1085,
+      286,
+      178,
+      168
     ]
   ],
   "agents": [
@@ -580,10 +590,10 @@
   },
   "cafe": {
     "board": {
-      "x": 90,
+      "x": 88,
       "y": 100,
-      "w": 140,
-      "h": 68
+      "w": 144,
+      "h": 72
     },
     "specials": [
       "Filtre Kahve",
