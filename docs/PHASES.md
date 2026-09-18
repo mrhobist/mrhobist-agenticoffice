@@ -62,6 +62,52 @@ JWT tek şema, tek sınıf; roller claim ile ayrılır. Hostlar yalnız `127.0.0
 **Biten sayılır:** `curl` ile bir çalışma baştan sona tamamlanır; SSE akışı fazları sırayla
 yayınlar; süreç ortada öldürülürse çalışma yeniden başlatmada `Interrupted` işaretlenir.
 
+## v1 → hedef eşlemesi (2026-09-18 incelemesi)
+
+Kaynak: `../MrHobist.AITeam.v1-yedek/orchestrator/` (Python, 2170 satır, 17 dosya).
+İçinde **iki nesil** var: fiilen çalışan ve ölçülen 3 rollü sabit hat (`pipeline.py`,
+`team.yaml`: analyst/developer/controller) ve yüklenip doğrulanan ama **hiç çalıştırılmayan**
+6 rollü veri güdümlü katman (`agents.py`, `workflow.py`, `store.py` — `pipeline.py` bunları
+çağırmıyor). Hedef mimari ikinciyi .NET'te gerçekleştirir, birincinin ölçülmüş derslerini taşır.
+
+| v1 parçası | Ne yapıyor | Hedefte nereye |
+|---|---|---|
+| `pipeline.py` | Analist → görev başına (Developer → Kontrolcü, `max_review_rounds`, red→geri bildirim), bütçe tavanı, dış çıkış listesi, path-traversal korumalı dosya yazımı, ofis durum basımı | `Application/Runs/RunService` — `workflow.json` adımlarına genellenir (design, handoff, ask→manager) |
+| `workflow.py` | `workflow.json` yükleme + değişmezler: tam 1 `analyze` ve ilk sırada, ≥1 `implement`, `review` öncesinde `implement`, `maxReviewRounds ≥ 1`, geçerli `officeRole` | `Domain/Workflow` değişmezleri + `WorkflowService` (Faz 1–2) |
+| `agents.py` | md frontmatter (`name, summary, office_roles, provider, model, includes, can_ask`), alt md'lerin prompt sonuna eklenmesi, yüklemede doğrulama, dizin dışına yazma reddi | `Domain/Agent, Knowledge` + `Infrastructure/Storage` md okuma/yazma + `AgentService.ComposePrompt` |
+| `store.py` | `runs/<id>/run.json, spec.json, conversations/<ajan>.jsonl, messages.jsonl, tasks/<görev>/phases.jsonl`; append + fsync; yarım satırı yok sayan okuyucu; özet | `Infrastructure/Storage/JsonlRunStore` — aynı yerleşim, atomik yazım (CLAUDE.md §2) |
+| `config.py` | `team.yaml`, `${ENV}`, sağlayıcı fabrikası, **hassasiyet politikası** (`local / anthropic / open` → izinli hedefler; tek ihlal → çalışma hiç başlamaz) | `Application/Runs/RunPolicy`: sağlayıcı/model ajan md frontmatter'ından (CLAUDE.md §4), hassasiyet çalışma başlangıcında; `destination` runtime yanıtından gelir |
+| `roles/analyst.py` | Spec şeması (`summary, architecture, rules, tasks[id,title,description,files,acceptance,depends_on]`), topolojik sıralama | `Application/Runs/Schemas` (C# şema nesneleri) + `TaskGraph.Order()` |
+| `roles/developer.py` | ` ```dil path=yol ``` ` blok ayrıştırıcı (3 biçim), red halinde `feedback` + `previous` | `Application/Runs/FileBlockParser` |
+| `roles/controller.py` | Verdict şeması (`approve/reject, violations, feedback, tests_run, tests_passed`); Claude SDK ile **araç kullanarak testi fiilen çalıştırır** | Şema Application'a; test çalıştırma kararı aşağıda |
+| `providers/nvidia_nim.py` | 3 × 180 s yeniden deneme, `reasoning_effort=low`, `response_format json_schema`, boş `content` tespiti, 1 token'lık gerçek sağlık isteği | `runtime/app/providers/nvidia.py` — **Python'da kalan tek kod bu katman**; birebir taşınır |
+| `providers/claude_sdk.py` | Agent SDK `query`, `output_format json_schema`, `structured_output`, maliyet, `allowed_tools/cwd/mcp` | `runtime/app/providers/anthropic.py` (ad: `claude` → `anthropic`) |
+| `providers/ollama.py` | yerel, `destination=local` | `runtime/app/providers/ollama.py` |
+| `office.py` | KbWen ofisine tam kadro POST (replace semantiği dersi) | Silinir; yerine `SceneEventBus` (var). `RunService` sahne olaylarını yayımlar |
+| `__main__.py doctor/run` | ortam kontrolü, CLI çalıştırma, özet | `Task.Api` `POST jobs/run-pipeline`; doctor → `/health/ready` + `GET /v1/models` |
+
+**Taşınmayan / dikkat:** v1 `.env` gerçek `NVIDIA_API_KEY` içerir — depoya asla kopyalanmaz.
+`vendor/agent-virtual-office` ve `.office-state` gereksiz. `team.yaml`'ın rol→sağlayıcı bilgisi
+ajan md frontmatter'ına taşınır; `team.yaml` kalmaz.
+
+**Sözleşme uyumsuzluğu:** ajan md'lerinde `provider: claude` yazılabiliyor; runtime sözleşmesi
+`anthropic`. Karar: frontmatter'da da `anthropic` (enum adıyla, CLAUDE.md §5); okuyucu `claude`
+görürse açık hata verir, sessizce çevirmez.
+
+**Testçinin testi çalıştırması — varsayımla ilerlenir:** v1'de kontrolcü Claude SDK araçlarıyla
+`cwd` içinde test yazıp koşuyordu. Bu, Python runtime'a dosya yazma ve süreç çalıştırma sokar
+(CLAUDE.md §1'e aykırı) ve testçiyi Anthropic'e kilitler. Karar: testçi LLM'i **test dosyalarını
+ve komutu** üretir (`files[] + command`), testi `RunService` çalışma dizininde süre sınırıyla
+**.NET çalıştırır** ve çıktıyı testçiye ikinci bir turda verir. Alternatif (SDK araç kullanımı,
+runtime'da `tools?: {cwd, allowed[]}` alanı) yalnız Anthropic sağlayıcısında çalışır ve sınırı
+deler; reddedildi. Faz 4'te ölçülür.
+
+**Önerilen sıra:** Faz 1 → 2 (Domain, depolar, ajan/iş akışı uçları) → Faz 3 (sağlayıcıları
+runtime'a taşı; en çok kopya, en az risk) → Faz 4 (RunService, sahte runtime ile testler) →
+Faz 5 (Task.Api iş ucu, `POST /api/v1/runs` → 202, SSE; `RunService` → `SceneEventBus`).
+Faz 6 sahnesi hazır: `agent.state`, `meet`, `board.*`, `run.stage` olayları `RunService`'in
+yayımlayacağı sözleşmedir (`docs/SCENE.md`).
+
 ## Faz 6 — UI (canlı sahne) 🔶 sahne kuruldu
 
 Nuxt 4 + TypeScript + **Canvas 2D** (Three.js bırakıldı, bkz. `docs/SCENE.md`). Sprite'lar
