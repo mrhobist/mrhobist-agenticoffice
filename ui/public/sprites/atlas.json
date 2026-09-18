@@ -313,11 +313,6 @@
     }
   },
   "objects": {
-    "sofaSet": {
-      "image": "sofa-set.png",
-      "w": 600,
-      "h": 399
-    },
     "tileset": {
       "image": "objects.png",
       "frames": {

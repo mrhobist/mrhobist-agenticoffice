@@ -1,4 +1,4 @@
-import type { AgentState, Facing, MeetKind, Pt, PropDef, SceneConfig, SceneEvent, SeatDef, WorkflowConfig } from './contract'
+import type { Facing, MeetKind, Pt, PropDef, SceneConfig, SceneEvent, SeatDef, WorkflowConfig } from './contract'
 import { Sprites } from './atlas'
 import { NavGrid } from './nav'
 import { Agent, Cat, Door, type Action } from './entities'
@@ -89,7 +89,7 @@ export class World {
         a.lastCommandAt = now
         if (a.ambient) a.command(this.goHome(a), now)
         if ((e.data.state === 'working' || e.data.state === 'thinking') && !a.seated && !a.busy) a.command(this.goHome(a), now)
-        if (e.data.state === 'blocked') a.command([...(a.busy ? [] : []), { t: 'say', kind: 'alert', ms: 2500 }], now)
+        if (e.data.state === 'blocked') a.bubble = { kind: 'alert', until: now + 2500 }
         if (e.data.state === 'waiting' && !a.busy) a.bubble = { kind: 'ask', until: now + 4000 }
         break
       }
@@ -296,7 +296,7 @@ export class World {
       a.pos = { x: d.x, y: d.y }
       a.facing = 'down'
       this.door.set('open', now)
-      a.enqueueAmbient([{ t: 'wait', ms: 400 }, ...this.goHome(a)], now)
+      a.command([{ t: 'wait', ms: 400 }, ...this.goHome(a)], now, { ambient: true })
     }
   }
 
@@ -363,7 +363,7 @@ export class World {
       ]
     }
     if (!actions.length) return
-    a.enqueueAmbient(actions, now)
+    a.command(actions, now, { ambient: true })
     this.lastAmbientAt = now
   }
 
@@ -374,19 +374,15 @@ export class World {
     if (this.cfg.window) drawSky(ctx, this.cfg.window, this.hourNow(), scale)
     ctx.drawImage(this.background(scale), 0, 0, w, h)
 
-    if (!this.cfg.board.legs) this.board.draw(ctx, now)
     this.drawCafeSpecial(ctx, now)
     if (this.cfg.door) this.door.draw(ctx, this.sprites, this.cfg.door.x, this.cfg.door.y, this.cfg.door.h, this.cfg.door.w)
 
     // Nesneler + varliklar alt kenara gore siralanir.
     type Item = { y: number; draw: () => void }
     const items: Item[] = []
-    const propBottom = new Map<string, number>()
     const litMonitors = new Set<string>()
     for (const a of this.agents.values()) if (a.seated?.monitor && !a.offstage) litMonitors.add(a.seated.monitor)
     for (const p of this.props) {
-      if (p.layer !== 'object') continue
-      propBottom.set(p.id, p.y + p.h)
       const off = p.spriteOff && !litMonitors.has(p.id) ? p.spriteOff : null
       items.push({ y: p.sortY ?? p.y + p.h, draw: () => {
         if (!off) { this.sprites.drawObject(ctx, p.sprite, p.x, p.y, p.w, p.h); return }
@@ -397,33 +393,25 @@ export class World {
       } })
     }
     // Arka plandan kesitler (cam duvar onu gibi): varliklarin onune, alt kenara gore.
-    const bgMeta = this.cfg.background ? this.sprites.atlas.background : undefined
-    if (bgMeta) {
-      const bgImg = this.sprites.img(bgMeta.image)
-      const sx = bgMeta.w / this.cfg.world.w
-      const sy = bgMeta.h / this.cfg.world.h
-      for (const [ox, oy, ow, oh] of this.cfg.overlays ?? []) {
-        items.push({ y: oy + oh, draw: () => ctx.drawImage(bgImg, ox * sx, oy * sy, ow * sx, oh * sy, ox, oy, ow, oh) })
-      }
+    const bgMeta = this.sprites.atlas.background
+    const bgImg = this.sprites.img(bgMeta.image)
+    const sx = bgMeta.w / w
+    const sy = bgMeta.h / h
+    for (const [ox, oy, ow, oh] of this.cfg.overlays ?? []) {
+      items.push({ y: oy + oh, draw: () => ctx.drawImage(bgImg, ox * sx, oy * sy, ow * sx, oh * sy, ox, oy, ow, oh) })
     }
-    for (const a of this.agents.values()) {
-      const pb = a.seated?.prop ? propBottom.get(a.seated.prop) ?? null : null
-      items.push({ y: a.sortY(pb), draw: () => a.draw(ctx, this.sprites, now) })
-    }
+    for (const a of this.agents.values()) items.push({ y: a.pos.y, draw: () => a.draw(ctx, this.sprites, now) })
     items.push({ y: this.cat.pos.y, draw: () => this.cat.draw(ctx, this.sprites, now) })
-    if (this.cfg.board.legs) {
-      const b = this.cfg.board
-      items.push({ y: b.y + b.h + (b.legs ?? 0), draw: () => this.board.draw(ctx, now) })
-    }
+    // Pano zeminde bir nesnedir: ajanlar onunden ve arkasindan gecer.
+    items.push({ y: this.cfg.board.y + this.cfg.board.h, draw: () => this.board.draw(ctx, now) })
     items.sort((p, q) => p.y - q.y)
     for (const it of items) it.draw()
 
-    this.drawFront(ctx)
     for (const a of this.agents.values()) a.drawBubble(ctx, this.sprites, now)
     this.drawLabels(ctx)
   }
 
-  /** Statik arka plan: zemin, duvarlar, duvar ve zemin katmani nesneleri. Olcek degisince yenilenir. */
+  /** Arka plan gorseli olcege gore bir kez cizilir; pencere cami seffaftir, gokyuzu her kare altina ayrica cizilir. */
   private background(scale: number): HTMLCanvasElement {
     const key = scale.toFixed(3)
     if (this.bg && this.bgKey === key) return this.bg
@@ -435,67 +423,10 @@ export class World {
     g.scale(scale, scale)
     g.imageSmoothingEnabled = true
     g.imageSmoothingQuality = 'high'
-
-    if (this.cfg.background && this.sprites.atlas.background) {
-      // Arka plan gorseli: pencere cami seffaftir, altina gokyuzu her kare ayrica cizilir.
-      g.drawImage(this.sprites.img(this.sprites.atlas.background.image), 0, 0, w, h)
-      for (const p of this.props) {
-        if (p.layer === 'floor' || p.layer === 'wall') this.sprites.drawObject(g, p.sprite, p.x, p.y, p.w, p.h)
-      }
-      this.bg = c
-      this.bgKey = key
-      return c
-    }
-
-    g.fillStyle = '#1e222c'
-    g.fillRect(0, 0, w, h)
-    if (!this.cfg.floor || !this.cfg.walls) throw new Error('scene.json: background yoksa floor ve walls zorunlu')
-    // Zemin karolari
-    const [fx, fy, fw, fh] = this.cfg.floor.rect
-    const ts = this.cfg.floor.tileSize
-    const tiles = this.cfg.floor.tiles
-    g.save()
-    g.beginPath(); g.rect(fx, fy, fw, fh); g.clip()
-    for (let ty = fy, r = 0; ty < fy + fh; ty += ts, r++) {
-      for (let tx = fx, cidx = 0; tx < fx + fw; tx += ts, cidx++) {
-        const pick = ((r * 7 + cidx * 13) % 11) < 8 ? 0 : ((r + cidx) % 2 === 0 ? 1 : 2)
-        const name = tiles[Math.min(pick, tiles.length - 1)] ?? tiles[0]!
-        this.sprites.drawObject(g, name, tx, ty, ts + 0.5, ts + 0.5)
-      }
-    }
-    g.restore()
-
-    // Duvarlar
-    const W = this.cfg.walls
-    const t = W.thickness
-    g.fillStyle = W.colorOuter
-    g.fillRect(0, 0, w, t); g.fillRect(0, 0, t, h); g.fillRect(w - t, 0, t, h)
-    g.fillRect(0, h - t - 36, W.gate.from, t + 36); g.fillRect(W.gate.to, h - t - 36, w - W.gate.to, t + 36)
-    g.fillStyle = W.colorInner
-    g.fillRect(t * 0.35, t * 0.35, w - t * 0.7, t * 0.65)
-    g.fillRect(t * 0.35, 0, t * 0.65, h); g.fillRect(w - t, 0, t * 0.65, h)
-    g.fillStyle = W.colorTop
-    g.fillRect(0, 0, w, 4); g.fillRect(0, 0, 4, h); g.fillRect(w - 4, 0, 4, h)
-
-    // Kapi acikligi: zemin disari dogru devam eder (giris)
-    g.fillStyle = '#2a2f3b'
-    g.fillRect(W.gate.from, h - t - 36, W.gate.to - W.gate.from, t + 36)
-    g.fillStyle = '#39404f'
-    g.fillRect(W.gate.from + 12, h - t - 30, W.gate.to - W.gate.from - 24, 6)
-
+    g.drawImage(this.sprites.img(this.sprites.atlas.background.image), 0, 0, w, h)
     for (const p of this.props) {
-      if (p.layer === 'floor') this.sprites.drawObject(g, p.sprite, p.x, p.y, p.w, p.h)
+      if (p.layer !== 'object') this.sprites.drawObject(g, p.sprite, p.x, p.y, p.w, p.h)
     }
-    for (const p of this.props) {
-      if (p.layer === 'wall') this.sprites.drawObject(g, p.sprite, p.x, p.y, p.w, p.h)
-    }
-    // Toplanti odasi cam kutu: sprite'lar arka duvar; on cerceve prosedurel.
-    g.strokeStyle = 'rgba(210,225,240,0.55)'
-    g.lineWidth = 3
-    g.strokeRect(400, 124, 300, 236)
-    g.fillStyle = 'rgba(180,205,230,0.10)'
-    g.fillRect(400, 124, 300, 236)
-
     this.bg = c
     this.bgKey = key
     return c
@@ -535,25 +466,6 @@ export class World {
     ctx.restore()
   }
 
-  /** Onde kalan yapisal parcalar: giris sutunlari ve citler. */
-  private drawFront(ctx: CanvasRenderingContext2D): void {
-    const W = this.cfg.walls
-    if (!W) return
-    for (const [x, y, w, h] of W.columns) {
-      ctx.fillStyle = '#2b323f'; ctx.fillRect(x, y, w, h)
-      ctx.fillStyle = '#3d4655'; ctx.fillRect(x + 6, y + 6, w - 12, h - 6)
-      ctx.fillStyle = '#4c5666'; ctx.fillRect(x + 6, y + 6, w - 12, 4)
-    }
-    for (const [x, y, len] of W.hedges) {
-      for (let i = 0; i < len; i += 22) {
-        ctx.fillStyle = '#2f6d3a'
-        ctx.beginPath(); ctx.ellipse(x + i + 11, y + 12, 12, 9, 0, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = '#4d9a52'
-        ctx.beginPath(); ctx.ellipse(x + i + 9, y + 9, 8, 6, 0, 0, Math.PI * 2); ctx.fill()
-      }
-    }
-  }
-
   private drawLabels(ctx: CanvasRenderingContext2D): void {
     for (const a of this.agents.values()) {
       const show = a.key === this.hovered || (a.note && a.state !== 'idle' && a.state !== 'done')
@@ -564,7 +476,7 @@ export class World {
       ctx.textBaseline = 'middle'
       const tw = ctx.measureText(text).width + 12
       const x = a.pos.x
-      const y = a.headY() - 20 - (a.bubble ? 0 : 0)
+      const y = a.headY() - 20
       ctx.fillStyle = 'rgba(20,24,34,0.82)'
       ctx.fillRect(x - tw / 2, y - 8, tw, 16)
       ctx.fillStyle = a.hex
@@ -592,7 +504,4 @@ export class World {
     return best
   }
 
-  agentState(key: string): AgentState {
-    return this.agents.get(key)?.state ?? 'idle'
-  }
 }

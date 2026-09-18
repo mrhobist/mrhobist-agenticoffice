@@ -1,7 +1,7 @@
 import type { Pt, SceneConfig } from './contract'
 
 /**
- * Yuruyus izgarasi: zemin dikdortgeni icinde, `blocked` disinda kalan hucreler.
+ * Yuruyus izgarasi: `walkable` dikdortgeni icinde, `blocked` disinda kalan hucreler.
  * A* 8 komsulu; kose kesmez. Sonuc dogru gorus hattiyla sadelestirilir ki
  * karakterler merdiven gibi degil, duz yurusun.
  */
@@ -41,7 +41,7 @@ export class NavGrid {
   }
 
   /** Verilen noktaya en yakin acik hucre merkezi (mobilya icindeki koltuk icin yaklasma noktasi). */
-  nearestOpen(p: Pt, preferBelow = true): Pt {
+  nearestOpen(p: Pt): Pt {
     const c0 = Math.floor(p.x / this.cell)
     const r0 = Math.floor(p.y / this.cell)
     let best: Pt | null = null
@@ -55,7 +55,7 @@ export class NavGrid {
           if (!this.isOpen(c, r)) continue
           const q = { x: c * this.cell + this.cell / 2, y: r * this.cell + this.cell / 2 }
           // Masanin onu (asagisi) tercih edilir: karakter masaya arkasi donuk oturur.
-          const bias = preferBelow && q.y < p.y ? 1.8 : 1
+          const bias = q.y < p.y ? 1.8 : 1
           const d = ((q.x - p.x) ** 2 + (q.y - p.y) ** 2) * bias
           if (d < bestD) { bestD = d; best = q }
         }

@@ -23,9 +23,8 @@ export interface AtlasJson {
   characters: Record<string, CharacterSheets>
   cat: { walk: SheetMeta; sleep: SingleMeta; sit: SingleMeta; lie: SingleMeta }
   fx: { bubble: SheetMeta; door: SheetMeta }
-  background?: SingleMeta
+  background: SingleMeta
   objects: {
-    sofaSet: SingleMeta
     tileset: { image: string; frames: Record<string, { x: number; y: number; w: number; h: number }> }
   }
 }
@@ -55,8 +54,8 @@ export class Sprites {
     files.add(atlas.cat.walk.image); files.add(atlas.cat.sleep.image)
     files.add(atlas.cat.sit.image); files.add(atlas.cat.lie.image)
     files.add(atlas.fx.bubble.image); files.add(atlas.fx.door.image)
-    files.add(atlas.objects.sofaSet.image); files.add(atlas.objects.tileset.image)
-    if (atlas.background) files.add(atlas.background.image)
+    files.add(atlas.objects.tileset.image)
+    files.add(atlas.background.image)
 
     const images = new Map<string, HTMLImageElement>()
     await Promise.all([...files].map(async f => images.set(f, await loadImage(base + f))))
@@ -73,25 +72,12 @@ export class Sprites {
 
   /** Bir nesnenin kaynak boyutu; yerlesimde h verilmediginde oran buradan gelir. */
   objectSize(name: string): { w: number; h: number } {
-    if (name.startsWith('@')) {
-      const key = name.slice(1) as 'sofaSet'
-      const m = this.atlas.objects[key]
-      if (!m || !('w' in m)) throw new Error(`tekil nesne yok: ${name}`)
-      return { w: m.w / this.worldScale, h: m.h / this.worldScale }
-    }
     const f = this.atlas.objects.tileset.frames[name]
     if (!f) throw new Error(`tileset karesi yok: ${name}`)
     return { w: f.w, h: f.h }
   }
 
   drawObject(ctx: CanvasRenderingContext2D, name: string, x: number, y: number, w: number, h: number): void {
-    if (name.startsWith('@')) {
-      const key = name.slice(1) as 'sofaSet'
-      const m = this.atlas.objects[key]
-      if (!m || !('w' in m)) return
-      ctx.drawImage(this.img(m.image), 0, 0, m.w, m.h, x, y, w, h)
-      return
-    }
     const f = this.atlas.objects.tileset.frames[name]
     if (!f) return
     ctx.drawImage(this.img(this.atlas.objects.tileset.image), f.x, f.y, f.w, f.h, x, y, w, h)
@@ -103,13 +89,10 @@ export class Sprites {
    */
   drawFrame(
     ctx: CanvasRenderingContext2D, meta: SheetMeta, col: number, row: number,
-    x: number, y: number, opts: { scale?: number; alpha?: number; flipX?: boolean } = {},
+    x: number, y: number, opts: { flipX?: boolean } = {},
   ): void {
-    const s = (opts.scale ?? 1) / this.worldScale
-    const dw = meta.frameW * s
-    const dh = meta.frameH * s
-    const prev = ctx.globalAlpha
-    if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha
+    const dw = meta.frameW / this.worldScale
+    const dh = meta.frameH / this.worldScale
     if (opts.flipX) {
       ctx.save()
       ctx.translate(x, 0)
@@ -119,13 +102,11 @@ export class Sprites {
     } else {
       ctx.drawImage(this.img(meta.image), col * meta.frameW, row * meta.frameH, meta.frameW, meta.frameH, x - dw / 2, y - dh, dw, dh)
     }
-    ctx.globalAlpha = prev
   }
 
-  drawSingle(ctx: CanvasRenderingContext2D, meta: SingleMeta, x: number, y: number, scale = 1): void {
-    const s = scale / this.worldScale
-    const dw = meta.w * s
-    const dh = meta.h * s
+  drawSingle(ctx: CanvasRenderingContext2D, meta: SingleMeta, x: number, y: number): void {
+    const dw = meta.w / this.worldScale
+    const dh = meta.h / this.worldScale
     ctx.drawImage(this.img(meta.image), 0, 0, meta.w, meta.h, x - dw / 2, y - dh, dw, dh)
   }
 }

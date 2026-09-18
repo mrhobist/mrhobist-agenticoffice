@@ -1,6 +1,6 @@
 <template>
   <div ref="host" class="host">
-    <canvas ref="cv" class="cv" @mousemove="onMove" @mouseleave="hoverKey = null" @click="onClick" />
+    <canvas ref="cv" class="cv" @mousemove="onMove" @mouseleave="onLeave" @click="onClick" />
     <div v-if="error" class="err">
       <strong>Sahne yüklenemedi.</strong>
       <span>{{ error }}</span>
@@ -27,7 +27,6 @@ const host = useTemplateRef<HTMLDivElement>('host')
 const cv = useTemplateRef<HTMLCanvasElement>('cv')
 const ready = ref(false)
 const error = ref<string | null>(null)
-const hoverKey = ref<string | null>(null)
 
 const apiBase = useRuntimeConfig().public.apiBase as string
 
@@ -65,9 +64,12 @@ function onMove(ev: MouseEvent) {
   if (!world) return
   const p = toWorld(ev)
   const a = world.pick(p)
-  hoverKey.value = a?.key ?? null
-  world.hovered = hoverKey.value
+  world.hovered = a?.key ?? null
   cv.value!.style.cursor = a || world.hitBoard(p) ? 'pointer' : 'default'
+}
+
+function onLeave() {
+  if (world) world.hovered = null
 }
 
 function onClick(ev: MouseEvent) {

@@ -21,7 +21,7 @@ public static class SceneEndpoints
         "board.move",    // { task, stage, state }
         "run.stage",     // { stage, task, round }
         "cat",           // { action: sleep|wander|sit, spot? }
-        "door",          // { state: closed|half|open }
+        "door",          // { state: closed|open }  iki kare; acilan kapi 1.4 s sonra kapanir
         "agent.leave",   // { agent }  kapiya yurur, disari cikar (sahneden kaybolur)
         "agent.enter",   // { agent }  kapidan girer, evine yurur
         "clock.set",     // { hour: 0-24 | null }  pencere manzarasi; null = gercek saat

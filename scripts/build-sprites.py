@@ -31,12 +31,10 @@ SCRATCH = ROOT / "assets" / "_inspect"
 # WORLD_SCALE x world size so they stay crisp on hi-dpi screens.
 WORLD_SCALE = 2
 
-# Target sizes in world px (measured on the reference scene).
-CHAR_HEIGHT_WORLD = 92     # a standing person
+# Target sizes in world px. Characters use CHAR_V2_HEIGHT_WORLD (catalog section).
 CAT_HEIGHT_WORLD = 46      # a standing cat, side view
 BUBBLE_WIDTH_WORLD = 46
 DOOR_HEIGHT_WORLD = 130
-SOFA_WIDTH_WORLD = 300
 
 ALPHA_MIN = 128
 
@@ -541,7 +539,6 @@ def main() -> int:
 
     atlas["fx"]["bubble"] = strip([load("bubble-1.png"), load("bubble-2.png"), load("bubble-3.png")], BUBBLE_WIDTH_WORLD, "w", "bubble")
     atlas["fx"]["door"] = strip([load("door-closed.png"), load("door-half.png"), load("door-open.png")], DOOR_HEIGHT_WORLD, "h", "door")
-    atlas["objects"]["sofaSet"] = single(load("sofa-set.png"), SOFA_WIDTH_WORLD, "w", "sofa-set")
 
     atlas["objects"]["tileset"] = pack_objects(tileset)
     print("objects", len(atlas["objects"]["tileset"]["frames"]))

@@ -15,14 +15,14 @@ export interface SpotDef extends Pt {
   capacity?: number
   queue?: Pt
 }
-/** Oturulabilir yer. `prop` verilirse oturan, o prop'un hemen ardina cizilir; yoksa ayaklarina gore siralanir. */
-export interface SeatDef extends Pt { facing: Facing; prop?: string; /** Oturulunca acilan monitor prop id'si. */ monitor?: string }
+/** Oturulabilir yer (ayak/sandalye tabani). `monitor`: oturulunca acilan monitor prop id'si. */
+export interface SeatDef extends Pt { facing: Facing; monitor?: string }
 
 export type PropLayer = 'floor' | 'wall' | 'object'
 
 export interface PropDef {
   id: string
-  /** atlas tileset kare adi; `@sofaSet` gibi `@` ile baslayanlar tekil gorseller. */
+  /** atlas tileset kare adi. */
   sprite: string
   x: number
   y: number
@@ -46,29 +46,19 @@ export interface AgentDef {
 
 export interface SceneConfig {
   world: { w: number; h: number }
-  /** Verilirse arka plan bu gorseldir (atlas.background); floor/walls cizilmez. */
-  background?: { image: string }
+  /** Arka plan gorseli (atlas.background). Gomulu mobilya `erase` ile build'de silinir. */
+  background: { image: string; erase?: number[][] }
   /** Arka plandan kesilip varliklarin ONUNE cizilen dikdortgenler (cam duvar, masa onu). */
   overlays?: [number, number, number, number][]
   /** Pencere cami: arka planda seffaftir, arkasina saate gore gokyuzu cizilir. */
   window?: { x: number; y: number; w: number; h: number }
-  floor?: { tiles: string[]; tileSize: number; rect: [number, number, number, number] }
-  /** Yuruyus alani; floor yoksa bu zorunludur. */
+  /** Yuruyus alani (dis dikdortgen). */
   walkable: [number, number, number, number]
-  walls?: {
-    thickness: number
-    colorOuter: string
-    colorInner: string
-    colorTop: string
-    gate: { from: number; to: number }
-    hedges: [number, number, number][]
-    columns: [number, number, number, number][]
-  }
   props: PropDef[]
   /** Kapi: `w` verilirse o genislige esnetilir (duvar bosluğunu tam doldurmak icin). */
   door?: { x: number; y: number; h: number; w?: number }
-  /** Sprint tahtasi. `legs` verilirse ayakli tahta olarak zeminde durur; `angle` derece (capraz). */
-  board: { x: number; y: number; w: number; h: number; title: string; angle?: number; legs?: number }
+  /** Kanban panosu; zeminde ayaksiz durur, tiklaninca buyuk gorunum acilir. */
+  board: { x: number; y: number; w: number; h: number; title: string }
   /** Kahve bari panosu: gunun ozeli. */
   cafe?: { board: { x: number; y: number; w: number; h: number }; specials: string[]; intervalMs?: number }
   seats: Record<string, SeatDef>
@@ -98,7 +88,7 @@ export type AgentState = 'idle' | 'working' | 'thinking' | 'blocked' | 'waiting'
 export type TaskState = 'queued' | 'active' | 'blocked' | 'done'
 export type BubbleKind = 'talk' | 'ask' | 'alert'
 export type MeetKind = 'handoff' | 'ask' | 'reject'
-export type DoorState = 'closed' | 'half' | 'open'
+export type DoorState = 'closed' | 'open'
 export type CatAction = 'sleep' | 'wander' | 'sit'
 
 export interface BoardTask {

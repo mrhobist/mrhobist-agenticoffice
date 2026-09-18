@@ -76,28 +76,23 @@ export class Agent {
   get busy() { return this.current !== null || this.queue.length > 0 }
   get walking() { return this.current?.t === 'walk' }
 
-  /** Ciziliste kullanilan siralama anahtari: oturuyorsa masanin hemen ustune. */
-  sortY(propBottom: number | null): number {
-    return this.seated && propBottom !== null ? propBottom + 0.5 : this.pos.y
-  }
-
-  /** Bir komut icin kuyrugu sifirla (ambient dahil) ve yeni eylemleri koy. */
-  command(actions: Action[], now: number): void {
+  /**
+   * Kuyrugu sifirla ve yeni eylemleri koy. Arka uc komutu (varsayilan) balonu da siler ve
+   * `lastCommandAt`'i gunceller; ambient eylem ise kesilebilir olarak isaretlenir ve
+   * bir sonraki ambient icin bekleme suresi kurulur.
+   */
+  command(actions: Action[], now: number, opts: { ambient?: boolean } = {}): void {
     this.spot = null
     this.queue = actions
     this.current = null
     this.path = []
-    this.ambient = false
-    this.lastCommandAt = now
-    this.bubble = null
-  }
-
-  enqueueAmbient(actions: Action[], now: number): void {
-    this.spot = null
-    this.queue = actions
-    this.current = null
-    this.ambient = true
-    this.ambientReadyAt = now + 25_000 + Math.random() * 45_000
+    this.ambient = opts.ambient === true
+    if (this.ambient) {
+      this.ambientReadyAt = now + 25_000 + Math.random() * 45_000
+    } else {
+      this.lastCommandAt = now
+      this.bubble = null
+    }
   }
 
   update(dt: number, now: number, nav: NavGrid): void {
