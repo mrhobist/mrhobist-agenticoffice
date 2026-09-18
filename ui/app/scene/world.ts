@@ -29,6 +29,8 @@ export class World {
   hovered: string | null = null
   /** clock.set ile sabitlenen saat; null = gercek yerel saat. */
   clockHour: number | null = null
+  /** cafe.special ile sabitlenen yazi; null = liste sirayla doner. */
+  specialOverride: string | null = null
 
   private bg: HTMLCanvasElement | null = null
   private bgKey = ''
@@ -100,7 +102,7 @@ export class World {
         const a = this.agents.get(e.data.agent)
         const s = this.cfg.spots[e.data.spot]
         if (!a || !s) return
-        a.command([{ t: 'walk', to: this.freeNear(s, a) }, ...this.arrive(a, s)], now)
+        a.command(this.tripTo(a, e.data.spot), now)
         break
       }
       case 'agent.home': {
@@ -155,7 +157,43 @@ export class World {
       case 'clock.set':
         this.clockHour = e.data.hour
         break
+      case 'cafe.special':
+        this.specialOverride = e.data.text
+        break
     }
+  }
+
+  /** Duragi tutan ajanlar (kapasite sayimi). */
+  private occupants(key: string, except?: Agent): Agent[] {
+    return [...this.agents.values()].filter(a => a !== except && !a.offstage && a.spot === key)
+  }
+
+  spotFree(key: string, except?: Agent): boolean {
+    const s = this.cfg.spots[key]
+    if (!s) return false
+    return this.occupants(key, except).length < (s.capacity ?? 1)
+  }
+
+  /**
+   * Bir duraga gidis. Dolu ise `queue` noktasinda bekler, bosalinca alir ve girer.
+   * Ayni anda bir kisi (varsayilan): sebil, kahve, pano, pencere onu.
+   */
+  private tripTo(a: Agent, key: string): Action[] {
+    const s = this.cfg.spots[key]
+    if (!s) return []
+    // Talep eylem ICINDE yapilir: command() kuyrugu sifirlarken spot'u da sifirlar,
+    // dolayisiyla rezervasyon ancak eylemler islerken konur. Iki ajan ayni anda
+    // komut alsa bile sirayla guncellenir; ikinci, dolu gorur ve kuyruk noktasina gider.
+    const claim = () => { if (a.spot === key) return true; if (this.spotFree(key, a)) { a.spot = key; return true } return false }
+    const q = s.queue ?? { x: s.x + 60, y: s.y + 40 }
+    return [
+      { t: 'until', pred: claim, timeoutMs: 1 },
+      { t: 'walk', to: () => (a.spot === key ? s : this.freeNear(q, a)) },
+      { t: 'call', fn: () => a.faceTo(s) },
+      { t: 'until', pred: claim, timeoutMs: 30_000 },
+      { t: 'walk', to: s },
+      ...this.arrive(a, s),
+    ]
   }
 
   /** Saat (0-24, kesirli). Pencere manzarasi bunu okur. */
@@ -210,6 +248,8 @@ export class World {
       const approach = this.nav.nearestOpen(home.seat)
       return [{ t: 'walk', to: approach }, { t: 'sit', seat: home.seat }]
     }
+    const spotKey = this.cfg.agents.find(d => d.key === a.key)?.home.spot
+    if (spotKey && this.cfg.spots[spotKey]) return this.tripTo(a, spotKey)
     return [{ t: 'walk', to: this.freeNear(home.pos, a) }, ...this.arrive(a, home)]
   }
 
@@ -258,10 +298,10 @@ export class World {
     const spots = this.cfg.spots
     const trip = (spot: string, dwell: number, talk = false): Action[] => {
       const s = spots[spot]
-      if (!s) return []
+      // Ambient: dolu duraga gidip beklemek yerine bu turu atla.
+      if (!s || !this.spotFree(spot, a)) return []
       return [
-        { t: 'walk', to: this.freeNear(s, a) },
-        ...this.arrive(a, s),
+        ...this.tripTo(a, spot),
         ...(talk ? [{ t: 'say', kind: 'talk', ms: Math.min(dwell, 3000) } as Action] : []),
         { t: 'wait', ms: dwell },
         ...this.goHome(a),
@@ -289,6 +329,7 @@ export class World {
         ...this.goHome(a),
       ]
     }
+    if (!actions.length) return
     a.enqueueAmbient(actions, now)
     this.lastAmbientAt = now
   }
@@ -300,7 +341,8 @@ export class World {
     if (this.cfg.window) drawSky(ctx, this.cfg.window, this.hourNow(), scale)
     ctx.drawImage(this.background(scale), 0, 0, w, h)
 
-    this.board.draw(ctx, now)
+    if (!this.cfg.board.legs) this.board.draw(ctx, now)
+    this.drawCafeSpecial(ctx, now)
     if (this.cfg.door) this.door.draw(ctx, this.sprites, this.cfg.door.x, this.cfg.door.y, this.cfg.door.h, this.cfg.door.w)
 
     // Nesneler + varliklar alt kenara gore siralanir.
@@ -336,6 +378,10 @@ export class World {
       items.push({ y: a.sortY(pb), draw: () => a.draw(ctx, this.sprites, now) })
     }
     items.push({ y: this.cat.pos.y, draw: () => this.cat.draw(ctx, this.sprites, now) })
+    if (this.cfg.board.legs) {
+      const b = this.cfg.board
+      items.push({ y: b.y + b.h + (b.legs ?? 0), draw: () => this.board.draw(ctx, now) })
+    }
     items.sort((p, q) => p.y - q.y)
     for (const it of items) it.draw()
 
@@ -420,6 +466,42 @@ export class World {
     this.bg = c
     this.bgKey = key
     return c
+  }
+
+  /** Kahve bari panosu: gunun ozeli, listeden sirayla; cafe.special ile sabitlenir. */
+  private drawCafeSpecial(ctx: CanvasRenderingContext2D, now: number): void {
+    const cafe = this.cfg.cafe
+    if (!cafe || !cafe.specials.length) return
+    const { x, y, w, h } = cafe.board
+    const interval = cafe.intervalMs ?? 20_000
+    const idx = Math.floor(now / interval) % cafe.specials.length
+    const text = this.specialOverride ?? cafe.specials[idx] ?? ''
+    // Gecis: ilk 400 ms'de sonuk.
+    const phase = (now % interval) / 400
+    const alpha = this.specialOverride ? 1 : Math.min(1, phase)
+    ctx.save()
+    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()
+    ctx.fillStyle = '#1d222c'
+    ctx.fillRect(x, y, w, h)
+    ctx.fillStyle = '#f0c26a'
+    ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillText('GÜNÜN ÖZELİ', x + 8, y + 15)
+    ctx.fillStyle = 'rgba(240,194,106,0.5)'
+    ctx.fillRect(x + 8, y + 19, w - 16, 1)
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = '#f7f1e3'
+    ctx.font = 'bold 13px "Segoe UI", system-ui, sans-serif'
+    ctx.fillText(text, x + 8, y + 40, w - 16)
+    // Kupa ve buhar
+    ctx.fillStyle = '#f7f1e3'
+    ctx.fillRect(x + w - 30, y + h - 24, 16, 12)
+    ctx.fillRect(x + w - 14, y + h - 21, 4, 6)
+    ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now / 500)
+    ctx.fillRect(x + w - 26, y + h - 32, 2, 5)
+    ctx.fillRect(x + w - 20, y + h - 34, 2, 6)
+    ctx.restore()
   }
 
   /** Onde kalan yapisal parcalar: giris sutunlari ve citler. */

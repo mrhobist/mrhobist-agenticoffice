@@ -99,6 +99,7 @@ const SCRIPT: Beat[] = [
   ] },
   { at: 27000, events: [
     { type: 'agent.leave', data: { agent: 'manager' } },
+    { type: 'cafe.special', data: { text: 'Sprint Latte ☕' } },
   ] },
   { at: 30000, events: [
     { type: 'meet', data: { from: 'organizer', to: 'developer', kind: 'handoff' } },
@@ -122,6 +123,7 @@ const SCRIPT: Beat[] = [
   ] },
   { at: 60000, events: [
     { type: 'agent.enter', data: { agent: 'manager' } },
+    { type: 'cafe.special', data: { text: null } },
   ] },
   { at: 63000, events: [
     { type: 'agent.state', data: { agent: 'developer', state: 'done' } },

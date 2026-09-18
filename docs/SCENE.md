@@ -81,9 +81,10 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `walkable` | yürünebilir dış dikdörtgen |
 | `floor`, `walls` | arka plan yoksa prosedürel zemin/duvar (V1 yolu, hâlâ çalışır) |
 | `props[]` | `sprite` (tileset adı ya da `@sofaSet`), `x y w [h]`, `layer`, `sortY` (masa üstü monitör için) |
-| `door`, `board` | kapı ve pano dikdörtgenleri |
+| `door`, `board` | kapı; sprint tahtası — `legs` verilirse ayaklı tahta olarak zeminde durur ve varlıklarla birlikte sıralanır, `angle` derece (çapraz) |
+| `cafe` | kahve barı panosu: `board` dikdörtgeni, `specials[]` sırayla döner (`intervalMs`), `cafe.special` olayıyla sabitlenir |
 | `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `monitor` → oturulunca açılan, kalkınca kapanan monitör prop'u (`props[].spriteOff`) |
-| `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing` |
+| `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing`. `capacity` (varsayılan 1): dolu durağa gelen `queue` noktasında durağa dönük bekler, boşalınca girer; ambient turlar dolu durağı seçmez |
 | `blocked[]` | yürünemez dikdörtgenler; yol bulma bunlardan ızgara kurar |
 | `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Sahne ajanı iş akışı rolünden fazla olabilir (`intern`, `devops` yalnız sahnede yaşar; olay almazlarsa ambient davranır) |
 | `cat` | yatak ve gezinti noktaları |
@@ -112,6 +113,7 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `door` | `state` | kapı; 6 s sonra kapanır |
 | `agent.leave` / `agent.enter` | `agent` | sağ üstteki kapıya yürür ve sahneden çıkar / kapıdan girip evine yürür. Dışarıdaki ajan çizilmez, ambient almaz, `meet` hedefi olamaz |
 | `clock.set` | `hour: 0-24 \| null` | pencere manzarasının saati; `null` gerçek yerel saat |
+| `cafe.special` | `text \| null` | kahve panosundaki günün özeli; `null` listeye döner |
 
 **Simülasyon çizimden bağımsızdır.** `requestAnimationFrame` sekme gizliyken durur; simülasyon
 200 ms'lik `setInterval` ile sabit adımlarla (50 ms, en çok 5 s telafi) ayrıca ilerletilir. Sekme

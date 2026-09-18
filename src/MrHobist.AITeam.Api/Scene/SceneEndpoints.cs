@@ -25,6 +25,7 @@ public static class SceneEndpoints
         "agent.leave",   // { agent }  kapiya yurur, disari cikar (sahneden kaybolur)
         "agent.enter",   // { agent }  kapidan girer, evine yurur
         "clock.set",     // { hour: 0-24 | null }  pencere manzarasi; null = gercek saat
+        "cafe.special",  // { text: string | null }  kahve bari panosu; null = liste doner
     };
 
     public static IEndpointRouteBuilder MapScene(this IEndpointRouteBuilder app)

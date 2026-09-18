@@ -219,11 +219,14 @@
     "_comment": "Sag ust girinti: sol kenar pencere pervazi (1182), ust kenar duvar yuzu bandi (y 68), sag kenar dis duvar (1289), alt kenar bitki dibi (250). Giris/cikislar buradan."
   },
   "board": {
-    "x": 1060,
-    "y": 286,
-    "w": 190,
-    "h": 118,
-    "title": "SPRINT"
+    "x": 1075,
+    "y": 300,
+    "w": 170,
+    "h": 106,
+    "title": "SPRINT",
+    "angle": -9,
+    "legs": 46,
+    "_comment": "Ayakli tahta: zeminde durur, hafif capraz. angle derece, legs ayak yuksekligi (dunya px)."
   },
   "seats": {
     "deskA-left": {
@@ -273,16 +276,24 @@
       "x": 180,
       "y": 362,
       "look": {
-        "x": 180,
+        "x": 160,
         "y": 300
+      },
+      "queue": {
+        "x": 250,
+        "y": 380
       }
     },
     "board": {
-      "x": 1000,
-      "y": 420,
+      "x": 1040,
+      "y": 470,
       "look": {
-        "x": 1150,
-        "y": 350
+        "x": 1160,
+        "y": 380
+      },
+      "queue": {
+        "x": 990,
+        "y": 500
       }
     },
     "water": {
@@ -292,7 +303,11 @@
         "x": 58,
         "y": 760
       },
-      "_comment": "Sebilin altinda, sirt sol alttaki bitkiye donuk."
+      "_comment": "Sebilin altinda, sirt sol alttaki bitkiye donuk.",
+      "queue": {
+        "x": 130,
+        "y": 850
+      }
     },
     "sofa": {
       "x": 1130,
@@ -300,6 +315,10 @@
       "look": {
         "x": 1130,
         "y": 600
+      },
+      "queue": {
+        "x": 1060,
+        "y": 800
       }
     },
     "meeting": {
@@ -339,6 +358,10 @@
       "look": {
         "x": 900,
         "y": 150
+      },
+      "queue": {
+        "x": 960,
+        "y": 300
       }
     },
     "deskC": {
@@ -448,6 +471,12 @@
       344,
       337,
       152
+    ],
+    [
+      1070,
+      290,
+      180,
+      165
     ]
   ],
   "agents": [
@@ -548,5 +577,25 @@
         "y": 570
       }
     ]
+  },
+  "cafe": {
+    "board": {
+      "x": 90,
+      "y": 100,
+      "w": 140,
+      "h": 68
+    },
+    "specials": [
+      "Filtre Kahve",
+      "Türk Kahvesi",
+      "Latte",
+      "Cortado",
+      "Sıcak Çikolata",
+      "Flat White",
+      "Chai Latte",
+      "Americano"
+    ],
+    "intervalMs": 20000,
+    "_comment": "Kahve bari panosu: gunun ozeli. Liste sirayla doner; cafe.special olayi ile sabitlenir."
   }
 }

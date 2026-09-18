@@ -19,7 +19,7 @@ export class Board {
   private anim = new Map<string, { fromCol: number; fromRow: number; t: number }>()
   private lastCol = new Map<string, number>()
 
-  constructor(readonly rect: { x: number; y: number; w: number; h: number; title: string }) {}
+  constructor(readonly rect: { x: number; y: number; w: number; h: number; title: string; angle?: number; legs?: number }) {}
 
   setWorkflow(wf: WorkflowConfig): void {
     const stages = wf.stages.filter(s => s.kind !== 'handoff')
@@ -68,11 +68,34 @@ export class Board {
     return this.tasks.filter(x => this.colIndex(x) === col).indexOf(t)
   }
 
+  /** Ayakli tahta: ayaklar + hafif donme; zeminde bir nesne gibi durur. */
   draw(ctx: CanvasRenderingContext2D, now: number): void {
     const { x, y, w, h, title } = this.rect
-    // Cerceve
-    ctx.fillStyle = '#2b323f'
-    ctx.fillRect(x - 4, y - 4, w + 8, h + 8)
+    const legs = this.rect.legs ?? 0
+    const angle = ((this.rect.angle ?? 0) * Math.PI) / 180
+    ctx.save()
+    ctx.translate(x + w / 2, y + h + legs)
+    ctx.rotate(angle)
+    ctx.translate(-(x + w / 2), -(y + h + legs))
+    if (legs) {
+      // Golge, ayaklar, ara cita
+      ctx.fillStyle = 'rgba(30,30,40,0.22)'
+      ctx.beginPath(); ctx.ellipse(x + w / 2, y + h + legs, w * 0.5, 6, 0, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = '#6b4a2b'
+      ctx.lineWidth = 5
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(x + 8, y + h - 6); ctx.lineTo(x - 2, y + h + legs)
+      ctx.moveTo(x + w - 8, y + h - 6); ctx.lineTo(x + w + 2, y + h + legs)
+      ctx.stroke()
+      ctx.lineWidth = 3
+      ctx.beginPath(); ctx.moveTo(x + 3, y + h + legs * 0.55); ctx.lineTo(x + w - 3, y + h + legs * 0.55); ctx.stroke()
+    }
+    // Cerceve (ahsap)
+    ctx.fillStyle = legs ? '#7a5533' : '#2b323f'
+    ctx.fillRect(x - 5, y - 5, w + 10, h + 10)
+    ctx.fillStyle = legs ? '#a3764a' : '#2b323f'
+    ctx.fillRect(x - 5, y - 5, w + 10, 3)
     ctx.fillStyle = '#e9e6dc'
     ctx.fillRect(x, y, w, h)
     ctx.fillStyle = '#cfcabb'
@@ -84,7 +107,7 @@ export class Board {
     ctx.fillStyle = '#2a2f3d'
     ctx.fillText(title, x + 10, y + 19)
 
-    if (!this.columns.length) return
+    if (!this.columns.length) { ctx.restore(); return }
     const pad = 8
     const gap = 5
     const top = y + 28
@@ -144,6 +167,7 @@ export class Board {
         ctx.setLineDash([])
       }
     }
+    ctx.restore()
   }
 
   private drawNote(

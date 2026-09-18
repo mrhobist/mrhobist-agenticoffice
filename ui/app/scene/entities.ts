@@ -5,13 +5,16 @@ import type { NavGrid } from './nav'
 
 /** Sirali eylem kuyrugu: yonetmen (director) bunlari ekler, update tuketir. */
 export type Action =
-  | { t: 'walk'; to: Pt }
+  /** Hedef, eylem basladiginda cozulur (durak dolu mu bosta mi o anda belli olur). */
+  | { t: 'walk'; to: Pt | (() => Pt) }
   | { t: 'wait'; ms: number }
   | { t: 'face'; dir: Facing }
   | { t: 'say'; kind: BubbleKind; ms: number; text?: string }
   | { t: 'sit'; seat: SeatDef }
   | { t: 'stand' }
   | { t: 'call'; fn: () => void }
+  /** Kosul saglanana (ya da sure dolana) kadar bekle: dolu durak bosalsin. */
+  | { t: 'until'; pred: () => boolean; timeoutMs: number }
 
 const WALK_SPEED = 96 // dunya px / s
 const WALK_FPS = 9
@@ -50,6 +53,8 @@ export class Agent {
   target: Pt | null = null
   /** Kapidan cikti: cizilmez, ambient almaz. */
   offstage = false
+  /** Su an tuttugu/hedefledigi durak (kapasite sayimi icin). */
+  spot: string | null = null
 
   private path: Pt[] = []
   private walkT = 0
@@ -76,6 +81,7 @@ export class Agent {
 
   /** Bir komut icin kuyrugu sifirla (ambient dahil) ve yeni eylemleri koy. */
   command(actions: Action[], now: number): void {
+    this.spot = null
     this.queue = actions
     this.current = null
     this.path = []
@@ -85,6 +91,7 @@ export class Agent {
   }
 
   enqueueAmbient(actions: Action[], now: number): void {
+    this.spot = null
     this.queue = actions
     this.current = null
     this.ambient = true
@@ -124,6 +131,9 @@ export class Agent {
       case 'say':
         if (now >= this.waitUntil) this.finish()
         break
+      case 'until':
+        if (a.pred() || now >= this.waitUntil) this.finish()
+        break
       default:
         this.finish()
     }
@@ -137,12 +147,18 @@ export class Agent {
           this.pos = nav.nearestOpen(this.seated)
           this.seated = null
         }
-        this.path = nav.path(this.pos, a.to)
-        this.target = a.to
-        this.walkT = 0
+        {
+          const to = typeof a.to === 'function' ? a.to() : a.to
+          this.path = nav.path(this.pos, to)
+          this.target = to
+          this.walkT = 0
+        }
         break
       case 'wait':
         this.waitUntil = now + a.ms
+        break
+      case 'until':
+        this.waitUntil = now + a.timeoutMs
         break
       case 'say':
         this.bubble = { kind: a.kind, until: now + a.ms, text: a.text }

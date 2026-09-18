@@ -8,7 +8,13 @@ export type Facing = 'up' | 'down' | 'left' | 'right' | 'upleft' | 'upright' | '
 
 export interface Pt { x: number; y: number }
 /** Durak. `look` verilirse varan ajan ORAYA bakar (durdugu noktaya gore hesaplanir); yoksa `facing`. */
-export interface SpotDef extends Pt { facing?: Facing; look?: Pt }
+export interface SpotDef extends Pt {
+  facing?: Facing
+  look?: Pt
+  /** Ayni anda kac kisi (varsayilan 1). Dolu ise gelen `queue` noktasinda bekler. */
+  capacity?: number
+  queue?: Pt
+}
 /** Oturulabilir yer. `prop` verilirse oturan, o prop'un hemen ardina cizilir; yoksa ayaklarina gore siralanir. */
 export interface SeatDef extends Pt { facing: Facing; prop?: string; /** Oturulunca acilan monitor prop id'si. */ monitor?: string }
 
@@ -61,7 +67,10 @@ export interface SceneConfig {
   props: PropDef[]
   /** Kapi: `w` verilirse o genislige esnetilir (duvar bosluğunu tam doldurmak icin). */
   door?: { x: number; y: number; h: number; w?: number }
-  board: { x: number; y: number; w: number; h: number; title: string }
+  /** Sprint tahtasi. `legs` verilirse ayakli tahta olarak zeminde durur; `angle` derece (capraz). */
+  board: { x: number; y: number; w: number; h: number; title: string; angle?: number; legs?: number }
+  /** Kahve bari panosu: gunun ozeli. */
+  cafe?: { board: { x: number; y: number; w: number; h: number }; specials: string[]; intervalMs?: number }
   seats: Record<string, SeatDef>
   spots: Record<string, SpotDef>
   blocked: [number, number, number, number][]
@@ -114,11 +123,12 @@ export type SceneEvent =
   | { type: 'agent.leave'; data: { agent: string } }
   | { type: 'agent.enter'; data: { agent: string } }
   | { type: 'clock.set'; data: { hour: number | null } }
+  | { type: 'cafe.special'; data: { text: string | null } }
 
 export const EVENT_TYPES: ReadonlyArray<SceneEvent['type']> = [
   'agent.state', 'agent.say', 'agent.goto', 'agent.home', 'meet',
   'board.set', 'board.move', 'run.stage', 'cat', 'door',
-  'agent.leave', 'agent.enter', 'clock.set',
+  'agent.leave', 'agent.enter', 'clock.set', 'cafe.special',
 ]
 
 export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'mock'
