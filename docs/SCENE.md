@@ -90,6 +90,10 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 `object` katmanı varlıklarla birlikte **alt kenara göre** sıralanır; oturan ajan, masasının
 hemen ardına çizilir.
 
+**Yeni masa eklemek** arka plan görselini gerektirmez: `props[]`'a `desk-wide` (+ `monitor-*`,
+`spriteOff`), `seats`'e koltuk (`monitor` ile), `blocked`'a masanın dikdörtgeni eklenir; bir ajanı
+oturtmak için `agents[].home.seat` o koltuğa çevrilir. Üçüncü ada (`deskC-*`) böyle eklendi.
+
 ## Olaylar
 
 SSE `event:` adı = tür, `data:` = JSON. Api `EventTypes` kümesinde olmayan türü **400** ile
