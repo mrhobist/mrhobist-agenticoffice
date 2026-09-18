@@ -75,7 +75,7 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 
 | Alan | Anlamı |
 |---|---|
-| `background` | arka plan görseli (atlas `background`); verilirse `floor`/`walls` çizilmez |
+| `background` | arka plan görseli (atlas `background`); verilirse `floor`/`walls` çizilmez. `erase: [x,y,w,h,dx,dy]` — build adımında bu dikdörtgen `(dx,dy)` ötelenmiş temiz zemin kopyasıyla kaplanır (arka plana gömülü masalar böyle silindi; yerlerine `props` masaları geldi) |
 | `overlays[]` | arka plandan kesilip varlıkların **önüne** çizilen dikdörtgenler (cam duvar önü) |
 | `walkable` | yürünebilir dış dikdörtgen |
 | `floor`, `walls` | arka plan yoksa prosedürel zemin/duvar (V1 yolu, hâlâ çalışır) |
@@ -92,7 +92,7 @@ hemen ardına çizilir.
 
 **Yeni masa eklemek** arka plan görselini gerektirmez: `props[]`'a `desk-wide` (+ `monitor-*`,
 `spriteOff`), `seats`'e koltuk (`monitor` ile), `blocked`'a masanın dikdörtgeni eklenir; bir ajanı
-oturtmak için `agents[].home.seat` o koltuğa çevrilir. Üçüncü ada (`deskC-*`) böyle eklendi.
+oturtmak için `agents[].home.seat` o koltuğa çevrilir. Üçüncü ada (`deskC-*`) böyle eklendi; arka plandaki A/B masaları da `background.erase` ile silinip aynı sprite'la yeniden kuruldu, böylece altı masa tek stilde.
 
 ## Olaylar
 

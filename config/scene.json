@@ -5,7 +5,26 @@
     "h": 1218
   },
   "background": {
-    "image": "background.png"
+    "image": "background.png",
+    "erase": [
+      [
+        240,
+        462,
+        350,
+        182,
+        0,
+        240
+      ],
+      [
+        644,
+        332,
+        280,
+        176,
+        0,
+        240
+      ]
+    ],
+    "_comment": "erase: [x,y,w,h,dx,dy] — build-sprites bu dikdortgenleri (dx,dy) kadar otelenmis temiz zemin kopyasiyla kaplar; arka plandaki eski masalar boyle silinir, yerlerine props masalari gelir."
   },
   "window": {
     "x": 610,
@@ -29,55 +48,6 @@
     ]
   ],
   "props": [
-    {
-      "id": "monA1",
-      "sprite": "monitor-a",
-      "x": 300,
-      "y": 476,
-      "w": 58,
-      "layer": "object",
-      "sortY": 480,
-      "spriteOff": "monitor-off"
-    },
-    {
-      "id": "monA2",
-      "sprite": "monitor-b",
-      "x": 470,
-      "y": 476,
-      "w": 62,
-      "layer": "object",
-      "sortY": 480,
-      "spriteOff": "monitor-off"
-    },
-    {
-      "id": "monB1",
-      "sprite": "monitor-a",
-      "x": 692,
-      "y": 346,
-      "w": 54,
-      "layer": "object",
-      "sortY": 350,
-      "spriteOff": "monitor-off"
-    },
-    {
-      "id": "monB2",
-      "sprite": "monitor-a",
-      "x": 826,
-      "y": 348,
-      "w": 48,
-      "layer": "object",
-      "sortY": 350,
-      "spriteOff": "monitor-off"
-    },
-    {
-      "id": "mugA",
-      "sprite": "mug-white",
-      "x": 545,
-      "y": 540,
-      "w": 18,
-      "layer": "object",
-      "sortY": 545
-    },
     {
       "id": "laptopM",
       "sprite": "laptop",
@@ -104,26 +74,6 @@
       "layer": "object"
     },
     {
-      "id": "monC1",
-      "sprite": "monitor-a",
-      "spriteOff": "monitor-off",
-      "x": 708,
-      "y": 646,
-      "w": 58,
-      "layer": "object",
-      "sortY": 790
-    },
-    {
-      "id": "monC2",
-      "sprite": "monitor-b",
-      "spriteOff": "monitor-off",
-      "x": 872,
-      "y": 646,
-      "w": 62,
-      "layer": "object",
-      "sortY": 790
-    },
-    {
       "id": "plantC",
       "sprite": "plant-b",
       "x": 662,
@@ -131,6 +81,114 @@
       "w": 34,
       "layer": "object",
       "sortY": 790
+    },
+    {
+      "id": "deskA1",
+      "sprite": "desk-wide",
+      "x": 247,
+      "y": 478,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "deskA2",
+      "sprite": "desk-wide",
+      "x": 415,
+      "y": 478,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "monA1",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 300,
+      "y": 484,
+      "w": 58,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "monA2",
+      "sprite": "monitor-b",
+      "spriteOff": "monitor-off",
+      "x": 466,
+      "y": 484,
+      "w": 62,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "plantA",
+      "sprite": "plant-b",
+      "x": 256,
+      "y": 506,
+      "w": 34,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "booksA",
+      "sprite": "books-green",
+      "x": 540,
+      "y": 518,
+      "w": 36,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "mugA",
+      "sprite": "mug-white",
+      "x": 420,
+      "y": 540,
+      "w": 16,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "deskB1",
+      "sprite": "desk-wide",
+      "x": 652,
+      "y": 348,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "deskB2",
+      "sprite": "desk-wide",
+      "x": 820,
+      "y": 348,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "monB1",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 706,
+      "y": 354,
+      "w": 58,
+      "layer": "object",
+      "sortY": 498
+    },
+    {
+      "id": "monB2",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 872,
+      "y": 354,
+      "w": 58,
+      "layer": "object",
+      "sortY": 498
+    },
+    {
+      "id": "plantB",
+      "sprite": "plant-b",
+      "x": 660,
+      "y": 376,
+      "w": 34,
+      "layer": "object",
+      "sortY": 498
     }
   ],
   "door": {
@@ -281,18 +339,6 @@
       250
     ],
     [
-      245,
-      468,
-      337,
-      172
-    ],
-    [
-      648,
-      338,
-      270,
-      166
-    ],
-    [
       1012,
       512,
       246,
@@ -368,6 +414,18 @@
       650,
       636,
       340,
+      152
+    ],
+    [
+      245,
+      474,
+      337,
+      152
+    ],
+    [
+      650,
+      344,
+      337,
       152
     ]
   ],

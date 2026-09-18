@@ -454,6 +454,18 @@ def build_character_v2(key: str, file: str) -> dict:
     return {"walk": walk, "sit": sit, "type": typ}
 
 
+def erase_regions(bg: Image.Image) -> Image.Image:
+    """Cover baked-in furniture with clean floor copied from an offset donor rect
+    (config/scene.json background.erase: [x, y, w, h, dx, dy]). Props then take its place."""
+    cfg = json.loads((ROOT / "config" / "scene.json").read_text(encoding="utf-8"))
+    rects = (cfg.get("background") or {}).get("erase") or []
+    out = bg.convert("RGBA").copy()
+    for x, y, w, h, dx, dy in rects:
+        donor = out.crop((x + dx, y + dy, x + dx + w, y + dy + h))
+        out.paste(donor, (x, y))
+    return out
+
+
 def key_window_glass(bg: Image.Image) -> Image.Image:
     """Make the window glass transparent inside config/scene.json `window` so the UI can
     draw a time-of-day sky behind it. Mullions (dark) and plants (green) are untouched."""
@@ -501,7 +513,7 @@ def main() -> int:
 
     # Background (V2 "Ana Sahne"): opaque, copied as-is; the layout in config/scene.json
     # references it and only adds what it lacks (chairs come with the seated frames).
-    bgimg = key_window_glass(load("background.png"))
+    bgimg = key_window_glass(erase_regions(load("background.png")))
     bgimg.save(OUT / "background.png", optimize=True)
     atlas["background"] = {"image": "background.png", "w": bgimg.width, "h": bgimg.height}
 
