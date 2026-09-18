@@ -127,7 +127,9 @@ biter; varınca yatağa kayılır (`snapTo`). Uyku 60–150 s, gezinti kısa; ko
 durduğu ya da hedeflediği noktaya 26 px'den yakınsa 28/52/76 px halkalarda boş bir açık hücre
 aranır. Konuşmaya gelen, oturanın yanına durur.
 
-Arka uçtan gelen komut, ajanın **ambient** kuyruğunu (kahve, su, pano, arkadaşa uğrama) keser.
+Arka uçtan gelen komut, ajanın **ambient** kuyruğunu (kahve, su, pano, pencere, arkadaşa uğrama,
+**dışarı çıkma**) keser. Dışarı çıkan ajan kapıdan çıkar, 20–50 s sonra kapıdan girip evine döner
+(`returnAt`); aynı anda en fazla bir kişi dışarıdadır. `agent.leave` ile çıkan kendi dönmez.
 Ambient davranış yalnız `idle`/`done` ajanlarda ve aynı anda en fazla iki kişide çalışır.
 
 Deneme:

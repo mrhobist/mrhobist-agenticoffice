@@ -55,6 +55,8 @@ export class Agent {
   offstage = false
   /** Su an tuttugu/hedefledigi durak (kapasite sayimi icin). */
   spot: string | null = null
+  /** Ambient disari cikista donus zamani; arka uc komutuyla cikanda null (kendi donmez). */
+  returnAt: number | null = null
 
   private path: Pt[] = []
   private walkT = 0

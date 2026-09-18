@@ -138,7 +138,7 @@ export class World {
           { t: 'call', fn: () => this.door.set('open', performance.now()) },
           { t: 'face', dir: 'up' },
           { t: 'wait', ms: 500 },
-          { t: 'call', fn: () => { a.offstage = true; this.door.set('half', performance.now()) } },
+          { t: 'call', fn: () => { a.offstage = true; a.returnAt = null; this.door.set('half', performance.now()) } },
         ], now)
         break
       }
@@ -147,6 +147,7 @@ export class World {
         const d = this.cfg.spots['door']
         if (!a || !d) return
         a.offstage = false
+        a.returnAt = null
         a.seated = null
         a.pos = { x: d.x, y: d.y }
         a.facing = 'down'
@@ -280,6 +281,23 @@ export class World {
     this.door.update(now)
     this.board.update(dt)
     this.ambient(now)
+    this.returns(now)
+  }
+
+  /** Ambient cikista olan ajanlar zamani gelince kapidan girer ve evine yurur. */
+  private returns(now: number): void {
+    const d = this.cfg.spots['door']
+    if (!d) return
+    for (const a of this.agents.values()) {
+      if (!a.offstage || a.returnAt === null || now < a.returnAt) continue
+      a.offstage = false
+      a.returnAt = null
+      a.seated = null
+      a.pos = { x: d.x, y: d.y }
+      a.facing = 'down'
+      this.door.set('open', now)
+      a.enqueueAmbient([{ t: 'wait', ms: 400 }, ...this.goHome(a)], now)
+    }
   }
 
   /**
@@ -308,7 +326,22 @@ export class World {
       ]
     }
     let actions: Action[]
-    if (r < 0.35) actions = trip('coffee', 4000 + Math.random() * 4000)
+    const someoneOut = [...this.agents.values()].some(o => o.offstage)
+    if (r < 0.12 && !someoneOut && this.cfg.spots['door']) {
+      // Disari cik: kapiya yuru, cik, 20-50 s sonra kapidan don.
+      const d = this.cfg.spots['door']
+      actions = [
+        { t: 'walk', to: this.freeNear(d, a) },
+        { t: 'face', dir: 'up' },
+        { t: 'call', fn: () => this.door.set('open', performance.now()) },
+        { t: 'wait', ms: 450 },
+        { t: 'call', fn: () => {
+          a.offstage = true
+          a.returnAt = performance.now() + 20_000 + Math.random() * 30_000
+          this.door.set('half', performance.now())
+        } },
+      ]
+    } else if (r < 0.4) actions = trip('coffee', 4000 + Math.random() * 4000)
     else if (r < 0.5) actions = trip('water', 3000 + Math.random() * 2000)
     else if (r < 0.65) actions = trip('board', 4000 + Math.random() * 3000)
     else if (r < 0.75) actions = trip('window', 5000 + Math.random() * 3000)

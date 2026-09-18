@@ -229,14 +229,14 @@
     "_comment": "Sag ust girinti: sol kenar pencere pervazi (1182), ust kenar duvar yuzu bandi (y 68), sag kenar dis duvar (1289), alt kenar bitki dibi (250). Giris/cikislar buradan."
   },
   "board": {
-    "x": 1092,
+    "x": 1054,
     "y": 296,
     "w": 170,
     "h": 106,
     "title": "SPRINT",
-    "angle": -14,
+    "angle": 14,
     "legs": 46,
-    "_comment": "Ayakli tahta: sag duvara dayali, arkasi duvara donuk capraz (angle -14: sag ucu geride)."
+    "_comment": "Ayakli tahta, sag duvara dayali capraz: SPRINT'in S ucu duvara yakin ve geride (angle +14), Bitti ucu odaya donuk onde."
   },
   "seats": {
     "deskA-left": {
@@ -295,14 +295,14 @@
       }
     },
     "board": {
-      "x": 1040,
+      "x": 1010,
       "y": 470,
       "look": {
-        "x": 1160,
+        "x": 1140,
         "y": 380
       },
       "queue": {
-        "x": 990,
+        "x": 960,
         "y": 500
       }
     },
@@ -340,12 +340,13 @@
       }
     },
     "door": {
-      "x": 1238,
-      "y": 292,
+      "x": 1236,
+      "y": 276,
       "look": {
-        "x": 1238,
+        "x": 1236,
         "y": 200
-      }
+      },
+      "_comment": "Kapinin hemen alti; tahtanin engel alaninin (y 300+) ustunde kalir."
     },
     "entrance": {
       "x": 650,
@@ -483,10 +484,10 @@
       152
     ],
     [
-      1085,
-      286,
-      178,
-      168
+      1050,
+      300,
+      212,
+      156
     ]
   ],
   "agents": [
