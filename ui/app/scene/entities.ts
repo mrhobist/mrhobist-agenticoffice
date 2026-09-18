@@ -46,6 +46,10 @@ export class Agent {
   /** Bu zamandan once ambient davranis baslamaz. */
   ambientReadyAt = 0
   lastCommandAt = 0
+  /** Yuruyus hedefi (baskalari ayni noktaya gitmesin diye dunya bunu okur). */
+  target: Pt | null = null
+  /** Kapidan cikti: cizilmez, ambient almaz. */
+  offstage = false
 
   private path: Pt[] = []
   private walkT = 0
@@ -134,6 +138,7 @@ export class Agent {
           this.seated = null
         }
         this.path = nav.path(this.pos, a.to)
+        this.target = a.to
         this.walkT = 0
         break
       case 'wait':
@@ -165,6 +170,7 @@ export class Agent {
   }
 
   private finish(): void {
+    if (this.current?.t === 'walk') this.target = null
     this.current = null
     if (!this.queue.length) this.ambient = false
   }
@@ -174,6 +180,7 @@ export class Agent {
   }
 
   draw(ctx: CanvasRenderingContext2D, sprites: Sprites, now: number): void {
+    if (this.offstage) return
     if (this.seated) {
       this.drawSeated(ctx, sprites, now)
     } else {
@@ -224,7 +231,7 @@ export class Agent {
   }
 
   drawBubble(ctx: CanvasRenderingContext2D, sprites: Sprites, now: number): void {
-    if (!this.bubble) return
+    if (!this.bubble || this.offstage) return
     const meta = sprites.atlas.fx.bubble
     const x = this.pos.x + 20
     const y = this.headY() - 2
@@ -359,10 +366,10 @@ export class Door {
     if (this.autoCloseAt && now > this.autoCloseAt) { this.state = 'closed'; this.autoCloseAt = 0 }
   }
 
-  draw(ctx: CanvasRenderingContext2D, sprites: Sprites, x: number, y: number, h: number): void {
+  draw(ctx: CanvasRenderingContext2D, sprites: Sprites, x: number, y: number, h: number, w?: number): void {
     const meta = sprites.atlas.fx.door
     const col = this.state === 'closed' ? 0 : this.state === 'half' ? 1 : 2
-    const scale = (h * sprites.worldScale) / meta.frameH
-    sprites.drawFrame(ctx, meta, col, 0, x + (meta.frameW / sprites.worldScale) * scale / 2, y + h, { scale })
+    const dw = w ?? (meta.frameW / sprites.worldScale) * (h * sprites.worldScale / meta.frameH)
+    ctx.drawImage(sprites.img(meta.image), col * meta.frameW, 0, meta.frameW, meta.frameH, x, y, dw, h)
   }
 }

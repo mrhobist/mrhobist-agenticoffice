@@ -49,7 +49,7 @@ döngüsü oynar, ziyaretçi gelince yüzünü döner (ön kareler).
 | Kanepede oturma (yandan otur karesi var ama kanepe arka planda) | ajan kanepe önünde ayakta durur |
 | Boşta nefes / el hareketi | yürüyüşün ilk karesi |
 | Kedinin yan oturuşu, esneme | ön oturuş + uzanma |
-| Kapı arka planda yok | V1 kapı sprite'ı sol duvar girintisine konur |
+| Kapı arka planda yok | V1 kapı sprite'ı sağ üstte, pencere ile sağ duvar arasındaki duvar parçasını dolduracak şekilde esnetilir (`door.w`) |
 | Arka plan penceresi gri; gün/gece varyantı yok | — |
 
 Katalog çıkarımı otomatiktir ama **kaynak resimler AI üretimi**dir: bir panelde kareler
@@ -105,6 +105,12 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `run.stage` | `stage, task, round` | üst şerit |
 | `cat` | `action: sleep/wander/sit, spot?` | kedi |
 | `door` | `state` | kapı; 6 s sonra kapanır |
+| `agent.leave` / `agent.enter` | `agent` | sağ üstteki kapıya yürür ve sahneden çıkar / kapıdan girip evine yürür. Dışarıdaki ajan çizilmez, ambient almaz, `meet` hedefi olamaz |
+| `clock.set` | `hour: 0-24 \| null` | pencere manzarasının saati; `null` gerçek yerel saat |
+
+**Aynı noktada iki kişi durmaz.** Her yürüyüş hedefi `freeNear` ile seçilir: başka bir ajanın
+durduğu ya da hedeflediği noktaya 26 px'den yakınsa 28/52/76 px halkalarda boş bir açık hücre
+aranır. Konuşmaya gelen, oturanın yanına durur.
 
 Arka uçtan gelen komut, ajanın **ambient** kuyruğunu (kahve, su, pano, arkadaşa uğrama) keser.
 Ambient davranış yalnız `idle`/`done` ajanlarda ve aynı anda en fazla iki kişide çalışır.
@@ -114,6 +120,15 @@ Deneme:
 ```bash
 curl -X POST http://127.0.0.1:5080/api/v1/scene/commands -H "content-type: application/json" -d "{\"type\":\"meet\",\"data\":{\"from\":\"tester\",\"to\":\"developer\",\"kind\":\"reject\"}}"
 ```
+
+## Pencere manzarası
+
+Arka planın cam bölgesi (`window`) `build-sprites.py` tarafından şeffaflaştırılır; UI her
+karede arka planın **altına** `ui/app/scene/sky.ts` ile saate göre gökyüzü çizer: gece / şafak /
+gündüz / gün batımı anahtar renkleri arasında karışım, güneş-ay yayı, iki katmanlı şehir
+silueti (gece pencereleri yanar), su yansıması. Saat varsayılan olarak tarayıcının yerel
+saatidir; `clock.set` ile sabitlenir (gösterim, test). Çerçeveler ve önündeki bitkiler arka
+planda kaldığı için dokunulmaz.
 
 ## Pano "ileriyi yansıtır"
 

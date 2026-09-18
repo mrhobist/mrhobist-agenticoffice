@@ -454,6 +454,24 @@ def build_character_v2(key: str, file: str) -> dict:
     return {"walk": walk, "sit": sit, "type": typ}
 
 
+def key_window_glass(bg: Image.Image) -> Image.Image:
+    """Make the window glass transparent inside config/scene.json `window` so the UI can
+    draw a time-of-day sky behind it. Mullions (dark) and plants (green) are untouched."""
+    cfg = json.loads((ROOT / "config" / "scene.json").read_text(encoding="utf-8"))
+    win = cfg.get("window")
+    if not win:
+        return bg
+    a = np.asarray(bg.convert("RGBA")).copy()
+    x0, y0, x1, y1 = win["x"], win["y"], win["x"] + win["w"], win["y"] + win["h"]
+    sub = a[y0:y1, x0:x1].astype(int)
+    r, g, b = sub[:, :, 0], sub[:, :, 1], sub[:, :, 2]
+    # Warm gray glass with reflection streaks: R > G > B, low saturation, mid-high value.
+    glass = (r - b >= 20) & (r - b <= 75) & (r >= g) & (g >= b) & (b >= 95) & (r <= 245)
+    sub[:, :, 3] = np.where(glass, 0, sub[:, :, 3])
+    a[y0:y1, x0:x1] = sub.astype(np.uint8)
+    return Image.fromarray(a, "RGBA")
+
+
 # --------------------------------------------------------------------------- #
 def load(name: str) -> Image.Image:
     return Image.open(RAW / name).convert("RGBA")
@@ -483,7 +501,7 @@ def main() -> int:
 
     # Background (V2 "Ana Sahne"): opaque, copied as-is; the layout in config/scene.json
     # references it and only adds what it lacks (chairs come with the seated frames).
-    bgimg = load("background.png")
+    bgimg = key_window_glass(load("background.png"))
     bgimg.save(OUT / "background.png", optimize=True)
     atlas["background"] = {"image": "background.png", "w": bgimg.width, "h": bgimg.height}
 

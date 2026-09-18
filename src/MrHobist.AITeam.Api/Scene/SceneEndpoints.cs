@@ -22,6 +22,9 @@ public static class SceneEndpoints
         "run.stage",     // { stage, task, round }
         "cat",           // { action: sleep|wander|sit, spot? }
         "door",          // { state: closed|half|open }
+        "agent.leave",   // { agent }  kapiya yurur, disari cikar (sahneden kaybolur)
+        "agent.enter",   // { agent }  kapidan girer, evine yurur
+        "clock.set",     // { hour: 0-24 | null }  pencere manzarasi; null = gercek saat
     };
 
     public static IEndpointRouteBuilder MapScene(this IEndpointRouteBuilder app)

@@ -3,6 +3,7 @@ import { Sprites } from './atlas'
 import { NavGrid } from './nav'
 import { Agent, Cat, Door, type Action } from './entities'
 import { Board } from './board'
+import { drawSky } from './sky'
 
 export interface Hud {
   stage: string
@@ -26,6 +27,8 @@ export class World {
   hud: Hud = { stage: '—', task: '—', round: 0 }
   onHud: ((h: Hud) => void) | null = null
   hovered: string | null = null
+  /** clock.set ile sabitlenen saat; null = gercek yerel saat. */
+  clockHour: number | null = null
 
   private bg: HTMLCanvasElement | null = null
   private bgKey = ''
@@ -96,7 +99,7 @@ export class World {
         const a = this.agents.get(e.data.agent)
         const s = this.cfg.spots[e.data.spot]
         if (!a || !s) return
-        a.command([{ t: 'walk', to: s }, ...(s.facing ? [{ t: 'face', dir: s.facing } as Action] : [])], now)
+        a.command([{ t: 'walk', to: this.freeNear(s, a) }, ...(s.facing ? [{ t: 'face', dir: s.facing } as Action] : [])], now)
         break
       }
       case 'agent.home': {
@@ -123,7 +126,61 @@ export class World {
       case 'door':
         this.door.set(e.data.state, now)
         break
+      case 'agent.leave': {
+        const a = this.agents.get(e.data.agent)
+        const d = this.cfg.spots['door']
+        if (!a || !d || a.offstage) return
+        a.command([
+          { t: 'walk', to: this.freeNear(d, a) },
+          { t: 'call', fn: () => this.door.set('open', performance.now()) },
+          { t: 'face', dir: 'up' },
+          { t: 'wait', ms: 500 },
+          { t: 'call', fn: () => { a.offstage = true; this.door.set('half', performance.now()) } },
+        ], now)
+        break
+      }
+      case 'agent.enter': {
+        const a = this.agents.get(e.data.agent)
+        const d = this.cfg.spots['door']
+        if (!a || !d) return
+        a.offstage = false
+        a.seated = null
+        a.pos = { x: d.x, y: d.y }
+        a.facing = 'down'
+        this.door.set('open', now)
+        a.command([{ t: 'wait', ms: 400 }, ...this.goHome(a)], now)
+        break
+      }
+      case 'clock.set':
+        this.clockHour = e.data.hour
+        break
     }
+  }
+
+  /** Saat (0-24, kesirli). Pencere manzarasi bunu okur. */
+  hourNow(): number {
+    if (this.clockHour !== null) return this.clockHour
+    const d = new Date()
+    return d.getHours() + d.getMinutes() / 60
+  }
+
+  /**
+   * Bir noktanin yakininda, baska bir ajanin durmadigi ve hedeflemedigi acik hucre.
+   * Iki kisi ayni durakta ust uste binmez; konusmaya gelen yanina durur.
+   */
+  freeNear(p: Pt, self: Agent): Pt {
+    const others = [...this.agents.values()].filter(o => o !== self && !o.offstage)
+    const taken = (q: Pt) => others.some(o =>
+      Math.hypot(o.pos.x - q.x, o.pos.y - q.y) < 26
+      || (o.target !== null && Math.hypot(o.target.x - q.x, o.target.y - q.y) < 26))
+    const offsets: Pt[] = [{ x: 0, y: 0 }]
+    const dirs: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [1, 1], [-1, 1], [0, -1], [1, -1], [-1, -1]]
+    for (const r of [28, 52, 76]) for (const [dx, dy] of dirs) offsets.push({ x: dx * r, y: dy * r * 0.7 })
+    for (const o of offsets) {
+      const q = { x: p.x + o.x, y: p.y + o.y }
+      if (this.nav.isOpenAt(q) && !taken(q)) return q
+    }
+    return this.nav.nearestOpen(p)
   }
 
   private homeOf(key: string): { pos: Pt; seat?: SeatDef; facing?: SeatDef['facing'] } {
@@ -145,15 +202,15 @@ export class World {
       const approach = this.nav.nearestOpen(home.seat)
       return [{ t: 'walk', to: approach }, { t: 'sit', seat: home.seat }]
     }
-    return [{ t: 'walk', to: home.pos }, ...(home.facing ? [{ t: 'face', dir: home.facing } as Action] : [])]
+    return [{ t: 'walk', to: this.freeNear(home.pos, a) }, ...(home.facing ? [{ t: 'face', dir: home.facing } as Action] : [])]
   }
 
   /** `from`, `to`'nun yanina yurur; konusurlar; `from` evine doner. */
   private meet(fromKey: string, toKey: string, kind: MeetKind, ms: number, now: number): void {
     const from = this.agents.get(fromKey)
     const to = this.agents.get(toKey)
-    if (!from || !to) return
-    const target = to.seated ? this.nav.nearestOpen(to.seated) : this.nav.nearestOpen({ x: to.pos.x + 40, y: to.pos.y + 10 })
+    if (!from || !to || to.offstage || from.offstage) return
+    const target = this.freeNear(to.seated ? this.nav.nearestOpen(to.seated) : { x: to.pos.x + 34, y: to.pos.y + 6 }, from)
     const fromKind = kind === 'ask' ? 'ask' : kind === 'reject' ? 'alert' : 'talk'
     const half = ms / 2
     from.command([
@@ -186,7 +243,7 @@ export class World {
     const away = [...this.agents.values()].filter(a => a.busy || (!a.seated && this.homeOf(a.key).seat)).length
     if (away >= 2) return
     const idle = [...this.agents.values()].filter(a =>
-      !a.busy && (a.state === 'idle' || a.state === 'done') && now > a.ambientReadyAt && now - a.lastCommandAt > 10_000)
+      !a.offstage && !a.busy && (a.state === 'idle' || a.state === 'done') && now > a.ambientReadyAt && now - a.lastCommandAt > 10_000)
     if (!idle.length) return
     const a = idle[Math.floor(Math.random() * idle.length)]!
     const r = Math.random()
@@ -195,7 +252,7 @@ export class World {
       const s = spots[spot]
       if (!s) return []
       return [
-        { t: 'walk', to: s },
+        { t: 'walk', to: this.freeNear(s, a) },
         ...(s.facing ? [{ t: 'face', dir: s.facing } as Action] : []),
         ...(talk ? [{ t: 'say', kind: 'talk', ms: Math.min(dwell, 3000) } as Action] : []),
         { t: 'wait', ms: dwell },
@@ -209,10 +266,10 @@ export class World {
     else if (r < 0.75) actions = trip('window', 5000 + Math.random() * 3000)
     else {
       // Bir arkadasa ugra: yerinde oturan birini sec.
-      const others = [...this.agents.values()].filter(o => o !== a && o.seated && !o.busy)
+      const others = [...this.agents.values()].filter(o => o !== a && o.seated && !o.busy && !o.offstage)
       const o = others[Math.floor(Math.random() * others.length)]
       if (!o) return
-      const target = this.nav.nearestOpen(o.seated!)
+      const target = this.freeNear(this.nav.nearestOpen(o.seated!), a)
       const ms = 3500 + Math.random() * 2500
       actions = [
         { t: 'walk', to: target },
@@ -232,10 +289,11 @@ export class World {
 
   draw(ctx: CanvasRenderingContext2D, scale: number, now: number): void {
     const { w, h } = this.cfg.world
+    if (this.cfg.window) drawSky(ctx, this.cfg.window, this.hourNow(), scale)
     ctx.drawImage(this.background(scale), 0, 0, w, h)
 
     this.board.draw(ctx, now)
-    if (this.cfg.door) this.door.draw(ctx, this.sprites, this.cfg.door.x, this.cfg.door.y, this.cfg.door.h)
+    if (this.cfg.door) this.door.draw(ctx, this.sprites, this.cfg.door.x, this.cfg.door.y, this.cfg.door.h, this.cfg.door.w)
 
     // Nesneler + varliklar alt kenara gore siralanir.
     type Item = { y: number; draw: () => void }
@@ -282,10 +340,8 @@ export class World {
     g.imageSmoothingEnabled = true
     g.imageSmoothingQuality = 'high'
 
-    g.fillStyle = '#1e222c'
-    g.fillRect(0, 0, w, h)
-
     if (this.cfg.background && this.sprites.atlas.background) {
+      // Arka plan gorseli: pencere cami seffaftir, altina gokyuzu her kare ayrica cizilir.
       g.drawImage(this.sprites.img(this.sprites.atlas.background.image), 0, 0, w, h)
       for (const p of this.props) {
         if (p.layer === 'floor' || p.layer === 'wall') this.sprites.drawObject(g, p.sprite, p.x, p.y, p.w, p.h)
@@ -295,6 +351,8 @@ export class World {
       return c
     }
 
+    g.fillStyle = '#1e222c'
+    g.fillRect(0, 0, w, h)
     if (!this.cfg.floor || !this.cfg.walls) throw new Error('scene.json: background yoksa floor ve walls zorunlu')
     // Zemin karolari
     const [fx, fy, fw, fh] = this.cfg.floor.rect

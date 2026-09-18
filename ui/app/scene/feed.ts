@@ -97,6 +97,9 @@ const SCRIPT: Beat[] = [
     { type: 'board.move', data: { task: 'T1', stage: 'devir-1', state: 'active' } },
     { type: 'run.stage', data: { stage: 'Devir', task: 'T1', round: 1 } },
   ] },
+  { at: 27000, events: [
+    { type: 'agent.leave', data: { agent: 'manager' } },
+  ] },
   { at: 30000, events: [
     { type: 'meet', data: { from: 'organizer', to: 'developer', kind: 'handoff' } },
     { type: 'board.move', data: { task: 'T1', stage: 'gelistirme', state: 'active' } },
@@ -116,6 +119,9 @@ const SCRIPT: Beat[] = [
   { at: 55000, events: [
     { type: 'agent.state', data: { agent: 'developer', state: 'working', note: 'tur 1/3' } },
     { type: 'board.move', data: { task: 'T1', stage: 'gelistirme', state: 'active' } },
+  ] },
+  { at: 60000, events: [
+    { type: 'agent.enter', data: { agent: 'manager' } },
   ] },
   { at: 63000, events: [
     { type: 'agent.state', data: { agent: 'developer', state: 'done' } },

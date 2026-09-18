@@ -41,6 +41,8 @@ export interface SceneConfig {
   background?: { image: string }
   /** Arka plandan kesilip varliklarin ONUNE cizilen dikdortgenler (cam duvar, masa onu). */
   overlays?: [number, number, number, number][]
+  /** Pencere cami: arka planda seffaftir, arkasina saate gore gokyuzu cizilir. */
+  window?: { x: number; y: number; w: number; h: number }
   floor?: { tiles: string[]; tileSize: number; rect: [number, number, number, number] }
   /** Yuruyus alani; floor yoksa bu zorunludur. */
   walkable: [number, number, number, number]
@@ -54,7 +56,8 @@ export interface SceneConfig {
     columns: [number, number, number, number][]
   }
   props: PropDef[]
-  door?: { x: number; y: number; h: number }
+  /** Kapi: `w` verilirse o genislige esnetilir (duvar bosluğunu tam doldurmak icin). */
+  door?: { x: number; y: number; h: number; w?: number }
   board: { x: number; y: number; w: number; h: number; title: string }
   seats: Record<string, SeatDef>
   spots: Record<string, SpotDef>
@@ -105,10 +108,14 @@ export type SceneEvent =
   | { type: 'run.stage'; data: { stage: string; task: string; round: number } }
   | { type: 'cat'; data: { action: CatAction; spot?: number } }
   | { type: 'door'; data: { state: DoorState } }
+  | { type: 'agent.leave'; data: { agent: string } }
+  | { type: 'agent.enter'; data: { agent: string } }
+  | { type: 'clock.set'; data: { hour: number | null } }
 
 export const EVENT_TYPES: ReadonlyArray<SceneEvent['type']> = [
   'agent.state', 'agent.say', 'agent.goto', 'agent.home', 'meet',
   'board.set', 'board.move', 'run.stage', 'cat', 'door',
+  'agent.leave', 'agent.enter', 'clock.set',
 ]
 
 export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'mock'
