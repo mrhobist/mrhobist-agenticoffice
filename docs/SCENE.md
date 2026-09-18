@@ -49,7 +49,7 @@ döngüsü oynar, ziyaretçi gelince yüzünü döner (ön kareler).
 | Kanepede oturma (yandan otur karesi var ama kanepe arka planda) | ajan kanepe önünde ayakta durur |
 | Boşta nefes / el hareketi | yürüyüşün ilk karesi |
 | Kedinin yan oturuşu, esneme | ön oturuş + uzanma |
-| Kapı arka planda yok | V1 kapı sprite'ı sağ üstte, pencere ile sağ duvar arasındaki duvar parçasını dolduracak şekilde esnetilir (`door.w`) |
+| Kapı arka planda yok | V1 kapı sprite'ı sağ üstteki zemin girintisine (pencere yanındaki bitkiden sağ duvara, y 90–250) `door.w`/`door.h` ile oturtulur |
 | Arka plan penceresi gri; gün/gece varyantı yok | — |
 
 Katalog çıkarımı otomatiktir ama **kaynak resimler AI üretimi**dir: bir panelde kareler

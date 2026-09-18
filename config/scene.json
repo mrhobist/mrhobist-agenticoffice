@@ -89,11 +89,11 @@
     }
   ],
   "door": {
-    "x": 1201,
-    "y": 0,
-    "w": 88,
-    "h": 90,
-    "_comment": "Sag ustteki koyu duvar blogu (x 1201-1288, y 0-65) + altindaki acik duvar yuzu (65-88) tamamen kapi. Zemin y 90'da baslar. Giris/cikislar buradan."
+    "x": 1190,
+    "y": 90,
+    "w": 99,
+    "h": 160,
+    "_comment": "Sag ust girinti: sol alt kosesi pencere yanindaki bitkide (1190,250), sag ust kosesi duvar blogunun altinda (1289,90). Giris/cikislar buradan."
   },
   "board": {
     "x": 985,
@@ -175,11 +175,11 @@
       }
     },
     "door": {
-      "x": 1244,
-      "y": 132,
+      "x": 1238,
+      "y": 292,
       "look": {
-        "x": 1244,
-        "y": 60
+        "x": 1238,
+        "y": 200
       }
     },
     "entrance": {
@@ -298,10 +298,10 @@
       196
     ],
     [
-      1201,
+      1186,
       0,
-      88,
-      92
+      104,
+      256
     ]
   ],
   "agents": [
