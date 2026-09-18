@@ -1,6 +1,15 @@
-import type { BoardTask, TaskState, WorkflowConfig } from './contract'
+import type { BoardTask, StageKind, TaskState, WorkflowConfig } from './contract'
 
-interface Column { id: string; title: string; hex: string }
+interface Column { id: string; title: string; hex: string; kind?: StageKind }
+
+/** Kucuk gorunum: klasik Kanban seritleri. Is akisi asamalari bunlara katlanir. */
+type Lane = 'todo' | 'doing' | 'review' | 'done'
+const LANES: Array<{ id: Lane; title: string; hex: string }> = [
+  { id: 'todo', title: 'Yapılacak', hex: '#f3c34a' },
+  { id: 'doing', title: 'Yapılıyor', hex: '#4fa3e0' },
+  { id: 'review', title: 'İnceleme', hex: '#ef6f9a' },
+  { id: 'done', title: 'Bitti', hex: '#7cc46b' },
+]
 
 const COLUMN_HEX = ['#f3c34a', '#4fa3e0', '#ef6f9a', '#a889e6', '#7cc46b', '#e0995c']
 const DONE_HEX = '#7cc46b'
@@ -23,7 +32,7 @@ export class Board {
 
   setWorkflow(wf: WorkflowConfig): void {
     const stages = wf.stages.filter(s => s.kind !== 'handoff')
-    this.columns = stages.map((s, i) => ({ id: s.id, title: s.title, hex: COLUMN_HEX[i % COLUMN_HEX.length]! }))
+    this.columns = stages.map((s, i) => ({ id: s.id, title: s.title, hex: COLUMN_HEX[i % COLUMN_HEX.length]!, kind: s.kind }))
     this.columns.push({ id: '__done', title: 'Bitti', hex: DONE_HEX })
   }
 
@@ -36,11 +45,11 @@ export class Board {
   move(id: string, stage: string, state: TaskState): void {
     const t = this.tasks.find(x => x.id === id)
     if (!t) { this.tasks.push({ id, title: id, stage, state }); return }
-    const fromCol = this.colIndex(t)
-    const fromRow = this.rowOf(t)
+    const fromLane = LANES.findIndex(l => l.id === this.laneOf(t))
+    const fromRow = this.tasks.filter(x => this.laneOf(x) === this.laneOf(t)).indexOf(t)
     t.stage = stage
     t.state = state
-    if (this.colIndex(t) !== fromCol) this.anim.set(id, { fromCol, fromRow, t: 0 })
+    if (LANES.findIndex(l => l.id === this.laneOf(t)) !== fromLane) this.anim.set(id, { fromCol: fromLane, fromRow, t: 0 })
   }
 
   update(dt: number): void {
@@ -61,6 +70,24 @@ export class Board {
   private isLastStage(stage: string): boolean {
     const real = this.columns.filter(c => c.id !== '__done')
     return real[real.length - 1]?.id === stage
+  }
+
+  /** Kanban seridi: ilk asamada sirada -> Yapilacak; review asamasi -> Inceleme; son asamada bitti -> Bitti; kalan -> Yapiliyor. */
+  laneOf(t: BoardTask): Lane {
+    const col = this.colIndex(t)
+    if (col === this.columns.length - 1) return 'done'
+    const c = this.columns[col]
+    if (c?.kind === 'review') return 'review'
+    if (t.state === 'queued' && col === 0) return 'todo'
+    return 'doing'
+  }
+
+  /** Buyuk gorunum icin anlik goruntu (Vue paneli okur). */
+  snapshot(): { columns: Array<{ id: string; title: string; hex: string }>; tasks: Array<BoardTask & { column: string; lane: Lane }> } {
+    return {
+      columns: this.columns.map(c => ({ id: c.id, title: c.title, hex: c.hex })),
+      tasks: this.tasks.map(t => ({ ...t, column: this.columns[this.colIndex(t)]?.id ?? '', lane: this.laneOf(t) })),
+    }
   }
 
   private rowOf(t: BoardTask): number {
@@ -111,7 +138,7 @@ export class Board {
     const pad = 8
     const gap = 5
     const top = y + 28
-    const colW = (w - pad * 2 - gap * (this.columns.length - 1)) / this.columns.length
+    const colW = (w - pad * 2 - gap * (LANES.length - 1)) / LANES.length
     const noteW = Math.min(22, colW - 8)
     const noteH = 17
     const perRow = Math.max(1, Math.floor((colW - 4) / (noteW + 3)))
@@ -122,11 +149,11 @@ export class Board {
       y: top + 24 + Math.floor(row / perRow) * (noteH + 4),
     })
 
-    // Sutun basliklari
+    // Serit basliklari
     ctx.font = 'bold 8px "Segoe UI", system-ui, sans-serif'
     ctx.textAlign = 'center'
-    for (let i = 0; i < this.columns.length; i++) {
-      const c = this.columns[i]!
+    for (let i = 0; i < LANES.length; i++) {
+      const c = LANES[i]!
       ctx.fillStyle = c.hex
       ctx.fillRect(colX(i), top, colW, 16)
       ctx.fillStyle = '#1f2430'
@@ -136,28 +163,29 @@ export class Board {
       ctx.beginPath()
       ctx.moveTo(colX(i) + colW + gap / 2, top)
       ctx.lineTo(colX(i) + colW + gap / 2, y + h - 6)
-      if (i < this.columns.length - 1) ctx.stroke()
+      if (i < LANES.length - 1) ctx.stroke()
     }
 
-    // Notlar
+    // Notlar (serit = lane; animasyon serit degisiminde)
+    const laneIdx = (t: BoardTask) => LANES.findIndex(l => l.id === this.laneOf(t))
     const rows = new Map<number, number>()
     for (const t of this.tasks) {
-      const col = this.colIndex(t)
-      this.lastCol.set(t.id, col)
+      const col = laneIdx(t)
+      this.lastCol.set(t.id, this.colIndex(t))
       const row = rows.get(col) ?? 0
       rows.set(col, row + 1)
       let p = notePos(col, row)
       const a = this.anim.get(t.id)
       if (a) {
-        const from = notePos(a.fromCol, a.fromRow)
+        const from = notePos(Math.min(a.fromCol, LANES.length - 1), a.fromRow)
         const e = 1 - (1 - a.t) ** 3
         p = { x: from.x + (p.x - from.x) * e, y: from.y + (p.y - from.y) * e - Math.sin(e * Math.PI) * 14 }
       }
-      const hex = this.columns[col]?.hex ?? '#ccc'
+      const hex = LANES[col]?.hex ?? '#ccc'
       this.drawNote(ctx, p.x, p.y, noteW, noteH, hex, t.state, now, t.id)
 
-      // Ileri: aktif gorevin bir sonraki sutununda hayalet not.
-      if (t.state === 'active' && col < this.columns.length - 1) {
+      // Ileri: aktif gorevin bir sonraki seridinde hayalet not.
+      if (t.state === 'active' && col < LANES.length - 1) {
         const nextRow = rows.get(col + 1) ?? 0
         const g = notePos(col + 1, nextRow)
         ctx.setLineDash([2, 2])

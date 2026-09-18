@@ -383,13 +383,14 @@ export class Cat {
 
 // --------------------------------------------------------------------------- //
 
+/** Iki kare: kapali / acik. Giren ya da cikan once acar, kisa sure sonra kapanir. */
 export class Door {
   state: DoorState = 'closed'
   private autoCloseAt = 0
 
   set(state: DoorState, now: number): void {
-    this.state = state
-    this.autoCloseAt = state === 'closed' ? 0 : now + 6000
+    this.state = state === 'closed' ? 'closed' : 'open'
+    this.autoCloseAt = this.state === 'closed' ? 0 : now + 1400
   }
 
   update(now: number): void {
@@ -398,7 +399,7 @@ export class Door {
 
   draw(ctx: CanvasRenderingContext2D, sprites: Sprites, x: number, y: number, h: number, w?: number): void {
     const meta = sprites.atlas.fx.door
-    const col = this.state === 'closed' ? 0 : this.state === 'half' ? 1 : 2
+    const col = this.state === 'closed' ? 0 : 2
     const dw = w ?? (meta.frameW / sprites.worldScale) * (h * sprites.worldScale / meta.frameH)
     ctx.drawImage(sprites.img(meta.image), col * meta.frameW, 0, meta.frameW, meta.frameH, x, y, dw, h)
   }

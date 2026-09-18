@@ -81,7 +81,7 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `walkable` | yürünebilir dış dikdörtgen |
 | `floor`, `walls` | arka plan yoksa prosedürel zemin/duvar (V1 yolu, hâlâ çalışır) |
 | `props[]` | `sprite` (tileset adı ya da `@sofaSet`), `x y w [h]`, `layer`, `sortY` (masa üstü monitör için) |
-| `door`, `board` | kapı; sprint tahtası — `legs` verilirse ayaklı tahta olarak zeminde durur ve varlıklarla birlikte sıralanır, `angle` derece (çapraz) |
+| `door`, `board` | kapı (iki kare: kapalı/açık; giren-çıkan açar, 1.4 s sonra kapanır); Kanban panosu — sahnede 4 şerit (Yapılacak / Yapılıyor / İnceleme / Bitti), iş akışı adımları bunlara katlanır; tıklanınca ya da `B` ile tüm adım sütunlarını ve görev adlarını gösteren büyük görünüm açılır (`legs`/`angle` isteğe bağlı) |
 | `cafe` | kahve barı panosu: `board` dikdörtgeni, `specials[]` sırayla döner (`intervalMs`), `cafe.special` olayıyla sabitlenir |
 | `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `monitor` → oturulunca açılan, kalkınca kapanan monitör prop'u (`props[].spriteOff`) |
 | `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing`. `capacity` (varsayılan 1): dolu durağa gelen `queue` noktasında durağa dönük bekler, boşalınca girer; ambient turlar dolu durağı seçmez |
@@ -149,7 +149,9 @@ planda kaldığı için dokunulmaz.
 
 ## Pano "ileriyi yansıtır"
 
-Sütunlar iş akışının devir dışı adımları + **Bitti**. Aktif görevin bir sonraki sütununda
+Büyük görünümde sütunlar iş akışının devir dışı adımları + **Bitti**; sahnedeki küçük Kanban
+bunları dört şeride katlar (ilk adımda sırada → Yapılacak, review adımları → İnceleme, son adımda
+bitti → Bitti, kalan → Yapılıyor). Aktif görevin bir sonraki sütununda
 kesikli bir hayalet not durur: pano yalnız şimdiyi değil işin nereye akacağını gösterir.
 `devir-*` adımındaki görev bir sonraki gerçek sütuna yazılır.
 

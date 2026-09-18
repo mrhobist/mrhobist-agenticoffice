@@ -229,14 +229,12 @@
     "_comment": "Sag ust girinti: sol kenar pencere pervazi (1182), ust kenar duvar yuzu bandi (y 68), sag kenar dis duvar (1289), alt kenar bitki dibi (250). Giris/cikislar buradan."
   },
   "board": {
-    "x": 1054,
-    "y": 296,
-    "w": 170,
-    "h": 106,
-    "title": "SPRINT",
-    "angle": 14,
-    "legs": 46,
-    "_comment": "Ayakli tahta, sag duvara dayali capraz: SPRINT'in S ucu duvara yakin ve geride (angle +14), Bitti ucu odaya donuk onde."
+    "x": 1028,
+    "y": 878,
+    "w": 224,
+    "h": 120,
+    "title": "KANBAN",
+    "_comment": "Sag alt, ayaksiz pano. Kucuk gorunum 4 serit (Yapilacak / Yapiliyor / Inceleme / Bitti); tiklaninca buyuk gorunum acilir (tum is akisi sutunlari, gorev adlari)."
   },
   "seats": {
     "deskA-left": {
@@ -295,15 +293,15 @@
       }
     },
     "board": {
-      "x": 1010,
-      "y": 470,
+      "x": 985,
+      "y": 960,
       "look": {
         "x": 1140,
-        "y": 380
+        "y": 940
       },
       "queue": {
-        "x": 960,
-        "y": 500
+        "x": 940,
+        "y": 990
       }
     },
     "water": {
@@ -341,12 +339,11 @@
     },
     "door": {
       "x": 1236,
-      "y": 276,
+      "y": 292,
       "look": {
         "x": 1236,
         "y": 200
-      },
-      "_comment": "Kapinin hemen alti; tahtanin engel alaninin (y 300+) ustunde kalir."
+      }
     },
     "entrance": {
       "x": 650,
@@ -484,10 +481,10 @@
       152
     ],
     [
-      1050,
-      300,
-      212,
-      156
+      1022,
+      872,
+      236,
+      132
     ]
   ],
   "agents": [

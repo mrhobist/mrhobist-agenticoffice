@@ -138,7 +138,7 @@ export class World {
           { t: 'call', fn: () => this.door.set('open', performance.now()) },
           { t: 'face', dir: 'up' },
           { t: 'wait', ms: 500 },
-          { t: 'call', fn: () => { a.offstage = true; a.returnAt = null; this.door.set('half', performance.now()) } },
+          { t: 'call', fn: () => { a.offstage = true; a.returnAt = null; this.door.set('closed', performance.now()) } },
         ], now)
         break
       }
@@ -338,7 +338,7 @@ export class World {
         { t: 'call', fn: () => {
           a.offstage = true
           a.returnAt = performance.now() + 20_000 + Math.random() * 30_000
-          this.door.set('half', performance.now())
+          this.door.set('closed', performance.now())
         } },
       ]
     } else if (r < 0.4) actions = trip('coffee', 4000 + Math.random() * 4000)
@@ -572,6 +572,12 @@ export class World {
       ctx.fillStyle = '#e8ecf5'
       ctx.fillText(text, x + 1, y + 0.5)
     }
+  }
+
+  /** Pano dikdortgeni icinde mi (tiklaninca buyuk gorunum). */
+  hitBoard(p: Pt): boolean {
+    const b = this.cfg.board
+    return p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6
   }
 
   /** Dunya noktasinda bir ajan var mi (tiklama/hover icin). */

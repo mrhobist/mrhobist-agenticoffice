@@ -20,6 +20,7 @@ const emit = defineEmits<{
   status: [s: FeedStatus]
   agents: [list: Array<{ key: string; name: string; state: string; note: string | null }>]
   select: [key: string | null]
+  board: [snapshot: ReturnType<World['board']['snapshot']>]
 }>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
@@ -62,16 +63,25 @@ function toWorld(ev: MouseEvent) {
 
 function onMove(ev: MouseEvent) {
   if (!world) return
-  const a = world.pick(toWorld(ev))
+  const p = toWorld(ev)
+  const a = world.pick(p)
   hoverKey.value = a?.key ?? null
   world.hovered = hoverKey.value
-  cv.value!.style.cursor = a ? 'pointer' : 'default'
+  cv.value!.style.cursor = a || world.hitBoard(p) ? 'pointer' : 'default'
 }
 
 function onClick(ev: MouseEvent) {
   if (!world) return
-  emit('select', world.pick(toWorld(ev))?.key ?? null)
+  const p = toWorld(ev)
+  if (world.hitBoard(p)) { emit('board', world.board.snapshot()); return }
+  emit('select', world.pick(p)?.key ?? null)
 }
+
+/** Panel acikken canli kalsin: dis dunya her 1.5 s'de yeni anlik goruntu alir. */
+function publishBoard() {
+  if (world) emit('board', world.board.snapshot())
+}
+defineExpose({ publishBoard })
 
 function fit() {
   const el = host.value
