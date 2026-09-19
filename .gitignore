@@ -36,3 +36,6 @@ assets/_inspect/
 
 # Python paket meta
 *.egg-info/
+
+# Ajan worktree'leri (gecici)
+.claude/worktrees/
