@@ -135,9 +135,15 @@ sahne yüklenmez ve bunu söyler; SSE kopuksa sahte yönetmen rozetiyle çalış
 
 Eski UI (procedural canvas + three.js akış grafiği) `archive/ui-canvas-v2-2026-09-17/`.
 
-**Kalan:** Ajanlar paneli (md editörü + LLM seçici + alt md listesi), İş Akışı paneli
-(adım ekle/sil/sırala), `npm run gen:api` ile üretilen tipler (bugün `scene/contract.ts`
-elle), büyük pano görünümü (tıklayınca), gerçek `RunService` olayları.
+**2026-09-19:** Ajanlar paneli geldi (`ui/app/components/AgentPanel.vue`): Ekip'te ajana
+tıklanınca ad, özet, ofis rolleri, sağlayıcı/model (`GET /models` önerisi, runtime kapalıysa
+elle), sorabilir, bilgi dosyaları, prompt ve "modele giden metin"; `PUT /api/v1/agents/{key}`
+ile kaydeder, `errorCode` → Türkçe eşleme tek dosyada (`ui/app/api/errors.ts`). Kanban paneli
+ayrı bileşen (`KanbanPanel.vue`): sayaçlar, filtre, kart detayı. API tipleri elle
+(`ui/app/api/types.ts`), `gen:api` gelince değişecek.
+
+**Kalan:** İş Akışı paneli (adım ekle/sil/sırala, `PUT /workflow`), `npm run gen:api` ile
+üretilen tipler, gerçek `RunService` olayları (Faz 5).
 
 **Biten sayılır:** Tarayıcıda canlı bir çalışma izlenir; bir ajanın md'si panelden
 değiştirilip kaydedilince sonraki çalışmada davranış gözle görülür biçimde değişir.
