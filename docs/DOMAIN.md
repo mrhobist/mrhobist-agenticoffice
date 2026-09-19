@@ -146,17 +146,69 @@ Kod (`Application/Runs/Dispatcher`), her tetiklemede (onay, bir adımın bitişi
 
 ## Adım yürütücüleri
 
-| `kind` | Durum (2026-09-19) | Ne yapar |
-|---|---|---|
-| `analyze` | ✅ | Analist, `Spec` şeması, plan onayı döngüsü |
-| `handoff` / `handoffRole` | ✅ | Organizatör devir notu (yukarıda) |
-| `design` | ⏳ | Yürütücü yok |
-| `implement` | ⏳ | Yürütücü yok. Kullanıcı kararı: "normalde direkt işe başlar, kendi ön analizini yapar; şimdilik masada beklesin" |
-| `review` | ⏳ | Yürütücü yok |
+Tamamı çalışır (2026-09-20). **Kullanıcı kararı (2026-09-19): ajanlar dosyayı kendisi yazar, testi kendisi koşar** —
+Agent SDK araçlarıyla (Read/Glob/Grep/Write/Edit/Bash), projenin hedef dizininde. Alternatif (yapısal `files[]`
+çıktısı → .NET yazar) reddedildi: model build'i görmeden kod yazıyor, tur sayısı katlanıyor.
 
-**Yürütücüsü olmayan adıma atanan görev:** atama yapılır (devir notu, sahne, `Started`), sonra
-çalışma **`Paused`** olur; `run.json` `detail`: `"yürütücü yok: <adım>"`. Bu bir hata değil, teslim
-sınırıdır; yürütücü gelince kaldığı yerden devam eder.
+| `kind` | Araçlar | Ne yapar | Çıktı şeması |
+|---|---|---|---|
+| `analyze` | salt okuma | Analist dizine bakar, `Spec` üretir, plan onayı döngüsü | `SpecSchema` |
+| `handoff` / `handoffRole` | yok | Organizatör devir notu (yukarıda) | metin |
+| `design` | salt okuma | Tasarımcı developer'a rehberlik notu yazar (`design` mesajı), kod yazmaz | `guidance, decisions[]` |
+| `implement` | tam | Developer dosyaları yazar, build/test komutlarını koşar; sonunda rapor. `blocked=true` → kullanıcıya soru | `summary, filesChanged[], commandsRun[], blocked, question` |
+| `review` | tam | Testçi / manager kodu okur, testleri **fiilen** koşar (test dosyası yazabilir, uygulama kodunu değiştirmez); kabul ya da gerekçeli red | `verdict, testsRun, findings[], feedback, commandsRun[]` |
+
+**Sınırlar.** Araç listesi ve çalışma dizini .NET'ten gelir (`ToolAccess.ForKind`); runtime seçmez. Dosya yazan
+araçlar (`Write/Edit/MultiEdit/NotebookEdit`) yalnız hedef dizinin **içine** yazar — dışı SDK izin geri çağrısında
+(`can_use_tool`) reddedilir, ajan hatayı görür. Her araç çağrısı (araç + hedef) turun kaydına yazılır
+(`Turn.toolUses`), günlükte "Araçlar" olarak görünür. Bash komutları dizinde koşar; emülatör/tarayıcı testleri için
+ajan Claude Code'un kendi araçlarını kullanır (ileride MCP).
+
+**Yürütme döngüsü.** `DispatchAsync`: planla → bir adımı koş → yeniden planla; hazır iş kalmayınca ya da durum
+`Running`'den çıkınca döner. Çalışma **içinde sıralı** (çalışma başına tek iş, kanal kilidi), **çalışmalar arası
+paralel** (JobWorker havuzu). Tur = o adımda bitmiş deneme sayısı + 1.
+
+### Geri dönüş kuralı (2026-09-20, varsayımla ilerlenir)
+
+- **Red** (`Rejected`) → görev en yakın önceki `implement` adımına döner; aradaki adımlar yeniden koşar.
+  Testçinin `feedback`'i developer'a `review-feedback` notu olarak gider ve bir sonraki turun prompt'una girer.
+- **Tavan** `maxReviewRounds` **kapı başına** sayılır: aynı `review` adımı bu kadar kez reddedince akış durmaz,
+  **kullanıcıya sorulur** (aşağıda Takılma). Aynı adımda üst üste `Failed` için de aynı tavan.
+- **Hata** (`Failed`) → aynı adım yeniden (yeniden dene ya da cevap sonrası). Limit beklemesinden doğan `Failed`
+  (`detail: limit…`) tur sayılmaz.
+
+## Takılma: soru + müdahale (2026-09-19, kullanıcı kararı)
+
+> "Flow'da sorun olursa soru gelsin; çözüm için müdahale imkânı varsa sunsun, yoksa ben geliştirme yaparım."
+
+Akış kendi çözemediği yerde durur, çalışma **`AwaitingInput`** olur, soru `run.json → question` alanında
+(`{ ts, agent, text, options[], task, stage, context }`), kaydı `messages.jsonl`'de (`ask`, subject `question`).
+Bildirim zilinde ve gelen kutusunda **soru** olarak görünür; çalışma panelinde seçenekler düğme olur.
+
+| Ne zaman | Soran | Seçenekler |
+|---|---|---|
+| Developer `blocked=true` (eksik/çelişkili bilgi) | developer | **retry** (not zorunlu: cevap developer'a gider, aynı adım yeniden) · **skip** (elle hallettim: sonraki adım) · **cancel** |
+| Review tavanı aşıldı | testçi / manager | **retry** (notla bir tur daha) · **skip** = olduğu gibi kabul et (adım `Skipped`, sonraki adım) · **cancel** |
+| Aynı adımda `maxReviewRounds` kez hata | ilgili ajan | **retry** · **skip** · **cancel** |
+
+Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre değişir. Cevap `POST /runs/{id}/answer
+{ choice, note? }`; `answer` mesajı yazılır (`ref` soruya bağlanır), `skip` ilgili adıma `Skipped` fazı ekler
+(ajan `user`), `retry` yalnız durumu `Running` yapar (dağıtıcı `Failed` → aynı adım, `Rejected` → developer),
+`cancel` iptal eder. Müdahale imkânı olmayan durum (geçici olmayan sağlayıcı hatası) eski **karar** akışında kalır:
+`Failed` → yeniden dene / kapat; kullanıcı düzeltmeyi kodda yapar.
+
+## Bütçe ve limit (2026-09-19, kullanıcı kararı)
+
+- **Maliyet eşdeğerdir.** SDK'nın döndürdüğü `costUsd` API liste fiyatına göre hesaplanır; Claude Code
+  aboneliğiyle **ücret kesilmez**, kota penceresi tükenir. UI her yerde `≈$` yazar ve bunu söyler. İş başına
+  `maxCostUsd` tavanı isteğe bağlı kalır ve bu eşdeğer rakamla ölçülür (karşılaştırma için kullanışlı).
+- **Limit koruması** (asıl koruma): `config/settings.json → limitGuards { provider: yüzde }`, varsayılan
+  **%99**, Ayarlar ekranında platform bazında değiştirilir. Her LLM çağrısından önce (`LimitGuard`) sağlayıcının
+  aktif kota pencereleri (5 saat, hafta, modele özel) okunur (runtime 90 s önbellek); biri eşiğe ulaştıysa çağrı
+  **yapılmaz**: çalışma `Paused` + `resumeAt` (pencerenin sıfırlanma zamanı), `limit` notu, bildirim zilinde
+  "Limit doldu · HH:mm'de sürer". `LimitResumer` dakikada bir bakar, süresi gelen çalışmayı kendisi sürdürür;
+  kullanıcı "Yeniden dene" ile erken deneyebilir. Kota ucu bilgi vermiyorsa koruma sessizce geçer (varsayımla
+  ilerlenir; üst bar zaten "kalan kullanım yok" der).
 
 ## Model, efor ve kimlik (2026-09-19, kullanıcı kararı)
 
@@ -217,10 +269,9 @@ sınırıdır; yürütücü gelince kaldığı yerden devam eder.
 
 ## Açık kararlar (sonraki turda sorulacak; şimdi kodlanmaz)
 
-1. Red geri dönüşü: birden çok `review` varken `maxReviewRounds` kapı başına mı toplam mı; red
-   sonrası aradaki adımlar yeniden koşar mı.
-2. `design` adımı görev başına mı çalışma başına mı.
-3. `implement`: developer'ın "kendi ön analizi", dosya yazma sınırları, test komutu üretimi.
+1. ~~Red geri dönüşü~~ → kapı başına, aradakiler yeniden koşar (yukarıda, varsayımla).
+2. `design` adımı görev başına çalışıyor (varsayımla); çalışma başına tek rehber istenirse akışa `design` görevi eklenir.
+3. ~~`implement`~~ → araçlarla, hedef dizinde; test komutu ajanın kendi kararı, kabul ölçütleri yol gösterir.
 4. `canAsk` hedefi akışta olmayan bir ajan olabilir mi (bugün: evet, denetlenmez).
 5. `stage.officeRole` ile ajanın `office_roles` çakışması denetlenecek mi.
 6. `kind: handoff` adımı ile `handoffRole` ikiliği; birinin kaldırılması.

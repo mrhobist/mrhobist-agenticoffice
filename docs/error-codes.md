@@ -32,10 +32,14 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `run.brief_empty` | 400 | `POST /runs`: `brief` boş |
 | `run.note_empty` | 400 | `POST /runs/{id}/revise`: `note` boş |
 | `run.not_awaiting_approval` | 409 | `approve`/`revise` yalnız `AwaitingApproval` durumunda geçerli |
-| `run.not_retryable` | 409 | `retry` yalnız `Failed / Interrupted / BudgetExceeded / Cancelled` durumunda geçerli |
+| `run.not_retryable` | 409 | `retry` yalnız `Failed / Interrupted / BudgetExceeded / Cancelled` ve limit beklemesinde (`Paused` + `resumeAt`) geçerli |
 | `run.not_cancellable` | 409 | `cancel` yalnız `Running / AwaitingApproval / Paused / Failed / Interrupted / BudgetExceeded` durumunda geçerli (Completed, Cancelled, PolicyRejected kapatılamaz) |
 | `run.plan_invalid` | — | Analist çıktısı şemaya uymadı ya da görevsiz (çalışma `Failed`, `detail` söyler) |
 | `run.project_required` | 400 | `POST /runs`: `project` boş; iş yalnız bir projenin içinde başlar |
+| `run.not_awaiting_input` | 409 | `answer` yalnız `AwaitingInput` durumunda geçerli |
+| `run.invalid_choice` | 400 | `answer.choice` sorunun seçeneklerinden biri değil |
+| `run.step_invalid` | — | Bir adımın (review) çıktısı şemaya uymadı; faz `Failed`, çalışma `Failed` |
+| `settings.invalid` | 400 | Limit eşiği 1–100 dışında ya da bilinmeyen sağlayıcı |
 | `auth.required` | 401 | `/api/v1/*` için giriş gerekli (`/auth/login` hariç) |
 | `auth.invalid_credentials` | 401 | Kullanıcı adı ya da şifre yanlış |
 | `project.invalid_key` | 400 | Proje anahtarı `[a-z0-9][a-z0-9_-]*` değil |

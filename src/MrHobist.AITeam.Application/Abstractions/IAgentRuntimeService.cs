@@ -11,11 +11,18 @@ public sealed record RuntimeTurnRequest(
     string Model,
     string? SchemaJson = null,
     int MaxTokens = 8192,
-    string? ReasoningEffort = "low");
+    string? ReasoningEffort = "low",
+    /// <summary>Ajanin kullanabilecegi araclar (Read, Write, Edit, Bash, Glob, Grep). Bos = arac yok, tek tur.</summary>
+    IReadOnlyList<string>? Tools = null,
+    /// <summary>Araclarin calisacagi dizin: projenin hedef dizini (mutlak). Yazma bunun disina cikamaz.</summary>
+    string? Cwd = null,
+    int? MaxTurns = null);
 
 public sealed record RuntimeMessage(string Role, string Content);
 
 public sealed record RuntimeUsage(int InputTokens, int OutputTokens, int ReasoningChars);
+
+public sealed record RuntimeToolUse(string Tool, string? Target);
 
 public sealed record RuntimeTurnResponse(
     string Text,
@@ -26,7 +33,9 @@ public sealed record RuntimeTurnResponse(
     RuntimeUsage Usage,
     decimal? CostUsd,
     double DurationS,
-    int Attempts);
+    int Attempts,
+    IReadOnlyList<RuntimeToolUse>? ToolUses = null,
+    int Turns = 1);
 
 /// <summary>Katalogda gorunmek erisilebilir olmak DEGILDIR; <see cref="Reachable"/> fiilen cagirarak dogrulanir.</summary>
 public sealed record RuntimeModelInfo(Provider Provider, string Model, bool Reachable, string Detail);

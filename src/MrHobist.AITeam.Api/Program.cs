@@ -49,6 +49,7 @@ builder.Services.AddSingleton<ISceneEventPublisher>(sp => sp.GetRequiredService<
 // Tek yazici is kanali: uzun isler (analiz, dagitim) burada sirayla kosar; istek 202 ile doner (CLAUDE.md §2, Sapmalar).
 builder.Services.AddSingleton<JobChannel>();
 builder.Services.AddHostedService<JobWorker>();
+builder.Services.AddHostedService<LimitResumer>(); // limit beklemesi biten calismalari surdurur
 
 // UI gelistirme sunucusu ayri porttan gelir. Kokenler acik listedir; ikinci bir UI kopyasi icin AITeam:UiOrigins
 // ("http://127.0.0.1:3005,http://localhost:3005") verilir. Loopback disi koken kabul edilmez (CLAUDE.md §3).

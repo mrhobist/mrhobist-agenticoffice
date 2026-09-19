@@ -117,7 +117,13 @@ export interface Turn {
   output: string | null
   inputTokens: number | null
   outputTokens: number | null
+  /** Ajanin arac cagrilari (Write/Edit/Bash...), sirali; arac yoksa bos/null. */
+  toolUses?: ToolUse[] | null
+  /** Ajan dongusunun tur sayisi. */
+  turns?: number | null
 }
+
+export interface ToolUse { tool: string; target: string | null }
 
 /** GET /api/v1/agents/{key}/work — ajanin calisma basina isi (Isler sekmesi). */
 export interface AgentRunWork {
@@ -213,7 +219,27 @@ export interface RunSummary {
   /** Ait oldugu proje anahtari; is yalniz bir projenin icinde baslar. */
   project: string
   ownerId: string
+  /** AwaitingInput: akis takildi, kullanicidan secim bekleniyor (docs/DOMAIN.md → Takilma). */
+  question?: UserQuestion | null
+  /** Paused + resumeAt: limit korumasi bekletti; bu saatte kendisi surer. */
+  resumeAt?: string | null
 }
+
+export interface QuestionOption { id: string; label: string; detail: string; needsNote: boolean }
+export interface UserQuestion {
+  ts: string
+  agent: string
+  text: string
+  options: QuestionOption[]
+  task: string | null
+  stage: string | null
+  context: string | null
+}
+/** POST /api/v1/runs/{id}/answer */
+export interface AnswerRequest { choice: string; note?: string | null }
+
+/** GET/PUT /api/v1/settings — saglayici basina limit korumasi esigi (%). */
+export interface AppSettings { limitGuards: Record<string, number> }
 
 /** Gelen kutusu satirinin turu: soru (plan onayi), karar (durdu: yeniden dene / iptal), soru (ajan ask). */
 export type InboxKind = Schemas['InboxKind']

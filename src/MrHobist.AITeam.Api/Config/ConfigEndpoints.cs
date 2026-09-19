@@ -61,6 +61,15 @@ public static class ConfigEndpoints
         // Kullanim: bizim kayitlarimizdan (runs/ turlari), saglayici+model bazinda.
         g.MapGet("/usage", (int? runs, IUsageReader usage, CancellationToken ct) => usage.SummarizeAsync(runs ?? 200, ct));
 
+        // Calisma alani ayarlari (config/settings.json): saglayici basina limit korumasi esigi (docs/DOMAIN.md → Butce ve limit).
+        g.MapGet("/settings", async (ISettingsStore s, CancellationToken ct) => SettingsDto.From(await s.LoadAsync(ct).ConfigureAwait(false)));
+        g.MapPut("/settings", async (SettingsDto body, ISettingsStore s, CancellationToken ct) =>
+        {
+            var settings = body.ToDomain();
+            await s.SaveAsync(settings, ct).ConfigureAwait(false);
+            return SettingsDto.From(settings);
+        });
+
         g.MapGet("/workflows", (IWorkflowService s, CancellationToken ct) => s.ListAsync(ct));
         g.MapGet("/workflows/{key}", (string key, IWorkflowService s, CancellationToken ct) => s.GetAsync(key, ct));
         g.MapPut("/workflows/{key}", (string key, WorkflowModel body, IWorkflowService s, CancellationToken ct) => s.UpsertAsync(key, body, ct));
@@ -79,3 +88,22 @@ public static class ConfigEndpoints
 
 /// <summary><c>POST /providers/{provider}/login</c> govdesi. <c>mode</c>: <c>claudeai</c> (abonelik) | <c>console</c> (API faturasi).</summary>
 public sealed record LoginRequest(string? Mode, string? Email);
+
+/// <summary><c>GET/PUT /settings</c> govdesi: <c>{ limitGuards: { anthropic: 99 } }</c>. Sozlesmede saglayici adi kucuk harf.</summary>
+public sealed record SettingsDto(Dictionary<string, int> LimitGuards)
+{
+    public static SettingsDto From(Domain.Settings.AppSettings s)
+        => new(s.LimitGuards.ToDictionary(kv => Domain.Agents.Providers.Wire(kv.Key), kv => kv.Value));
+
+    public Domain.Settings.AppSettings ToDomain()
+    {
+        var guards = new Dictionary<Domain.Agents.Provider, int>();
+        foreach (var (key, value) in LimitGuards ?? [])
+        {
+            var p = Domain.Agents.Providers.Parse(key) ?? throw new Domain.DomainException(Domain.ErrorCodes.SettingsInvalid, $"bilinmeyen saglayici: '{key}'");
+            guards[p] = value;
+        }
+
+        return new Domain.Settings.AppSettings(guards);
+    }
+}

@@ -2,7 +2,7 @@
 import type { InboxItem, RunStatus, RunSummary, RunsOverview } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { INBOX_KIND_LABEL, RUN_STATUS_LABEL } from '~/api/labels'
+import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel } from '~/api/labels'
 
 /**
  * Isler paneli: kac is var, kaci ne durumda, kaci SENDEN bir sey bekliyor.
@@ -70,7 +70,7 @@ function pending(id: string): InboxItem | undefined {
   return inbox.value.find(i => i.runId === id)
 }
 
-function fmtCost(v: number): string { return v ? `$${v.toFixed(3)}` : '$0' }
+function fmtCost(v: number): string { return fmtCostLabel(v, 3) }
 function fmtWhen(s: string): string {
   const d = new Date(s)
   const today = new Date().toDateString() === d.toDateString()
@@ -201,6 +201,7 @@ button { font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px; 
 .status.awaitingApproval { background: #f3c34a; }
 .status.running { background: #4fa3e0; color: #fff; }
 .status.paused { background: #a889e6; color: #fff; }
+.status.awaitingInput { background: #d23b3b; color: #fff; }
 .status.completed { background: #7cc46b; }
 .status.cancelled { background: #8a90a2; color: #fff; }
 .status.failed, .status.policyRejected, .status.interrupted, .status.budgetExceeded { background: #d23b3b; color: #fff; }

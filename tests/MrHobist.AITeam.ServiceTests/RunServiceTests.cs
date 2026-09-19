@@ -32,7 +32,7 @@ public sealed class RunServiceTests : IDisposable
         _reader = new RunReader(_store);
         _projects = new JsonProjectStore(_fx.Paths);
         _projects.SaveAsync(new Project("test", "Test", "", "default", "projects/test", Project.LocalOwner, DateTimeOffset.UtcNow), Ct).GetAwaiter().GetResult();
-        _svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene);
+        _svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene, new WorkspaceLocator(_fx.Paths));
     }
 
     public void Dispose() => _fx.Dispose();
@@ -93,7 +93,7 @@ public sealed class RunServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Onay_sonrasi_organizator_ilk_gorevi_developera_verir_ve_calisma_duraklar()
+    public async Task Onay_sonrasi_akis_ucuna_kadar_kosar_ve_tamamlanir()
     {
         var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
         await _svc.AnalyzeAsync(run.Id, Ct);
@@ -102,33 +102,136 @@ public sealed class RunServiceTests : IDisposable
 
         run = await _svc.DispatchAsync(run.Id, Ct);
 
-        Assert.Equal(RunStatus.Paused, run.Status);
-        Assert.Contains("gelistirme", run.Detail, StringComparison.Ordinal);
+        // t1 → t2, her biri gelistirme → test → karar; hepsi kabul → Completed.
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Equal(["t1", "t2"], (await _store.ListTasksAsync(run.Id, Ct)).Order());
+        var t1 = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
+        Assert.Equal(["gelistirme", "gelistirme", "test", "test", "karar", "karar"], t1.Select(p => p.Stage));
+        Assert.Equal([PhaseStatus.Started, PhaseStatus.Done, PhaseStatus.Started, PhaseStatus.Done, PhaseStatus.Started, PhaseStatus.Done], t1.Select(p => p.Status));
 
-        // t2, t1'e bagli: yalniz t1 atanir. Developer tek is alir.
-        Assert.Equal(["t1"], await _store.ListTasksAsync(run.Id, Ct));
-        var phase = Assert.Single(await _store.ReadPhasesAsync(run.Id, "t1", Ct));
-        Assert.Equal(("gelistirme", "developer", PhaseStatus.Started, 1), (phase.Stage, phase.Agent, phase.Status, phase.Round));
+        // Developer araclarla calisir: cagri arac listesi + proje dizini tasir. Organizator (devir) arac almaz.
+        var dev = _runtime.Calls.First(c => c.Tools is { Count: > 0 } && c.SchemaJson!.Contains("filesChanged", StringComparison.Ordinal));
+        Assert.Contains("Write", dev.Tools!);
+        Assert.EndsWith(Path.Combine("projects", "test"), dev.Cwd!, StringComparison.Ordinal);
+        Assert.True(Directory.Exists(dev.Cwd));
+        var handoff = _runtime.Calls.First(c => c.Model == "claude-haiku-4-5-20251001");
+        Assert.Null(handoff.Tools);
 
-        // Devir notu: organizator → developer, ucuz model (organizer.md: haiku + low).
-        var handoff = Assert.Single(await _store.ReadMessagesAsync(run.Id, Ct));
-        Assert.Equal((MessageKind.Handoff, "organizer", "developer", "t1"), (handoff.Kind, handoff.From, handoff.To, handoff.Task));
-        var organizerCall = _runtime.Calls.Last();
-        Assert.Equal("claude-haiku-4-5-20251001", organizerCall.Model);
-        Assert.Equal("low", organizerCall.ReasoningEffort);
-        Assert.Contains("t1", organizerCall.Messages[0].Content, StringComparison.Ordinal);
+        // Rapor ve kabul notlari messages.jsonl'de; devir notu her atamada; arac kullanimi turda.
+        var messages = await _store.ReadMessagesAsync(run.Id, Ct);
+        Assert.Equal(6, messages.Count(m => m.Kind == MessageKind.Handoff));
+        Assert.Equal(2, messages.Count(m => m.Subject == "implement-report"));
+        Assert.Equal(4, messages.Count(m => m.Subject == "review-accept"));
+        var devTurn = (await _store.ReadTurnsAsync(run.Id, "developer", Ct))[0];
+        Assert.Equal("Write", Assert.Single(devTurn.ToolUses!).Tool);
 
-        // Sahne: pano onaydan sonra kurulur, organizator developer'a yurur, gorev sutun degistirir.
+        // Sahne: pano kuruldu, organizator developer'a yurudu, gorev sutun degistirdi.
         var types = _scene.Events.Select(e => e.Type).ToList();
         Assert.Contains(SceneEventTypes.BoardSet, types);
         Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.Meet && e.Json.Contains("\"organizer\"", StringComparison.Ordinal) && e.Json.Contains("\"developer\"", StringComparison.Ordinal));
-        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.BoardMove && e.Json.Contains("\"t1\"", StringComparison.Ordinal) && e.Json.Contains("\"gelistirme\"", StringComparison.Ordinal));
         Assert.True(types.IndexOf(SceneEventTypes.BoardSet) < types.IndexOf(SceneEventTypes.BoardMove));
+    }
 
-        // Ikinci dagitim bir sey yapmaz: developer dolu, t2 bekliyor; durum Paused kalir.
+    [Fact]
+    public async Task Red_developera_doner_tavan_asilinca_kullaniciya_sorulur_ve_cevap_akisi_surdurur()
+    {
+        _runtime.RejectTests = true; // testci hep reddeder
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        await _svc.BeginApproveAsync(run.Id, Ct);
         run = await _svc.DispatchAsync(run.Id, Ct);
+
+        // default akis maxReviewRounds=3: 3 red → soru.
+        Assert.Equal(RunStatus.AwaitingInput, run.Status);
+        Assert.NotNull(run.Question);
+        Assert.Equal(["retry", "skip", "cancel"], run.Question!.Options.Select(o => o.Id));
+        Assert.Equal(("t1", "test", "tester"), (run.Question.Task, run.Question.Stage, run.Question.Agent));
+        var t1 = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
+        Assert.Equal(3, t1.Count(p => p.Status == PhaseStatus.Rejected));
+        Assert.Equal(3, t1.Count(p => p.Stage == "gelistirme" && p.Status == PhaseStatus.Done));
+        var feedback = (await _store.ReadMessagesAsync(run.Id, Ct)).Where(m => m.Subject == "review-feedback").ToList();
+        Assert.Equal(3, feedback.Count);
+        Assert.All(feedback, m => Assert.Equal(("tester", "developer", "t1"), (m.From, m.To, m.Task)));
+        // Ikinci developer turu geri bildirimi gordu.
+        var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).ToList();
+        Assert.Contains("review-feedback", devCalls[1].Messages[0].Content, StringComparison.Ordinal);
+
+        // Gelen kutusu: soru. Gecersiz secim 400.
+        var o = await _reader.GetOverviewAsync(Ct);
+        var item = Assert.Single(o.Inbox);
+        Assert.Equal(InboxKind.Question, item.Kind);
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.BeginAnswerAsync(run.Id, new AnswerRequest("yok"), Ct));
+        Assert.Equal(ErrorCodes.RunInvalidChoice, ex.ErrorCode);
+
+        // "Oldugu gibi kabul et": test adimi Skipped, akis karara gecer; testci artik kabul etsin.
+        _runtime.RejectTests = false;
+        run = await _svc.BeginAnswerAsync(run.Id, new AnswerRequest("skip", "yeter"), Ct);
+        Assert.Equal(RunStatus.Running, run.Status);
+        Assert.Null(run.Question);
+        Assert.Contains(await _store.ReadMessagesAsync(run.Id, Ct), m => m.Kind == MessageKind.Answer && m.From == "user" && m.To == "tester");
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        t1 = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
+        Assert.Contains(t1, p => p.Stage == "test" && p.Status == PhaseStatus.Skipped && p.Agent == "user");
+        Assert.Equal(("karar", PhaseStatus.Done), (t1[^1].Stage, t1[^1].Status));
+    }
+
+    [Fact]
+    public async Task Developer_engellenince_soru_gelir_cevap_developera_not_olur()
+    {
+        _runtime.BlockImplement = true;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.AwaitingInput, run.Status);
+        Assert.Equal("developer", run.Question!.Agent);
+        Assert.Contains("i mi", run.Question.Text, StringComparison.Ordinal);
+        var retry = run.Question.Options.Single(o => o.Id == "retry");
+        Assert.True(retry.NeedsNote);
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.BeginAnswerAsync(run.Id, new AnswerRequest("retry"), Ct));
+        Assert.Equal(ErrorCodes.RunNoteEmpty, ex.ErrorCode);
+
+        _runtime.BlockImplement = false;
+        run = await _svc.BeginAnswerAsync(run.Id, new AnswerRequest("retry", "küçük i kullan"), Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        // Cevap developer'in ikinci turunda notlar arasinda; engel fazi Failed, ayni adim 2. tur.
+        var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).ToList();
+        Assert.Contains("küçük i kullan", devCalls[1].Messages[0].Content, StringComparison.Ordinal);
+        var t1 = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
+        Assert.Equal(PhaseStatus.Failed, t1[1].Status);
+        Assert.Equal(2, t1[3].Round);
+    }
+
+    [Fact]
+    public async Task Limit_dolunca_calisma_bekler_ve_yeniden_dene_surdurur()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var settings = new JsonSettingsStore(_fx.Paths);
+        var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, new LimitGuard(_runtime, settings));
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths));
+
+        _runtime.LimitPercent = 99.5; // esik varsayilan %99
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        run = await svc.AnalyzeAsync(run.Id, Ct);
         Assert.Equal(RunStatus.Paused, run.Status);
-        Assert.Single(await _store.ReadPhasesAsync(run.Id, "t1", Ct));
+        Assert.NotNull(run.ResumeAt);
+        Assert.StartsWith("analiz", run.Detail, StringComparison.Ordinal);
+        Assert.Empty(_runtime.Calls); // cagri hic yapilmadi
+        Assert.True(run.IsRetryable);
+        var inbox = (await _reader.GetOverviewAsync(Ct)).Inbox;
+        Assert.Contains(inbox, i => i.RunId == run.Id && i.Kind == InboxKind.Decision && i.Title.StartsWith("Limit", StringComparison.Ordinal));
+
+        // Esik yukseltilirse (ayar) cagri gecer; yeniden dene analizden surer.
+        await settings.SaveAsync(new Domain.Settings.AppSettings(new Dictionary<Provider, int> { [Provider.Anthropic] = 100 }), Ct);
+        var retry = await svc.RetryAsync(run.Id, Ct);
+        Assert.Equal((RetryStep.Analyze, RunStatus.Running), (retry.Step, retry.Run.Status));
+        Assert.Null(retry.Run.ResumeAt);
+        run = await svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.AwaitingApproval, run.Status);
     }
 
     [Fact]
@@ -210,7 +313,7 @@ public sealed class RunServiceTests : IDisposable
         var agents = new MarkdownAgentStore(_fx.Paths);
         var workflows = new JsonWorkflowStore(_fx.Paths);
         var caller = new AgentCaller(agents, _runtime, _store, _scene, new RetryPolicy(3, TimeSpan.Zero));
-        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene);
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths));
 
         _runtime.FailTransientTimes = 2; // ilk iki deneme 503, ucuncu gecer
         var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
@@ -329,6 +432,15 @@ public sealed class RunServiceTests : IDisposable
         /// <summary>Kac cagri "gecici hata" (runtime kapali) ile dussun; AgentCaller'in otomatik tekrari icin.</summary>
         public int FailTransientTimes { get; set; }
 
+        /// <summary>Testci (review) hep reddetsin.</summary>
+        public bool RejectTests { get; set; }
+
+        /// <summary>Developer engellensin (blocked + soru).</summary>
+        public bool BlockImplement { get; set; }
+
+        /// <summary>Kota penceresi yuzdesi (limit korumasi testi); null = kota bilgisi yok.</summary>
+        public double? LimitPercent { get; set; }
+
         public Task<RuntimeTurnResponse> TurnAsync(RuntimeTurnRequest request, CancellationToken ct)
         {
             Calls.Add(request);
@@ -342,6 +454,28 @@ public sealed class RunServiceTests : IDisposable
             if (request.SchemaJson is null)
             {
                 return Task.FromResult(new RuntimeTurnResponse("Devir notu: t1 developer'a.", null, request.Provider, request.Model, destination, new RuntimeUsage(10, 5, 0), 0.001m, 0.2, 1));
+            }
+
+            if (request.SchemaJson.Contains("filesChanged", StringComparison.Ordinal))
+            {
+                var report = BlockImplement
+                    ? """{"summary":"takildim","filesChanged":[],"commandsRun":[],"blocked":true,"question":"Türkçe karakter: i mi I mı?"}"""
+                    : """{"summary":"slug.py yazildi","filesChanged":["slug.py"],"commandsRun":["python -m pytest: 3 passed"],"blocked":false,"question":null}""";
+                return Task.FromResult(new RuntimeTurnResponse("", report, request.Provider, request.Model, destination, new RuntimeUsage(50, 20, 0), 0.01m, 2.0, 1, [new RuntimeToolUse("Write", "slug.py")], 5));
+            }
+
+            if (request.SchemaJson.Contains("verdict", StringComparison.Ordinal))
+            {
+                var isTester = request.SystemPrompt.Contains("TESTÇİ", StringComparison.Ordinal);
+                var review = RejectTests && isTester
+                    ? """{"verdict":"reject","testsRun":true,"findings":["kural 1 ihlal"],"feedback":"kural 1'i düzelt","commandsRun":["pytest: 1 failed"]}"""
+                    : """{"verdict":"accept","testsRun":true,"findings":[],"feedback":"temiz","commandsRun":["pytest: 3 passed"]}""";
+                return Task.FromResult(new RuntimeTurnResponse("", review, request.Provider, request.Model, destination, new RuntimeUsage(50, 20, 0), 0.01m, 2.0, 1, [new RuntimeToolUse("Bash", "pytest")], 4));
+            }
+
+            if (request.SchemaJson.Contains("guidance", StringComparison.Ordinal))
+            {
+                return Task.FromResult(new RuntimeTurnResponse("", """{"guidance":"basit tut","decisions":["tek modül"]}""", request.Provider, request.Model, destination, new RuntimeUsage(20, 10, 0), 0.005m, 1.0, 1));
             }
 
             var json = SpecJson ?? (request.Messages.Count > 1 ? Plan3 : Plan2);
@@ -363,7 +497,9 @@ public sealed class RunServiceTests : IDisposable
             => Task.FromResult(new RuntimeAuthStatus(provider, false, null, "sahte"));
 
         public Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<RuntimeProviderLimits>>([]);
+            => Task.FromResult<IReadOnlyList<RuntimeProviderLimits>>(LimitPercent is { } p
+                ? [new RuntimeProviderLimits(Provider.Anthropic, true, "sahte", "max", DateTimeOffset.UtcNow, [new RuntimeUsageLimit("five_hour", null, p, "warning", DateTimeOffset.UtcNow.AddHours(1), null, true)])]
+                : []);
     }
 
     private sealed class FakeScene : ISceneEventPublisher

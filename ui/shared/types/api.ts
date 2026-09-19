@@ -37,6 +37,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LoginRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LoginResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UserInfo"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents": {
         parameters: {
             query?: never;
@@ -467,6 +541,64 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SettingsDto"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SettingsDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SettingsDto"];
+                    };
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -968,6 +1100,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AnswerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{id}/cancel": {
         parameters: {
             query?: never;
@@ -1215,6 +1386,10 @@ export interface components {
             messages: components["schemas"]["Message"][];
             phases: components["schemas"]["Phase"][];
         };
+        AnswerRequest: {
+            choice: string;
+            note?: null | string;
+        };
         CreateAgentRequest: {
             key: string;
             name: string;
@@ -1255,8 +1430,14 @@ export interface components {
             body: string;
         };
         LoginRequest: {
-            mode: null | string;
-            email: null | string;
+            username: string;
+            password: string;
+        };
+        LoginResponse: {
+            token: string;
+            /** Format: date-time */
+            expiresAt: string;
+            user: components["schemas"]["UserInfo"];
         };
         Message: {
             /** Format: date-time */
@@ -1331,6 +1512,13 @@ export interface components {
             detail: string;
             models: components["schemas"]["RuntimeModelInfo"][];
         };
+        QuestionOption: {
+            id: string;
+            label: string;
+            detail: string;
+            /** @default false */
+            needsNote: boolean;
+        };
         ReviseRequest: {
             note: string;
         };
@@ -1363,6 +1551,9 @@ export interface components {
             project: string;
             /** @default local */
             ownerId: string;
+            question?: null | components["schemas"]["UserQuestion"];
+            /** Format: date-time */
+            resumeAt?: null | string;
             isCancellable?: boolean;
             isRetryable?: boolean;
         };
@@ -1386,6 +1577,9 @@ export interface components {
             retries: number | string;
             project: string;
             ownerId: string;
+            question: null | components["schemas"]["UserQuestion"];
+            /** Format: date-time */
+            resumeAt: null | string;
             workflowDef: null | components["schemas"]["WorkflowDetail"];
             spec: null | components["schemas"]["Spec"];
             order: string[];
@@ -1402,7 +1596,7 @@ export interface components {
             project?: null | string;
         };
         /** @enum {unknown} */
-        RunStatus: "running" | "completed" | "failed" | "interrupted" | "budgetExceeded" | "policyRejected" | "awaitingApproval" | "paused" | "cancelled";
+        RunStatus: "running" | "completed" | "failed" | "interrupted" | "budgetExceeded" | "policyRejected" | "awaitingApproval" | "paused" | "cancelled" | "awaitingInput";
         RunTask: {
             id: string;
             title: string;
@@ -1467,6 +1661,11 @@ export interface components {
         };
         /** @enum {unknown} */
         Sensitivity: "local" | "anthropic" | "open";
+        SettingsDto: {
+            limitGuards: {
+                [key: string]: number | string;
+            };
+        };
         Spec: {
             summary: string;
             architecture: string;
@@ -1486,6 +1685,10 @@ export interface components {
         TaskPhases: {
             id: string;
             phases: components["schemas"]["Phase"][];
+        };
+        ToolUse: {
+            tool: string;
+            target: null | string;
         };
         Turn: {
             /** Format: date-time */
@@ -1512,6 +1715,9 @@ export interface components {
             inputTokens?: null | number | string;
             /** Format: int32 */
             outputTokens?: null | number | string;
+            toolUses?: null | components["schemas"]["ToolUse"][];
+            /** Format: int32 */
+            turns?: null | number | string;
         };
         UpdateAgentRequest: {
             name: string;
@@ -1539,6 +1745,21 @@ export interface components {
             costUsd: number | string;
             /** Format: date-time */
             lastAt: null | string;
+        };
+        UserInfo: {
+            id: string;
+            name: string;
+            role: string;
+        };
+        UserQuestion: {
+            /** Format: date-time */
+            ts: string;
+            agent: string;
+            text: string;
+            options: components["schemas"]["QuestionOption"][];
+            task?: null | string;
+            stage?: null | string;
+            context?: null | string;
         };
         WorkflowDetail: {
             key: string;

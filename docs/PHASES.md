@@ -250,6 +250,21 @@ derlendi ve oradan 5083'te çalıştırıldı (Uygulama Denetimi bu yolu engelle
 çalışan 5090 runtime'ı (kodu güncel, Anthropic girişi var: `opugmai2@…`) yeniden kullanıldı. Kalıcı çözüm: eski süreçleri
 kapatmak (Görev Yöneticisi, yönetici) ve bu kullanıcıya Python 3.12 kurup `.venv`'i yeniden oluşturmak.
 
+## Faz 4d — Akış tamam: yürütücüler, takılma soruları, limit koruması (2026-09-20) ✅
+
+Kullanıcı kararları (sorularak): developer/testçi **Agent SDK araçlarıyla** dosyayı yazar, testi koşar (hedef dizin
+sınırı, izin geri çağrısı) · takılmada **soru + müdahale seçenekleri** (`AwaitingInput`, `retry|skip|cancel`) ·
+maliyet **eşdeğer** (≈$), asıl koruma **limit eşiği %99** platform bazında Ayarlar'da.
+
+- `implement` / `review` / `design` yürütücüleri; `DispatchAsync` planla→koş→planla döngüsü; red → developer,
+  kapı başına tavan → soru; developer `blocked` → soru; aynı adımda tekrarlanan hata → soru.
+- Runtime: `tools`, `cwd`, `maxTurns` istekle; `toolUses`, `turns` yanıtla; `can_use_tool` yazma sınırı.
+- `LimitGuard` (çağrı öncesi), `Paused + resumeAt`, `LimitResumer` (dakikada bir), `GET/PUT /settings`.
+- UI: soru kutusu ve seçenekler (RunPanel), limit notu, araç listesi günlükte, Ayarlar → Limit koruması,
+  `≈$` etiketleri, giriş ekranı sabit renkler + autofill düzeltmesi.
+- Testler: 40 servis (tam akış, red döngüsü + soru, engellenen developer, limit beklemesi), 32 birim, 21 runtime.
+- Sonraki: gerçek koşuda ölçüm (tur sayısı, süre), `canAsk` (ajan → manager sorusu), emülatör/tarayıcı testleri için MCP.
+
 ## Faz 4c — Ofis odağı ve giriş (2026-09-19, kullanıcı istekleri) ✅
 
 - Ajana tıklanınca animasyon durur, ajan izleyiciye bakar, başında işini yazan balon açık kalır; panel

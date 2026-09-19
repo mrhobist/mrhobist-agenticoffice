@@ -2,7 +2,7 @@
 import type { AgentDetail, AgentListItem, AgentRunWork, AgentUpdate, Effort, KnowledgeItem, ModelInfo, Phase as RunPhase, Provider, RunMessage, Turn } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { EFFORTS, EFFORT_LABEL, PROVIDERS, PROVIDER_LABEL, RUN_STATUS_LABEL } from '~/api/labels'
+import { EFFORTS, EFFORT_LABEL, PROVIDERS, PROVIDER_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel, subjectLabel } from '~/api/labels'
 
 /**
  * Bir ajanin md dosyasini duzenler: ustveri (saglayici, model, bilgi dosyalari, sorabilir)
@@ -228,7 +228,7 @@ function timelineOf(w: AgentRunWork): WorkEntry[] {
   return out.sort((a, b) => a.ts.localeCompare(b.ts))
 }
 
-function fmtCost(v: number): string { return v ? `$${v.toFixed(4)}` : '$0' }
+function fmtCost(v: number): string { return fmtCostLabel(v, 4) }
 function fmtClock(s: string): string { return new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
 function fmtWhen(s: string): string { return new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) }
 
@@ -276,13 +276,14 @@ defineExpose({ canLeave })
                   <span class="tag turn">LLM turu</span>
                   <span class="sub">{{ e.turn.provider }} · <code>{{ e.turn.model }}</code> · {{ e.turn.durationS.toFixed(1) }} s · {{ e.turn.inputTokens ?? '?' }}→{{ e.turn.outputTokens ?? '?' }} tk · {{ fmtCost(e.turn.costUsd ?? 0) }}<template v-if="e.turn.stage"> · {{ e.turn.stage }}</template><template v-if="e.turn.task"> · <code>{{ e.turn.task }}</code></template></span>
                 </div>
+                <details v-if="e.turn.toolUses?.length"><summary>Araçlar ({{ e.turn.toolUses.length }})</summary><ul class="tools"><li v-for="(t, k) in e.turn.toolUses" :key="k"><b>{{ t.tool }}</b> <code>{{ t.target }}</code></li></ul></details>
                 <details><summary>Gönderilen ({{ e.turn.promptChars }} kr)</summary><pre>{{ e.turn.prompt }}</pre></details>
                 <details><summary>Çıktı ({{ e.turn.outputChars }} kr)</summary><pre>{{ e.turn.output }}</pre></details>
               </template>
               <template v-else-if="e.kind === 'message'">
                 <div class="entry-head">
                   <span class="when">{{ fmtClock(e.msg.ts) }}</span>
-                  <span class="tag" :class="e.msg.subject === 'error' ? 'error' : 'msg'">{{ e.msg.subject === 'error' ? 'hata' : e.msg.subject === 'handoff' ? 'devir' : e.msg.subject === 'retry' ? 'tekrar' : e.msg.subject === 'plan-revision' ? 'revize notu' : 'not' }}</span>
+                  <span class="tag" :class="e.msg.subject === 'error' ? 'error' : 'msg'">{{ subjectLabel(e.msg.subject) }}</span>
                   <span class="sub">{{ e.msg.from }} → {{ e.msg.to }}<template v-if="e.msg.task"> · <code>{{ e.msg.task }}</code></template></span>
                 </div>
                 <pre :class="{ errtext: e.msg.subject === 'error' }">{{ e.msg.body }}</pre>
@@ -513,4 +514,6 @@ button:disabled { opacity: 0.5; cursor: default; }
 .err { color: #b3261e; font-size: 12px; }
 .ok { color: #2f7a4a; font-size: 12px; }
 code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
+.tools { margin: 4px 0 0; padding-left: 18px; font-size: 11px; }
+.tools code { font-size: 11px; }
 </style>

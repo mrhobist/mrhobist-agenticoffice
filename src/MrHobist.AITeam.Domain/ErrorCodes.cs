@@ -50,6 +50,11 @@ public static class ErrorCodes
     public const string ProjectTargetDirInvalid = "project.target_dir_invalid";
     public const string RunNotCancellable = "run.not_cancellable";
     public const string RunBudgetInvalid = "run.budget_invalid";
+    public const string RunNotAwaitingInput = "run.not_awaiting_input";
+    public const string RunInvalidChoice = "run.invalid_choice";
+    public const string RunStepInvalid = "run.step_invalid";
+
+    public const string SettingsInvalid = "settings.invalid";
 
     public const string ConfigFileMissing = "config.file_missing";
     public const string ConfigFileInvalid = "config.file_invalid";

@@ -23,7 +23,7 @@ const api = useApiClient()
 
 // ------------------------------------------------------------------ calisma sekmeleri
 
-const ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'awaitingApproval', 'paused'])
+const ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'awaitingApproval', 'paused', 'awaitingInput'])
 const runs = ref<RunSummary[]>([])
 const projects = ref<ProjectCard[]>([])
 const tabRun = ref<string | null>(null) // null = sahne
@@ -264,6 +264,7 @@ h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: upperca
 .tabs .dot.running { background: #4fa3e0; }
 .tabs .dot.awaitingApproval { background: #f3c34a; }
 .tabs .dot.paused { background: #a889e6; }
+.tabs .dot.awaitingInput { background: #d23b3b; }
 .tabs .open { margin-left: auto; font-weight: 700; color: #1f5f93; }
 .tabs .sub { font-size: 11px; color: #6b7285; padding: 6px 4px; }
 .tabs .group { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6b4a2b; padding: 0 4px 0 10px; align-self: center; border-left: 2px solid #b9ad92; }

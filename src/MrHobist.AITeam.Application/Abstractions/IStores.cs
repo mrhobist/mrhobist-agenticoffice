@@ -85,3 +85,20 @@ public interface IRunStore
 
     Task<IReadOnlyList<string>> ListTasksAsync(string runId, CancellationToken ct);
 }
+
+/// <summary><c>config/settings.json</c>: calisma alani ayarlari (limit korumasi). Dosya yoksa varsayilan.</summary>
+public interface ISettingsStore
+{
+    Task<Domain.Settings.AppSettings> LoadAsync(CancellationToken ct);
+
+    Task SaveAsync(Domain.Settings.AppSettings settings, CancellationToken ct);
+}
+
+/// <summary>
+/// Projenin hedef dizininin diskteki mutlak yolu (depo koku + <c>targetDir</c>). Developer/testci araclari bu dizinde
+/// calisir, yazma disina cikamaz. Yoksa olusturulur. Infrastructure, depo kokunu <c>config/</c>'in ustu olarak bilir.
+/// </summary>
+public interface IWorkspaceLocator
+{
+    string RootOf(Project project);
+}

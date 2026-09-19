@@ -51,7 +51,7 @@ public sealed class RunReader(IRunStore runs) : IRunReader
         var order = spec is null ? [] : TaskGraph.Order(spec.Tasks).Select(t => t.Id).ToList();
         return new RunDetail(
             run.Id, run.Label, run.Brief, run.Sensitivity, run.Workflow, run.Status, run.StartedAt, run.FinishedAt,
-            run.TotalCostUsd, run.Detail, run.MaxCostUsd, run.Retries, run.Project, run.OwnerId, wf is null ? null : WorkflowMapping.ToDetail(wf), spec, order, tasks, messages);
+            run.TotalCostUsd, run.Detail, run.MaxCostUsd, run.Retries, run.Project, run.OwnerId, run.Question, run.ResumeAt, wf is null ? null : WorkflowMapping.ToDetail(wf), spec, order, tasks, messages);
     }
 
     public async Task<IReadOnlyList<AgentRunWork>> GetAgentWorkAsync(string agentKey, int runLimit, CancellationToken ct)
@@ -106,7 +106,7 @@ public sealed class RunReader(IRunStore runs) : IRunReader
         return new RunsOverview(
             list.Count,
             list.Count(r => r.Status == RunStatus.Running),
-            list.Count(r => r.Status == RunStatus.AwaitingApproval),
+            list.Count(r => r.Status is RunStatus.AwaitingApproval or RunStatus.AwaitingInput),
             list.Count(r => r.Status == RunStatus.Paused),
             list.Count(r => r.Status is RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded or RunStatus.PolicyRejected),
             list.Count(r => r.Status == RunStatus.Completed),
@@ -149,13 +149,32 @@ public sealed class RunReader(IRunStore runs) : IRunReader
             items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Decision, run.FinishedAt ?? lastTs, title, run.Detail, null));
         }
 
+        // Soru: akis takildi, kullanicidan secim bekleniyor (docs/DOMAIN.md → Takilma). Secenekler run.Question'da; UI calisma panelinde gosterir.
+        if (run.Status == RunStatus.AwaitingInput && run.Question is { } q)
+        {
+            items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Question, q.Ts, $"{q.Agent}: {Ellipsis(q.Text, 80)}", q.Context, q.Task));
+        }
+
+        // Karar: limit korumasi calismayi bekletti; kullanici isterse hemen surdurur (retry) ya da kapatir. Sifirlanmada kendisi surer.
+        if (run.Status == RunStatus.Paused && run.ResumeAt is { } resume)
+        {
+            items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Decision, lastTs, $"Limit doldu · {resume.ToLocalTime():HH:mm}'de sürer", run.Detail, null));
+        }
+
         // Soru: bir ajan kullaniciya ask yazdi ve ref'i eslesen answer yok. Bugun uretilmiyor; sozlesme hazir.
+        // Takilma sorulari (subject: question) yukarida run.Question'dan geldi; burada yalniz serbest ask'lar sayilir.
         var answered = messages.Where(m => m.Kind == MessageKind.Answer && m.Ref is not null).Select(m => m.Ref!).ToHashSet(StringComparer.Ordinal);
-        foreach (var ask in messages.Where(m => m.Kind == MessageKind.Ask && m.To == "user" && (m.Ref is null || !answered.Contains(m.Ref))))
+        foreach (var ask in messages.Where(m => m.Kind == MessageKind.Ask && m.To == "user" && m.Subject != "question" && (m.Ref is null || !answered.Contains(m.Ref))))
         {
             items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Question, ask.Ts, $"{ask.From} soruyor", ask.Body, ask.Task));
         }
 
         return items;
+    }
+
+    private static string Ellipsis(string s, int max)
+    {
+        var line = s.ReplaceLineEndings(" ").Trim();
+        return line.Length <= max ? line : line[..(max - 1)] + "…";
     }
 }

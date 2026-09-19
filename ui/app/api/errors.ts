@@ -39,6 +39,10 @@ const MESSAGES: Record<string, string> = {
   'run.plan_invalid': 'Analistin planı şemaya uymadı; çalışma durdu.',
   'run.project_required': 'İş bir projenin içinde başlar; önce proje seç.',
 
+  'run.not_awaiting_input': 'Çalışma senden cevap beklemiyor.',
+  'run.invalid_choice': 'Seçenek geçersiz.',
+  'run.step_invalid': 'Ajanın çıktısı beklenen biçimde değil; adım başarısız.',
+  'settings.invalid': 'Ayar geçersiz: eşik 1–100 arasında olmalı.',
   'auth.required': 'Giriş gerekli.',
   'auth.invalid_credentials': 'Kullanıcı adı ya da şifre yanlış.',
 

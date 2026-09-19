@@ -42,8 +42,22 @@ class TurnRequest(BaseModel):
     reasoning_effort: Literal["low", "medium", "high", "max"] | None = Field(
         default="low", alias="reasoningEffort"
     )
+    #: Ajanin kullanabilecegi araclar (Read, Write, Edit, Bash, Glob, Grep...). Bos/None = arac yok.
+    #: Hangi ajanin hangi araci alacagi .NET'in karari; burasi yalniz iletir.
+    tools: list[str] | None = None
+    #: Araclarin calisacagi dizin (projenin hedef dizini). .NET verir; runtime hicbir yolu kendisi secmez.
+    cwd: str | None = None
+    #: Ajan dongusunun en fazla tur sayisi. None = araclara gore varsayilan.
+    max_turns: int | None = Field(default=None, alias="maxTurns")
 
     model_config = {"populate_by_name": True}
+
+
+class ToolUse(BaseModel):
+    """Ajanin bir arac cagrisi: yalniz ad ve hedef (dosya yolu / komut). .NET denetim kaydina yazar."""
+
+    tool: str
+    target: str | None = None
 
 
 class Usage(BaseModel):
@@ -64,6 +78,10 @@ class TurnResponse(BaseModel):
     cost_usd: float | None = Field(default=None, alias="costUsd")
     duration_s: float = Field(default=0.0, alias="durationS")
     attempts: int = 1
+    #: Ajan dongusundeki arac cagrilari (sirali). Arac yoksa bos.
+    tool_uses: list[ToolUse] = Field(default_factory=list, alias="toolUses")
+    #: Ajan dongusunun tur sayisi (saglayici bildirirse).
+    turns: int = 1
 
     model_config = {"populate_by_name": True}
 

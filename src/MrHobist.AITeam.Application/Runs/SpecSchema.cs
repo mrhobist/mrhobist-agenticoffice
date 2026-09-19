@@ -92,7 +92,7 @@ public static class SpecSchema
         }
     }
 
-    private static string StripFences(string text)
+    internal static string StripFences(string text)
     {
         var s = text.Trim();
         if (s.StartsWith("```", StringComparison.Ordinal))

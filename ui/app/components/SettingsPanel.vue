@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { LoginStarted, Provider, ProviderStatus, UsageItem } from '~/api/types'
+import type { AppSettings, LoginStarted, Provider, ProviderStatus, UsageItem } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { providerLabel } from '~/api/labels'
+import { providerLabel, fmtCost as fmtCostLabel, COST_TITLE } from '~/api/labels'
 
 /**
  * Ayarlar: LLM baglantilari (giris durumu, tek tikla giris/cikis, modeller) ve kullanim.
@@ -21,6 +21,42 @@ const email = ref('')
 
 const usage = ref<UsageItem[] | null>(null)
 const usageError = ref<string | null>(null)
+
+// ------------------------------------------------------------------ limit korumasi (GET/PUT /settings)
+const settings = ref<AppSettings | null>(null)
+const settingsError = ref<string | null>(null)
+const settingsSaved = ref(false)
+const savingSettings = ref(false)
+async function loadSettings() {
+  try { settings.value = await api.get<AppSettings>('/api/v1/settings'); settingsError.value = null } catch (e) { settingsError.value = errorText(e) }
+}
+async function saveSettings() {
+  if (!settings.value || savingSettings.value) return
+  savingSettings.value = true
+  settingsError.value = null
+  settingsSaved.value = false
+  try {
+    settings.value = await api.put<AppSettings>('/api/v1/settings', settings.value)
+    settingsSaved.value = true
+    setTimeout(() => { settingsSaved.value = false }, 2500)
+  } catch (e) {
+    settingsError.value = errorText(e)
+  } finally {
+    savingSettings.value = false
+  }
+}
+/** Saglayici listesi: ayarlarda olanlar + baglantisi olanlar (yeni saglayici gelince satir kendi acilir). */
+const guardRows = computed(() => {
+  const keys = new Set<string>(Object.keys(settings.value?.limitGuards ?? {}))
+  for (const p of providers.value ?? []) keys.add(p.provider)
+  return [...keys]
+})
+function guardOf(p: string): number { return settings.value?.limitGuards[p] ?? 99 }
+function setGuard(p: string, v: string) {
+  if (!settings.value) return
+  const n = Math.round(Number(v))
+  settings.value = { limitGuards: { ...settings.value.limitGuards, [p]: Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : 99 } }
+}
 
 async function load(refresh = false) {
   try {
@@ -91,11 +127,11 @@ async function logout(p: Provider) {
   }
 }
 
-onMounted(() => { void load(); void loadUsage() })
+onMounted(() => { void load(); void loadUsage(); void loadSettings() })
 onBeforeUnmount(() => clearInterval(watchTimer))
 
 const totalCost = computed(() => (usage.value ?? []).reduce((s, u) => s + u.costUsd, 0))
-function fmtCost(v: number): string { return `$${v.toFixed(4)}` }
+function fmtCost(v: number): string { return fmtCostLabel(v, 4) }
 function fmtNum(v: number): string { return v.toLocaleString('tr-TR') }
 function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '—' }
 </script>
@@ -150,19 +186,37 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
         </article>
       </section>
 
+      <!-- ---------------------------------------------------------- limit korumasi -->
+      <section class="block">
+        <div class="block-head">
+          <h3>Limit koruması</h3>
+          <button type="button" class="small primary" :disabled="savingSettings || !settings" @click="saveSettings">{{ savingSettings ? '…' : settingsSaved ? 'Kaydedildi ✓' : 'Kaydet' }}</button>
+        </div>
+        <p class="sub">Sağlayıcının aktif kota penceresi (5 saat, hafta) bu yüzdeye ulaşınca yeni LLM turu başlamaz: çalışma bekler, pencere sıfırlanınca kendisi sürer; bildirim zilinde görünür. Eşik platform bazında.</p>
+        <p v-if="settingsError" class="err">{{ settingsError }}</p>
+        <div v-else-if="settings" class="guards">
+          <label v-for="p in guardRows" :key="p" class="guard">
+            <span>{{ providerLabel(p as Provider) }}</span>
+            <input type="number" min="1" max="100" step="1" :value="guardOf(p)" @change="setGuard(p, ($event.target as HTMLInputElement).value)">
+            <span class="sub">%</span>
+          </label>
+        </div>
+        <p v-else class="sub">Yükleniyor…</p>
+      </section>
+
       <!-- ---------------------------------------------------------- kullanim -->
       <section class="block">
         <div class="block-head">
           <h3>Kullanım</h3>
           <button type="button" class="small" @click="loadUsage">Yenile</button>
         </div>
-        <p class="sub">Bu makinedeki çalışmaların kayıtlarından (<code>runs/</code>) toplanır: tur, token, sağlayıcının bildirdiği maliyet. Abonelik limiti ve kalan kota sağlayıcı tarafından CLI'a açılmıyor; o bilgi için hesap sayfasına bakılır.</p>
+        <p class="sub" :title="COST_TITLE">Bu makinedeki çalışmaların kayıtlarından (<code>runs/</code>) toplanır: tur, token, <strong>eşdeğer maliyet</strong> (≈$: API liste fiyatına göre; Claude Code aboneliğiyle ücret kesilmez, kota penceresi tükenir). Kalan kota üst barda.</p>
         <p v-if="usageError" class="err">{{ usageError }}</p>
         <p v-else-if="!usage" class="sub">Yükleniyor…</p>
         <p v-else-if="!usage.length" class="sub">Henüz kayıtlı bir model çağrısı yok.</p>
         <table v-else class="usage">
           <thead>
-            <tr><th>Sağlayıcı</th><th>Model</th><th class="num">Tur</th><th class="num">Çalışma</th><th class="num">Giriş tk</th><th class="num">Çıkış tk</th><th class="num">Maliyet</th><th>Son</th></tr>
+            <tr><th>Sağlayıcı</th><th>Model</th><th class="num">Tur</th><th class="num">Çalışma</th><th class="num">Giriş tk</th><th class="num">Çıkış tk</th><th class="num" :title="COST_TITLE">≈ Maliyet</th><th>Son</th></tr>
           </thead>
           <tbody>
             <tr v-for="u in usage" :key="u.provider + u.model">
@@ -206,6 +260,9 @@ input:focus { outline: 2px solid #4f8ef7; outline-offset: 0; }
 button { font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px; border: 1px solid #c9c3b3; background: #fff; color: #23283a; }
 button:disabled { opacity: 0.5; cursor: default; }
 .primary { background: #23283a; color: #fff; border-color: #23283a; }
+.guards { display: flex; flex-direction: column; gap: 6px; }
+.guard { display: grid; grid-template-columns: 140px 90px auto; align-items: center; gap: 8px; font-size: 13px; }
+.guard input { font: inherit; font-size: 13px; background: #fff; color: #23283a; border: 1px solid #c9c3b3; border-radius: 4px; padding: 5px 8px; }
 .ghost { background: transparent; }
 .small { padding: 3px 8px; font-size: 11px; }
 .err { color: #b3261e; font-size: 12px; margin: 0; }

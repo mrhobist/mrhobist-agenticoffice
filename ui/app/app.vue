@@ -155,7 +155,7 @@ import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } fr
 import type { AgentDetail, AgentListItem, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel } from '~/api/labels'
+import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel, fmtCost as fmtCostLabel } from '~/api/labels'
 
 // ------------------------------------------------------------------ giris
 const { user, loggedIn, logout } = useAuth()
@@ -225,7 +225,7 @@ function pinOf(p: ProjectCard): string {
   return 'quiet'
 }
 function initials(t: string): string { return t.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('') || '?' }
-function fmtCost(v: number): string { return v ? `$${v.toFixed(2)}` : '$0' }
+function fmtCost(v: number): string { return fmtCostLabel(v, 2) }
 function fmtAgo(s: string): string {
   const m = Math.max(0, Math.round((Date.now() - new Date(s).getTime()) / 60_000))
   if (m < 1) return 'az önce'

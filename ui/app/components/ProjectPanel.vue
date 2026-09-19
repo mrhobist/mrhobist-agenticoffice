@@ -2,7 +2,7 @@
 import type { CreateProjectRequest, InboxItem, ProjectCard, ProjectModel, RunSummary, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { INBOX_KIND_LABEL, RUN_STATUS_LABEL } from '~/api/labels'
+import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel } from '~/api/labels'
 
 /**
  * Proje karti acildi (docs/DOMAIN.md → Projeler): kagit pano, sekmeler Isler / Ayarlar.
@@ -133,7 +133,7 @@ const ACTIVE = new Set(['running', 'awaitingApproval', 'paused'])
 const activeRuns = computed(() => (runs.value ?? []).filter(r => ACTIVE.has(r.status)))
 const otherRuns = computed(() => (runs.value ?? []).filter(r => !ACTIVE.has(r.status)))
 function pendingOf(id: string): InboxItem | undefined { return props.inbox.find(i => i.runId === id) }
-function fmtCost(v: number): string { return v ? `$${v.toFixed(2)}` : '$0' }
+function fmtCost(v: number): string { return fmtCostLabel(v, 2) }
 function fmtWhen(s: string | null): string {
   if (!s) return '—'
   const d = new Date(s)
@@ -307,6 +307,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #4f8ef7; outline-
 .status.awaitingApproval { background: #f3c34a; }
 .status.running { background: #4fa3e0; color: #fff; }
 .status.paused { background: #a889e6; color: #fff; }
+.status.awaitingInput { background: #d23b3b; color: #fff; }
 .status.completed { background: #7cc46b; }
 .status.failed, .status.policyRejected, .status.interrupted, .status.budgetExceeded, .status.cancelled { background: #d23b3b; color: #fff; }
 

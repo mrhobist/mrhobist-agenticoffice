@@ -20,7 +20,27 @@ public sealed record AgentTarget(Provider Provider, string Model, string Effort,
 }
 
 /// <summary>Tek bir LLM turunun sonucu; tur kaydi <c>conversations/{agent}.jsonl</c>'e zaten yazilmistir.</summary>
-public sealed record AgentReply(string Text, string? StructuredJson, decimal CostUsd);
+public sealed record AgentReply(string Text, string? StructuredJson, decimal CostUsd, IReadOnlyList<ToolUse> ToolUses);
+
+/// <summary>
+/// Ajanin araclari ve calisma dizini (kullanici karari 2026-09-19: developer/testci dosyayi kendisi yazar, testi kendisi kosar).
+/// Hangi adimin hangi araci aldigi <see cref="ForKind"/>'da; runtime yalniz iletir, yazma <see cref="Cwd"/> disina cikamaz.
+/// </summary>
+public sealed record ToolAccess(IReadOnlyList<string> Tools, string Cwd, int MaxTurns)
+{
+    public static readonly IReadOnlyList<string> ReadOnly = ["Read", "Glob", "Grep"];
+
+    public static readonly IReadOnlyList<string> Full = ["Read", "Glob", "Grep", "Write", "Edit", "Bash"];
+
+    /// <summary>analyze/design: yalniz okuma (var olan kodu gorsun) · implement/review: tam · handoff: yok.</summary>
+    public static ToolAccess? ForKind(Domain.Workflows.StageKind kind, string cwd) => kind switch
+    {
+        Domain.Workflows.StageKind.Analyze or Domain.Workflows.StageKind.Design => new ToolAccess(ReadOnly, cwd, 30),
+        Domain.Workflows.StageKind.Implement => new ToolAccess(Full, cwd, 120),
+        Domain.Workflows.StageKind.Review => new ToolAccess(Full, cwd, 80),
+        _ => null,
+    };
+}
 
 /// <summary>Otomatik tekrar ayari: gecici hatalarda (429, zaman asimi, ag, 5xx) <see cref="Attempts"/> deneme, artan bekleme.</summary>
 public sealed record RetryPolicy(int Attempts, TimeSpan BaseDelay)
@@ -38,7 +58,7 @@ public sealed record RetryPolicy(int Attempts, TimeSpan BaseDelay)
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
-public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null)
+public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null)
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AgentLocks = new(StringComparer.Ordinal);
 
@@ -56,7 +76,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         string? stage,
         string? task,
         int? round,
-        CancellationToken ct)
+        CancellationToken ct,
+        ToolAccess? tools = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(messages);
@@ -75,12 +96,19 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         }
 
         var system = agent.ComposePrompt(team.Knowledge);
-        var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort);
+        var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
+            Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns);
 
         var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // Limit korumasi cagridan ONCE: esik asildiysa LimitReachedException; RunService calismayi bekletir.
+            if (limits is not null)
+            {
+                await limits.CheckAsync(target.Provider, ct).ConfigureAwait(false);
+            }
+
             var response = await CallWithRetryAsync(run, agentKey, request, ct).ConfigureAwait(false);
 
             // Runtime'in soyledigi hedef de politikaya uymali: adaptor yanlis yere gittiyse burada yakalanir.
@@ -110,10 +138,12 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 prompt,
                 output,
                 r.Usage.InputTokens,
-                r.Usage.OutputTokens);
+                r.Usage.OutputTokens,
+                r.ToolUses is { Count: > 0 } ? r.ToolUses.Select(t => new ToolUse(t.Tool, t.Target)).ToList() : null,
+                r.Turns);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
-            return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m);
+            return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m, turn.ToolUses ?? []);
         }
         finally
         {

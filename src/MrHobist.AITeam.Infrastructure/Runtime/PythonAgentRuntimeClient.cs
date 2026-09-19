@@ -26,9 +26,14 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         string Model,
         JsonElement? Schema,
         int MaxTokens,
-        string? ReasoningEffort);
+        string? ReasoningEffort,
+        IReadOnlyList<string>? Tools,
+        string? Cwd,
+        int? MaxTurns);
 
     private sealed record MessageDto(string Role, string Content);
+
+    private sealed record ToolUseDto(string Tool, string? Target);
 
     private sealed record UsageDto(int InputTokens, int OutputTokens, int ReasoningChars);
 
@@ -41,7 +46,9 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         UsageDto? Usage,
         decimal? CostUsd,
         double DurationS,
-        int Attempts);
+        int Attempts,
+        IReadOnlyList<ToolUseDto>? ToolUses,
+        int? Turns);
 
     private sealed record ModelDto(string Provider, string Model, bool Reachable, string? Detail);
 
@@ -165,7 +172,10 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             request.Model,
             request.SchemaJson is null ? null : JsonDocument.Parse(request.SchemaJson).RootElement,
             request.MaxTokens,
-            request.ReasoningEffort);
+            request.ReasoningEffort,
+            request.Tools is { Count: > 0 } ? request.Tools : null,
+            request.Cwd,
+            request.MaxTurns);
 
         HttpResponseMessage response;
         try
@@ -195,7 +205,9 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             new RuntimeUsage(result.Usage?.InputTokens ?? 0, result.Usage?.OutputTokens ?? 0, result.Usage?.ReasoningChars ?? 0),
             result.CostUsd,
             result.DurationS,
-            result.Attempts);
+            result.Attempts,
+            result.ToolUses?.Select(t => new RuntimeToolUse(t.Tool, t.Target)).ToList(),
+            result.Turns ?? 1);
     }
 
     public async Task<IReadOnlyList<RuntimeModelInfo>> ListModelsAsync(Provider? provider, CancellationToken ct)

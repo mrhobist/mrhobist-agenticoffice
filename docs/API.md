@@ -147,10 +147,16 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 | `GET /api/v1/runs/{id}/turns?agent=` | `Turn[]` | Tüm ajanların LLM turları, **tam prompt ve çıktı** ile, zamana göre (`conversations/*.jsonl`). Günlük ekranı |
 | `POST /api/v1/runs/{id}/approve` | **202** `RunSummary` | yalnız `AwaitingApproval`; değilse 409 `run.not_awaiting_approval` |
 | `POST /api/v1/runs/{id}/revise` `{ note }` | **202** `RunSummary` | boş `note` 400 `run.note_empty`; 409 gibi yukarıda |
-| `POST /api/v1/runs/{id}/retry` | **202** `RunSummary` | yalnız `failed \| interrupted \| budgetExceeded \| cancelled`; değilse 409 `run.not_retryable`. Kaldığı adımdan sürer (plan yoksa/analizde düştüyse analiz, yoksa dağıtım); onay beklerken iptal edilmişse yalnız `awaitingApproval`'a döner, kuyruğa iş girmez |
-| `POST /api/v1/runs/{id}/cancel` | **200** `RunSummary` | yalnız `running \| awaitingApproval \| paused \| failed \| interrupted \| budgetExceeded`; değilse 409 `run.not_cancellable`. Düşen çalışmada anlamı **kapat**: karar verildi, gelen kutusundan düşer. Hemen yazılır; süren LLM çağrısının sonucu yazılmaz |
+| `POST /api/v1/runs/{id}/answer` `{ choice, note? }` | **202** `RunSummary` | yalnız `awaitingInput` (409 `run.not_awaiting_input`); `choice` sorunun `options[].id`'lerinden biri (`retry \| skip \| cancel`; değilse 400 `run.invalid_choice`); seçenek `needsNote` ise boş not 400 `run.note_empty`. `Running` dönerse dağıtım kuyruğa girer (docs/DOMAIN.md → Takılma) |
+| `POST /api/v1/runs/{id}/retry` | **202** `RunSummary` | yalnız `failed \| interrupted \| budgetExceeded \| cancelled` ve limit beklemesi (`paused` + `resumeAt`); değilse 409 `run.not_retryable`. Kaldığı adımdan sürer (plan yoksa/analizde düştüyse analiz, yoksa dağıtım); onay beklerken iptal edilmişse yalnız `awaitingApproval`'a döner, kuyruğa iş girmez |
+| `POST /api/v1/runs/{id}/cancel` | **200** `RunSummary` | yalnız `running \| awaitingApproval \| paused \| failed \| interrupted \| budgetExceeded \| awaitingInput`; değilse 409 `run.not_cancellable`. Düşen çalışmada anlamı **kapat**: karar verildi, gelen kutusundan düşer. Hemen yazılır; süren LLM çağrısının sonucu yazılmaz |
 | `GET /api/v1/runs/overview` | `RunsOverview` | **İşler** ekranı ve üst bar: kaç iş var, kaçı ne durumda, kaçı kullanıcıdan bir şey bekliyor (`inbox`). UI 5 s'de bir yoklar |
-| `GET /api/v1/jobs/health` | `{ status, pending }` | iş kanalında bekleyen iş sayısı |
+| `GET /api/v1/jobs/health` | `{ status, pending }` | iş kanalında bekleyen iş sayısı (kimliksiz) |
+| `GET /api/v1/settings` · `PUT /api/v1/settings` `{ limitGuards: { anthropic: 99 } }` | `SettingsDto` | Limit koruması eşiği, sağlayıcı başına % (1–100; değilse 400 `settings.invalid`). `config/settings.json` |
+
+`RunSummary` ek alanlar: `question` (`awaitingInput`'ta `{ ts, agent, text, options: [{ id, label, detail, needsNote }], task, stage, context }`),
+`resumeAt` (limit beklemesi). `Turn` ek alanlar: `toolUses: [{ tool, target }]`, `turns` (ajan döngüsünün iç tur sayısı).
+`totalCostUsd` **eşdeğer** maliyettir (docs/DOMAIN.md → Bütçe ve limit).
 
 ```jsonc
 // RunSummary — run.json

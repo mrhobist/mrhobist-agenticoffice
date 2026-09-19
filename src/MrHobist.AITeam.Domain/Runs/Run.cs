@@ -34,6 +34,11 @@ public enum RunStatus
     Paused,
     /// <summary>Kullanici durdurdu. Bitmis sayilir; "Yeniden dene" ile kaldigi adimdan devam edebilir.</summary>
     Cancelled,
+    /// <summary>
+    /// Akis takildi ve kullanicidan bir secim bekliyor (red turu bitti, ajan soru sordu, tekrarlanan hata). Soru ve
+    /// secenekler <see cref="Run.Question"/>'da; cevap <c>POST /runs/{id}/answer</c> (docs/DOMAIN.md → Takilma).
+    /// </summary>
+    AwaitingInput,
 }
 
 public enum PhaseStatus
@@ -85,18 +90,40 @@ public sealed record Run(
     decimal? MaxCostUsd = null,
     int Retries = 0,
     string Project = "",
-    string OwnerId = "local")
+    string OwnerId = "local",
+    UserQuestion? Question = null,
+    DateTimeOffset? ResumeAt = null)
 {
     /// <summary>
     /// Kullanicinin durdurabilecegi ya da "kapat" diyebilecegi durumlar. Dusen calismalar (Failed/Interrupted/BudgetExceeded)
     /// da iptal edilir: yoksa "yeniden dene ya da vazgec" kararinin ikinci sikki olmaz ve is gelen kutusundan hic dusmez.
     /// </summary>
     public bool IsCancellable => Status is RunStatus.Running or RunStatus.AwaitingApproval or RunStatus.Paused
-        or RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded;
+        or RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded or RunStatus.AwaitingInput;
 
-    /// <summary>"Yeniden dene" ile kaldigi adimdan devam edebilecek durumlar.</summary>
-    public bool IsRetryable => Status is RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded or RunStatus.Cancelled;
+    /// <summary>"Yeniden dene" ile kaldigi adimdan devam edebilecek durumlar. Limit beklemesi (<see cref="ResumeAt"/>) de elle surdurulebilir.</summary>
+    public bool IsRetryable => Status is RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded or RunStatus.Cancelled
+        || (Status == RunStatus.Paused && ResumeAt is not null);
 }
+
+/// <summary>
+/// Akis takildiginda kullaniciya sorulan soru (docs/DOMAIN.md → Takilma). <see cref="Options"/> mudahale secenekleri;
+/// hangisinin ne yaptigi <see cref="QuestionOption.Id"/> ile sabittir: <c>retry</c> (notla yeniden), <c>skip</c>
+/// (adimi gec / elle halledildi / kabul), <c>cancel</c>. Cevap gelince <see cref="Run.Question"/> temizlenir; kayit messages.jsonl'de.
+/// </summary>
+public sealed record UserQuestion(
+    DateTimeOffset Ts,
+    string Agent,
+    string Text,
+    IReadOnlyList<QuestionOption> Options,
+    string? Task = null,
+    string? Stage = null,
+    string? Context = null);
+
+public sealed record QuestionOption(string Id, string Label, string Detail, bool NeedsNote = false);
+
+/// <summary>Ajanin bir arac cagrisi (dosya yazma, komut...). Denetim kaydi: turun icinde sirali.</summary>
+public sealed record ToolUse(string Tool, string? Target);
 
 /// <summary>Analistin urettigi gorev; <see cref="DependsOn"/> gercek bagimliliklar.</summary>
 public sealed record RunTask(
@@ -140,7 +167,9 @@ public sealed record Turn(
     string? Prompt = null,
     string? Output = null,
     int? InputTokens = null,
-    int? OutputTokens = null);
+    int? OutputTokens = null,
+    IReadOnlyList<ToolUse>? ToolUses = null,
+    int? Turns = null);
 
 /// <summary>Ajanlar arasi mesaj: <c>runs/{id}/messages.jsonl</c>. <see cref="Ref"/> ask ile answer'i esler.</summary>
 public sealed record Message(

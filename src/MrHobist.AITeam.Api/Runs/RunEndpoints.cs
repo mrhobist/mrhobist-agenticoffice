@@ -55,6 +55,18 @@ public static class RunEndpoints
             return Results.Accepted($"/api/v1/runs/{result.Run.Id}", result.Run);
         });
 
+        // Takilma cevabi (docs/DOMAIN.md → Takilma): secim uygulanir; Running donerse dagitim kuyruga girer.
+        g.MapPost("/{id}/answer", async (string id, AnswerRequest body, IRunService runs, JobChannel jobs, CancellationToken ct) =>
+        {
+            var run = await runs.BeginAnswerAsync(id, body, ct).ConfigureAwait(false);
+            if (run.Status == Domain.Runs.RunStatus.Running)
+            {
+                jobs.Enqueue(run.Id, $"dagitim {run.Id}", token => runs.DispatchAsync(run.Id, token));
+            }
+
+            return Results.Accepted($"/api/v1/runs/{run.Id}", run);
+        });
+
         // Iptal: durum hemen yazilir; suren is varsa belirteci kesilir (LLM cagrisi durur), yarim sonuc yazilmaz.
         g.MapPost("/{id}/cancel", async (string id, IRunService runs, JobChannel jobs, CancellationToken ct) =>
         {

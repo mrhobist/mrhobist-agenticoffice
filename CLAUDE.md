@@ -39,7 +39,10 @@ onay, red halinde geri dönüş) **.NET `Application` katmanındadır**. Python'
 sızarsa mantık iki dile bölünür ve döngü Python olmadan test edilemez hâle gelir.
 
 Sonuçları:
-- `runtime/` içinde `if role == ...`, tur sayacı, faz bilgisi, dosya yazma **yoktur**.
+- `runtime/` içinde `if role == ...`, tur sayacı, faz bilgisi **yoktur**; runtime kodu dosya yazmaz.
+  **Ajan araçları** (Agent SDK: Read/Write/Edit/Bash…) .NET'in istekle gönderdiği `tools` listesi ve `cwd`
+  ile açılır; hangi adımın hangi aracı aldığı `Application`'dadır (`ToolAccess`). Yazma `cwd` dışına
+  çıkamaz (SDK izin geri çağrısı). 2026-09-19 kullanıcı kararı: developer dosyayı kendisi yazar.
 - Python **durumsuzdur**: iki ardışık istek birbirini bilmez. Geçmiş `messages` ile gelir.
 - Sözleşme `IAgentRuntimeService` (Application) · `PythonAgentRuntimeClient` (Infrastructure).
 - Python'u kapatmak derlemeyi ve `ServiceTests`'i **bozmaz** — sahte adaptörle çalışır.
@@ -69,7 +72,9 @@ Kimlik doğrulama tek şemalı ve basit olduğu için **hostlar yalnız `127.0.0
 - Bir ajanın sağlayıcı/modeli **md frontmatter'ında** belirlenir; boşsa varsayılan kullanılır.
 - Her tur `runs/` içine **hedefiyle** kaydedilir (`local` | `anthropic` | `nvidia`).
   Çalışma sonunda makineden çıkan çağrılar tek tek raporlanır.
-- Bütçe aşımı çalışmayı **durdurur**, uyarıyla geçmez.
+- Bütçe aşımı çalışmayı **durdurur**, uyarıyla geçmez. Maliyet **eşdeğerdir** (abonelikle ücret kesilmez);
+  asıl koruma **limit eşiği** (`config/settings.json`, varsayılan %99): kota dolunca yeni tur başlamaz,
+  çalışma pencere sıfırlanınca kendisi sürer (`docs/DOMAIN.md` → Bütçe ve limit).
 
 ### 5. Sözleşme
 

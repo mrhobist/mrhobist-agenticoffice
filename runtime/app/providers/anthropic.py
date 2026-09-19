@@ -27,8 +27,12 @@ from claude_agent_sdk import (
     ClaudeSDKError,
     CLINotFoundError,
     ProcessError,
+    PermissionResultAllow,
+    PermissionResultDeny,
     ResultMessage,
     TextBlock,
+    ToolPermissionContext,
+    ToolUseBlock,
 )
 from fastapi import HTTPException
 
@@ -39,6 +43,7 @@ from ..contracts import (
     LoginStarted,
     ModelInfo,
     ProviderLimits,
+    ToolUse,
     UsageLimit,
     TurnRequest,
     TurnResponse,
@@ -157,20 +162,75 @@ class AnthropicProvider:
         return self._cli_path or find_claude_cli()
 
     def _options(self, request: TurnRequest) -> ClaudeAgentOptions:
+        tools = list(request.tools or [])
         opts: dict[str, Any] = {
             "model": request.model,
             "system_prompt": request.system_prompt,
             "effort": request.reasoning_effort,
-            "allowed_tools": [],
-            # Yerlesik arac tanimlari prompt'a girmesin: 23k → 4.5k token / cagri (olculdu, 2026-09-19). Ajanlar arac kullanmaz.
-            "tools": [],
-            # Yapisal cikti (json_schema) ikinci bir tur ister; 1 ile "Reached maximum number of turns" gelir.
-            "max_turns": 4,
             "cli_path": self.cli,
         }
+        if tools:
+            # Aracli tur (kullanici karari 2026-09-19: developer/testci dosyayi kendisi yazar, testi kendisi kosar).
+            # Izin listesi ve dizin .NET'ten gelir; runtime secmez. Sunucu etkilesimsizdir, izin sorusu soracak
+            # kimse yok: her arac cagrisi `_guard` ile karar bulur — dosya yazma yalniz cwd altinda, gerisi izinli.
+            # `allowed_tools` VERILMEZ: verilirse SDK araci geri cagriyi sormadan onaylar (CanUseToolShadowedWarning) ve
+            # yazma siniri devre disi kalir. Arac kumesi `tools`, her cagrinin karari `_guard`.
+            opts["tools"] = tools
+            opts["can_use_tool"] = self._guard(request.cwd)
+            opts["max_turns"] = request.max_turns or 80
+            if request.cwd:
+                opts["cwd"] = request.cwd
+        else:
+            # Yerlesik arac tanimlari prompt'a girmesin: 23k → 4.5k token / cagri (olculdu, 2026-09-19).
+            opts["allowed_tools"] = []
+            opts["tools"] = []
+            # Yapisal cikti (json_schema) ikinci bir tur ister; 1 ile "Reached maximum number of turns" gelir.
+            opts["max_turns"] = request.max_turns or 4
         if request.schema_ is not None:
             opts["output_format"] = {"type": "json_schema", "schema": request.schema_}
         return ClaudeAgentOptions(**opts)
+
+    #: Dosya degistiren araclar: hedef yol cwd disindaysa reddedilir.
+    WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
+
+    @classmethod
+    def _guard(cls, cwd: str | None):
+        """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: yazma yalniz verilen dizinde."""
+        root = Path(cwd).resolve() if cwd else None
+
+        async def decide(tool: str, tool_input: dict[str, Any], _ctx: ToolPermissionContext):
+            if tool in cls.WRITE_TOOLS and root is not None:
+                raw = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+                try:
+                    target = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+                except OSError:
+                    return PermissionResultDeny(message=f"gecersiz yol: {raw}")
+                if root != target and root not in target.parents:
+                    return PermissionResultDeny(
+                        message=f"Bu dizinin disina yazilamaz: {raw}. Yalniz {root} altinda calis."
+                    )
+            return PermissionResultAllow()
+
+        return decide
+
+    @staticmethod
+    async def _stream(prompt: str):
+        """`can_use_tool` akis modu ister: tek kullanici mesaji uretilir."""
+        yield {
+            "type": "user",
+            "message": {"role": "user", "content": prompt},
+            "parent_tool_use_id": None,
+            "session_id": "default",
+        }
+
+    @staticmethod
+    def _tool_target(block: ToolUseBlock) -> str | None:
+        inp = block.input or {}
+        for key in ("file_path", "path", "command", "pattern", "notebook_path", "url"):
+            v = inp.get(key)
+            if isinstance(v, str) and v:
+                return v[:300]
+        return None
 
     @staticmethod
     def _prompt(request: TurnRequest) -> str:
@@ -186,10 +246,14 @@ class AnthropicProvider:
         structured: Any = None
         cost: float | None = None
         usage_raw: dict[str, Any] = {}
+        tool_uses: list[ToolUse] = []
+        turns = 1
         started = time.monotonic()
 
         try:
-            async for msg in sdk.query(prompt=self._prompt(request), options=self._options(request)):
+            prompt_text = self._prompt(request)
+            prompt: Any = self._stream(prompt_text) if request.tools else prompt_text
+            async for msg in sdk.query(prompt=prompt, options=self._options(request)):
                 if isinstance(msg, AssistantMessage):
                     if msg.error:
                         err_text = f"Claude hatası: {msg.error}"
@@ -199,6 +263,8 @@ class AnthropicProvider:
                     for block in msg.content:
                         if isinstance(block, TextBlock):
                             parts.append(block.text)
+                        elif isinstance(block, ToolUseBlock):
+                            tool_uses.append(ToolUse(tool=block.name, target=self._tool_target(block)))
                 elif isinstance(msg, ResultMessage):
                     if msg.is_error:
                         detail = "; ".join(msg.errors or []) or msg.result or "bilinmiyor"
@@ -208,6 +274,7 @@ class AnthropicProvider:
                     structured = msg.structured_output
                     cost = msg.total_cost_usd
                     usage_raw = msg.usage or {}
+                    turns = int(msg.num_turns or 1)
                     if msg.result and not parts:
                         parts.append(msg.result)
         except HTTPException:
@@ -231,6 +298,8 @@ class AnthropicProvider:
             cost_usd=cost,
             duration_s=round(time.monotonic() - started, 3),
             attempts=1,
+            tool_uses=tool_uses,
+            turns=turns,
         )
 
     def auth(self, refresh: bool = False) -> AuthStatus:

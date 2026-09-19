@@ -2,7 +2,7 @@
 import type { AgentListItem, ProjectCard, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { RUN_CANCELLABLE, RUN_RETRYABLE, RUN_STATUS_LABEL } from '~/api/labels'
+import { COST_TITLE, RUN_CANCELLABLE, RUN_RETRYABLE, RUN_STATUS_LABEL, fmtCost, subjectLabel } from '~/api/labels'
 
 /**
  * Calisma paneli (docs/DOMAIN.md → Plan onayi). Iki gorunum:
@@ -82,7 +82,7 @@ const actError = ref<string | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 
 /** Yalniz bu durumlarda kayit degisir; digerlerinde yoklama durur (approve/revise yeniden baslatir). */
-const LIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running'])
+const LIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'paused'])
 
 async function poll() {
   if (!props.runId) return
@@ -211,11 +211,35 @@ async function cancel() {
   }
 }
 
+/** Takilma cevabi (docs/DOMAIN.md → Takilma): secenek + (gerekirse) not → POST /runs/{id}/answer, 202. */
+const answerChoice = ref<string | null>(null)
+async function answer(choice: string) {
+  if (!props.runId || acting.value || !run.value?.question) return
+  const opt = run.value.question.options.find(o => o.id === choice)
+  if (!opt) return
+  if (opt.needsNote && !note.value.trim()) { actError.value = `"${opt.label}" için not gerekli.`; return }
+  if (choice === 'cancel' && !window.confirm('Çalışma kapatılsın mı?')) return
+  acting.value = true
+  actError.value = null
+  answerChoice.value = choice
+  try {
+    await api.post(`/api/v1/runs/${encodeURIComponent(props.runId)}/answer`, { choice, note: note.value.trim() || null })
+    note.value = ''
+    startPolling()
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    acting.value = false
+    answerChoice.value = null
+  }
+}
+
 // ------------------------------------------------------------------ turetilenler
 
 const awaiting = computed(() => run.value?.status === 'awaitingApproval')
+const asking = computed(() => run.value?.status === 'awaitingInput' && !!run.value.question)
 const busy = computed(() => run.value?.status === 'running')
-const canRetry = computed(() => !!run.value && RUN_RETRYABLE.has(run.value.status))
+const canRetry = computed(() => !!run.value && (RUN_RETRYABLE.has(run.value.status) || (run.value.status === 'paused' && !!run.value.resumeAt)))
 const canCancel = computed(() => !!run.value && RUN_CANCELLABLE.has(run.value.status))
 
 /** Gorevler yurutme sirasinda; her birinin son fazi (varsa). */
@@ -244,7 +268,6 @@ function stageTitle(id: string): string {
   return run.value?.workflowDef?.stages.find(s => s.id === id)?.title ?? id
 }
 
-function fmtCost(v: number): string { return v ? `$${v.toFixed(4)}` : '$0' }
 function fmtTime(s: string): string { return new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) }
 function fmtClock(s: string): string { return new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
 const PHASE_LABEL: Record<string, string> = { started: 'başladı', done: 'bitti', rejected: 'reddedildi', failed: 'başarısız', skipped: 'atlandı' }
@@ -302,7 +325,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <li v-for="r in recent" :key="r.id">
               <button type="button" class="link" @click="emit('open', r.id)">{{ r.label }}</button>
               <span class="status" :class="r.status">{{ RUN_STATUS_LABEL[r.status] }}</span>
-              <span class="sub">{{ fmtTime(r.startedAt) }} · {{ fmtCost(r.totalCostUsd) }}</span>
+              <span class="sub">{{ fmtTime(r.startedAt) }} · {{ fmtCost(r.totalCostUsd, 3) }}</span>
             </li>
           </ul>
         </div>
@@ -318,11 +341,32 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <span class="status" :class="run.status">{{ RUN_STATUS_LABEL[run.status] }}</span>
             <span v-if="busy" class="spin" aria-hidden="true" />
             <span class="sub">{{ run.detail }}</span>
-            <span class="sub right">{{ run.workflow }} · {{ fmtCost(run.totalCostUsd) }}<template v-if="run.retries"> · {{ run.retries }}× yeniden</template></span>
+            <span class="sub right">{{ run.workflow }} · <span :title="COST_TITLE">{{ fmtCost(run.totalCostUsd, 4) }}</span><template v-if="run.maxCostUsd"> / {{ fmtCost(run.maxCostUsd) }}</template><template v-if="run.retries"> · {{ run.retries }}× yeniden</template></span>
             <button v-if="canRetry" type="button" class="small" :disabled="acting" @click="retry">Yeniden dene</button>
             <button v-if="canCancel" type="button" class="small danger" :disabled="acting" @click="cancel">{{ canRetry ? 'Kapat (iptal)' : 'İptal et' }}</button>
           </div>
-          <p v-if="actError && !awaiting" class="err" role="alert">{{ actError }}</p>
+          <p v-if="actError && !awaiting && !asking" class="err" role="alert">{{ actError }}</p>
+
+          <!-- Takilma: ajan ya da akis kullanicidan secim bekliyor. Secenekler sunucudan gelir; kimlikleri sabittir. -->
+          <section v-if="asking && run.question" class="ask" aria-live="polite">
+            <h3><span class="qmark" aria-hidden="true">?</span> {{ agentName(run.question.agent) }} soruyor<template v-if="run.question.task"> · <code>{{ run.question.task }}</code> · {{ stageTitle(run.question.stage ?? '') }}</template></h3>
+            <p class="qtext">{{ run.question.text }}</p>
+            <details v-if="run.question.context"><summary>Bağlam</summary><pre>{{ run.question.context }}</pre></details>
+            <div class="field">
+              <label class="lbl" for="run-answer-note">Not <span class="sub">(seçeneğe göre isteğe bağlı ya da zorunlu; ajana iletilir)</span></label>
+              <textarea id="run-answer-note" v-model="note" class="note" placeholder="Örn. Türkçe karakter için küçük i kullan; testleri pytest ile koş." />
+            </div>
+            <div class="options">
+              <button v-for="o in run.question.options" :key="o.id" type="button" :class="{ primary: o.id === 'retry', danger: o.id === 'cancel' }" :disabled="acting" :title="o.detail" @click="answer(o.id)">
+                {{ acting && answerChoice === o.id ? '…' : o.label }}<span v-if="o.needsNote" class="req" aria-label="not gerekli">*</span>
+              </button>
+            </div>
+            <p class="sub">{{ run.question.options.map(o => `${o.label}: ${o.detail}`).join(' · ') }}</p>
+            <p v-if="actError" class="err" role="alert">{{ actError }}</p>
+          </section>
+
+          <!-- Limit beklemesi: kendisi surer; kullanici isterse hemen dener. -->
+          <p v-if="run.status === 'paused' && run.resumeAt" class="limit">⏳ Limit doldu; <strong>{{ new Date(run.resumeAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) }}</strong>'de kendisi sürer. Eşik Ayarlar'da; "Yeniden dene" hemen dener.</p>
 
           <details class="brief-box">
             <summary>Brief</summary>
@@ -419,15 +463,16 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
                       <span class="when">{{ fmtClock(e.ts) }}</span>
                       <span class="tag turn">LLM turu</span>
                       <strong>{{ agentName(e.turn.agent) }}</strong>
-                      <span class="sub">{{ e.turn.provider }} · <code>{{ e.turn.model }}</code> · {{ e.turn.durationS.toFixed(1) }} s · {{ e.turn.inputTokens ?? '?' }}→{{ e.turn.outputTokens ?? '?' }} tk · {{ fmtCost(e.turn.costUsd ?? 0) }}<template v-if="e.turn.stage"> · {{ stageTitle(e.turn.stage) }}</template><template v-if="e.turn.task"> · <code>{{ e.turn.task }}</code></template></span>
+                      <span class="sub">{{ e.turn.provider }} · <code>{{ e.turn.model }}</code> · {{ e.turn.durationS.toFixed(1) }} s · {{ e.turn.inputTokens ?? '?' }}→{{ e.turn.outputTokens ?? '?' }} tk · {{ fmtCost(e.turn.costUsd ?? 0, 4) }}<template v-if="e.turn.turns && e.turn.turns > 1"> · {{ e.turn.turns }} iç tur</template><template v-if="e.turn.stage"> · {{ stageTitle(e.turn.stage) }}</template><template v-if="e.turn.task"> · <code>{{ e.turn.task }}</code></template></span>
                     </div>
+                    <details v-if="e.turn.toolUses?.length"><summary>Araçlar ({{ e.turn.toolUses.length }})</summary><ul class="tools"><li v-for="(t, k) in e.turn.toolUses" :key="k"><b>{{ t.tool }}</b> <code>{{ t.target }}</code></li></ul></details>
                     <details><summary>Gönderilen (son mesaj, {{ e.turn.promptChars }} kr)</summary><pre>{{ e.turn.prompt }}</pre></details>
                     <details open><summary>Çıktı ({{ e.turn.outputChars }} kr)</summary><pre>{{ e.turn.output }}</pre></details>
                   </template>
                   <template v-else-if="e.kind === 'message'">
                     <div class="entry-head">
                       <span class="when">{{ fmtClock(e.ts) }}</span>
-                      <span class="tag" :class="e.error ? 'error' : 'msg'">{{ e.error ? 'hata' : e.subject === 'handoff' ? 'devir' : e.subject === 'plan-revision' ? 'revize notu' : 'mesaj' }}</span>
+                      <span class="tag" :class="e.error ? 'error' : e.subject === 'review-feedback' ? 'reject' : 'msg'">{{ subjectLabel(e.subject) }}</span>
                       <strong>{{ agentName(e.from) }} → {{ agentName(e.to) }}</strong>
                       <span v-if="e.task" class="sub"><code>{{ e.task }}</code></span>
                     </div>
@@ -496,6 +541,17 @@ button:disabled { opacity: 0.5; cursor: default; }
 .status.awaitingApproval { background: #f3c34a; }
 .status.running { background: #4fa3e0; color: #fff; }
 .status.paused { background: #a889e6; color: #fff; }
+.status.awaitingInput { background: #d23b3b; color: #fff; }
+.ask { background: #fff8e1; border: 2px solid #d23b3b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.ask h3 { display: flex; align-items: center; gap: 8px; color: #23283a; font-size: 14px; text-transform: none; letter-spacing: 0; }
+.ask .qtext { margin: 0; font-size: 13px; line-height: 1.5; }
+.ask .options { display: flex; gap: 8px; flex-wrap: wrap; }
+.ask .req { color: #d23b3b; margin-left: 2px; }
+.ask .danger { border-color: #d23b3b; color: #9c1f1f; }
+.limit { margin: 0; padding: 8px 10px; background: #efe6ff; border: 1px solid #a889e6; border-radius: 6px; font-size: 12px; }
+.tools { margin: 4px 0 0; padding-left: 18px; font-size: 11px; }
+.tools code { font-size: 11px; }
+.tag.reject { background: #fadada; color: #9c1f1f; }
 .status.completed { background: #7cc46b; }
 .status.failed, .status.policyRejected, .status.interrupted, .status.budgetExceeded { background: #d23b3b; color: #fff; }
 .spin { width: 10px; height: 10px; border: 2px solid #4fa3e0; border-top-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }

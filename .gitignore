@@ -40,3 +40,6 @@ assets/_inspect/
 
 # Ajan worktree'leri (gecici)
 .claude/worktrees/
+
+# Ajanlarin yazdigi proje ciktilari (config/projects/*.json targetDir; kullanici kendi deposuna tasir)
+/projects/

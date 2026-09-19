@@ -25,6 +25,9 @@ public static class DependencyInjection
         services.AddSingleton<IWorkflowService, WorkflowService>();
         services.AddSingleton<IRunReader, RunReader>();
         services.AddSingleton<IUsageReader, UsageReader>();
+        services.AddSingleton<ISettingsStore, JsonSettingsStore>();
+        services.AddSingleton<IWorkspaceLocator, WorkspaceLocator>();
+        services.AddSingleton<LimitGuard>();
         services.AddSingleton(RetryPolicy.Default);
         services.AddSingleton<AgentCaller>();
         services.AddSingleton<IRunService, RunService>();

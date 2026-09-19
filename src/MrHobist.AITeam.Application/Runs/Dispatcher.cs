@@ -88,8 +88,10 @@ public static class Dispatcher
     }
 
     /// <summary>
-    /// Gorevin bir sonraki adimi: hic faz yoksa ilk adim; son faz Done ise ondan sonraki adim;
-    /// Started/Failed/Rejected ise null (dagitim yapilmaz — o durumlarin kurali ayri karardir).
+    /// Gorevin bir sonraki adimi (docs/DOMAIN.md → Geri donus kurali):
+    /// hic faz yoksa ilk adim · son faz Done/Skipped ise ondan sonraki adim · <b>Rejected</b> ise en yakin onceki
+    /// <c>implement</c> adimi (red developer'a doner; aradaki adimlar yeniden kosar) · <b>Failed</b> ise ayni adim
+    /// (yeniden dene) · Started ise null (devam ediyor).
     /// </summary>
     public static Stage? NextStage(IReadOnlyList<Stage> stages, IReadOnlyList<Phase> phases)
     {
@@ -104,22 +106,39 @@ public static class Dispatcher
         }
 
         var last = phases[^1];
-        if (last.Status != PhaseStatus.Done && last.Status != PhaseStatus.Skipped)
+        var index = IndexOf(stages, last.Stage);
+        switch (last.Status)
         {
-            return null;
-        }
+            case PhaseStatus.Started:
+                return null;
+            case PhaseStatus.Failed:
+                return index >= 0 ? stages[index] : stages[0];
+            case PhaseStatus.Rejected:
+                for (var i = index - 1; i >= 0; i--)
+                {
+                    if (stages[i].Kind == StageKind.Implement)
+                    {
+                        return stages[i];
+                    }
+                }
 
-        var index = -1;
+                return stages[0];
+            default:
+                return index >= 0 && index + 1 < stages.Count ? stages[index + 1] : null;
+        }
+    }
+
+    private static int IndexOf(IReadOnlyList<Stage> stages, string id)
+    {
         for (var i = 0; i < stages.Count; i++)
         {
-            if (stages[i].Id == last.Stage)
+            if (stages[i].Id == id)
             {
-                index = i;
-                break;
+                return i;
             }
         }
 
-        return index >= 0 && index + 1 < stages.Count ? stages[index + 1] : null;
+        return -1;
     }
 
     private static IReadOnlyList<Phase> Phases(IReadOnlyDictionary<string, IReadOnlyList<Phase>> map, string task)

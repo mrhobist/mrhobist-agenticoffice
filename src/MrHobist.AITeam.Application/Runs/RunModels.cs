@@ -12,6 +12,9 @@ public sealed record RunRequest(string Brief, string? Workflow = null, Sensitivi
 /// <summary><c>POST /runs/{id}/revise</c> govdesi.</summary>
 public sealed record ReviseRequest(string Note);
 
+/// <summary><c>POST /runs/{id}/answer</c> govdesi: <see cref="Choice"/> sorunun seceneklerinden birinin kimligi; <see cref="Note"/> secenek isterse zorunlu.</summary>
+public sealed record AnswerRequest(string Choice, string? Note = null);
+
 /// <summary>"Yeniden dene" hangi adimdan surer: plan yoksa/analiz dustuyse analiz, yoksa dagitim.</summary>
 public enum RetryStep
 {
@@ -43,6 +46,8 @@ public sealed record RunDetail(
     int Retries,
     string Project,
     string OwnerId,
+    UserQuestion? Question,
+    DateTimeOffset? ResumeAt,
     WorkflowDetail? WorkflowDef,
     Spec? Spec,
     IReadOnlyList<string> Order,
