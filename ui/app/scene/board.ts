@@ -15,7 +15,7 @@ const COLUMN_HEX = ['#f3c34a', '#4fa3e0', '#ef6f9a', '#a889e6', '#7cc46b', '#e09
 const DONE_HEX = '#7cc46b'
 
 /**
- * Sprint panosu: sutunlar config/workflow.json'dan (devir adimlari haric), notlar
+ * Sprint panosu: sutunlar secili is akisindan (config/workflows/{key}.json; devir adimlari haric), notlar
  * board.set / board.move olaylarindan. Tamamen prosedurel cizilir; asset yok.
  *
  * "Ileriyi yansitma": aktif gorevin bir sonraki sutununda kesikli hayalet not durur,

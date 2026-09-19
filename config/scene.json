@@ -535,22 +535,6 @@
       "home": {
         "spot": "board"
       }
-    },
-    {
-      "key": "intern",
-      "name": "Stajyer",
-      "sprite": "hipster",
-      "home": {
-        "seat": "deskC-left"
-      }
-    },
-    {
-      "key": "devops",
-      "name": "DevOps",
-      "sprite": "blue-hoodie",
-      "home": {
-        "seat": "deskC-right"
-      }
     }
   ],
   "cat": {

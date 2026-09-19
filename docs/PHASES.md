@@ -120,6 +120,32 @@ Faz 5 (Task.Api iş ucu, `POST /api/v1/runs` → 202, SSE; `RunService` → `Sce
 Faz 6 sahnesi hazır: `agent.state`, `meet`, `board.*`, `run.stage` olayları `RunService`'in
 yayımlayacağı sözleşmedir (`docs/SCENE.md`).
 
+## Faz 2b — Dinamik ekip ve iş akışları (2026-09-19, karar)
+
+**İstek:** Analist → developer → testçi → yönetici (altı şapkalı karar verici) → organizatör
+(adım değişince işi sıradakine devreden) zinciri sabit kod olmasın; ekibe ajan eklenip iş akışı
+bunlardan kurulsun. Bir varsayılan akış olsun, iş başına farklı akış seçilebilsin (örn. tasarımcıyı
+çalıştırmayıp analizi verip developer + testçi ile bitirmek). Stajyer/DevOps gibi ekler kalksın;
+yayın işleri ileride `publisher` gibi özel bir karakterle gelir.
+
+**Varsayımla alınan kararlar:**
+
+| Karar | Alternatif | Neden bu |
+|---|---|---|
+| `config/workflows/{key}.json`, `default` zorunlu ve silinemez | tek dosyada `workflows[]` | dosya başına git diff okunur; iş başına akış = dosya seçmek |
+| `Team.KnownRoles` kaldırıldı; ekip **açık**, zorunlu rol yok | altı rol sabit | "hangi ajan çalışır" sorusunun tek cevabı iş akışıdır, iki yerde tutulmaz |
+| Akış kaydedilirken `role`/`handoffRole` ekipte var mı denetlenir (`workflow.unknown_role`); ajan silinirken akışlarda geçiyor mu denetlenir (`agent.in_use`) | çalışma başında patlasın | bozuk yapılandırma kaydedilmez (LESSONS: sessiz kabul en kötü hata) |
+| Organizatör = `handoffRole`: **her adım geçişinde** devir notu üretir; ayrıca `kind: handoff` adım olarak da konabilir | yalnız adım olarak | istenen davranış "adım değişince devret"; her araya adım eklemek panoyu kirletir |
+| Yönetici = `karar` adımı (`kind: review`, `officeRole: gate`) + `canAsk` hedefi; altı şapka mantığı `manager.md` + `karar-ilkeleri.md` içinde | ayrı `kind: decide` | mevcut review/red mekaniği yeter; karar yöntemi prompt işidir, kod işi değil |
+| Varsayılan akış: analiz → geliştirme → test → karar, `handoffRole: organizer`. İkinci örnek `tasarimli`: analiz → tasarım → geliştirme → test → karar | tek akış | seçim özelliği görünür olsun |
+| `intern`/`devops` sahneden ve renk tablosundan çıkarıldı; boşalan iki masa yeni ajanlara | sahnede kalsın | kullanıcı istemiyor; masa boş kalmak yerine yeni ajanı taşır |
+| Sahnede yeri olmayan ajan UI'da boş masaya + kullanılmayan sprite'a otomatik yerleşir; kalıcı yer `scene.json` ile elle | md'ye `sprite/home` alanı | sahne bilgisi ajan tanımına sızmaz |
+| Pano sütunları `default` akıştan; `workflow.set { key }` olayı gelince o akışa geçer | her zaman default | çalışma hangi akışla koşuyorsa pano onu göstermeli |
+
+Sözleşme `docs/API.md` (Ekibe ajan ekleme, İş akışları), kodlar `docs/error-codes.md`.
+UI: İş Akışı paneli (akış seç/kopyala/sil, adım ekle/sil/sırala, adım → ajan, `handoffRole`),
+Ekip'te "ajan ekle / sil". Kanban sütunları seçili akıştan.
+
 ## Faz 6 — UI (canlı sahne) 🔶 sahne kuruldu
 
 Nuxt 4 + TypeScript + **Canvas 2D** (Three.js bırakıldı, bkz. `docs/SCENE.md`). Sprite'lar

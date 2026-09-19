@@ -49,14 +49,50 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
 |---|---|---|
 | `GET /api/v1/models?provider=nvidia` | `ModelInfo[]` `{ provider, model, reachable, detail }` | runtime `/v1/models`'a vekâlet eder; runtime kapalıysa **503** `runtime.unavailable` |
 
-## İş akışı — `config/workflow.json`
+### Ekibe ajan ekleme / çıkarma
 
 | Uç | Dönen | Not |
 |---|---|---|
-| `GET /api/v1/workflow` | `Workflow` `{ maxReviewRounds, stages[] }` | dosya olduğu gibi |
-| `PUT /api/v1/workflow` | `Workflow` | değişmezler tutmazsa 400: tam 1 `analyze` ve ilk sırada (`workflow.analyze_count`, `workflow.analyze_first`), ≥1 `implement` (`workflow.no_implement`), `review` öncesinde `implement` (`workflow.review_before_implement`), `maxReviewRounds ≥ 1` (`workflow.rounds_min`), yinelenen adım (`workflow.duplicate_stage`), bilinmeyen `kind` / `officeRole` / `role` (`workflow.invalid_stage`) |
+| `POST /api/v1/agents` | **201** `AgentDetail` | gövde = PUT gövdesi + `key`; `config/agents/{key}.md` oluşturulur. Var olan anahtar → **409** `agent.exists` |
+| `DELETE /api/v1/agents/{key}` | **204** | md silinir. Bir iş akışında `role`/`handoffRole` olarak ya da başka ajanın `canAsk`'ında geçiyorsa **409** `agent.in_use` (önce oradan çıkarılır) |
 
-`stage.kind`: `analyze | design | implement | review | handoff`. `stage.role` bir ajan anahtarıdır.
+Ekip **açıktır**: zorunlu rol yoktur; hangi ajanların çalışacağını iş akışı belirler. Sahnede yeri
+(`config/scene.json` → `agents[]`) olmayan yeni ajan UI'da boş bir masaya yerleştirilir.
+
+## İş akışları — `config/workflows/{key}.json`
+
+Birden çok akış tutulur; `default` her zaman vardır ve silinemez. Bir çalışma başlatılırken akış
+seçilir (`POST /runs { workflow }`), seçilmezse `default` kullanılır. Adımlar sırayla çalışır;
+`handoffRole` verilmişse o ajan **her adım geçişinde** devir notu üretir (organizatör).
+
+| Uç | Dönen | Not |
+|---|---|---|
+| `GET /api/v1/workflows` | `WorkflowListItem[]` `{ key, title, isDefault, stageCount, roles[] }` | `roles` = adımlarda + `handoffRole`'de geçen ajanlar |
+| `GET /api/v1/workflows/{key}` | `Workflow` | bilinmeyen anahtar 404 `workflow.not_found` |
+| `PUT /api/v1/workflows/{key}` | `Workflow` | **upsert**: yoksa oluşturur. Gövdede `key` yoktur (yoldan gelir). Değişmezler tutmazsa 400 (aşağıda); dosya atomik yazılır, `_comment` korunur |
+| `DELETE /api/v1/workflows/{key}` | **204** | `default` → **409** `workflow.default_protected` |
+
+```jsonc
+// Workflow
+{ "title": "Varsayılan", "maxReviewRounds": 3, "handoffRole": "organizer",
+  "stages": [
+    { "id": "analiz",     "title": "Analiz",     "kind": "analyze",   "role": "analyst",   "officeRole": "pm",   "description": "…" },
+    { "id": "gelistirme", "title": "Geliştirme", "kind": "implement", "role": "developer", "officeRole": "dev",  "description": "…" },
+    { "id": "test",       "title": "Test",       "kind": "review",    "role": "tester",    "officeRole": "qa",   "description": "…" },
+    { "id": "karar",      "title": "Karar",      "kind": "review",    "role": "manager",   "officeRole": "gate", "description": "Altı şapka ile son onay" }
+  ] }
+```
+
+Değişmezler (400): tam 1 `analyze` ve ilk sırada (`workflow.analyze_count`, `workflow.analyze_first`),
+≥1 `implement` (`workflow.no_implement`), `review` öncesinde `implement` (`workflow.review_before_implement`),
+`maxReviewRounds ≥ 1` (`workflow.rounds_min`), yinelenen adım (`workflow.duplicate_stage`), geçersiz
+`kind` / `officeRole` / boş `role` (`workflow.invalid_stage`), `role` ya da `handoffRole` ekipte yok
+(`workflow.unknown_role`).
+
+- `stage.kind`: `analyze | design | implement | review | handoff`. `stage.role` bir ajan anahtarıdır.
+- `stage.officeRole` (sahnedeki karakter tipi): `pm | arch | dev | qa | ops | res | gate | designer`.
+- `handoffRole`: ajan anahtarı ya da `null` (devir notu yok).
+- Sahne olayı `workflow.set { key }`: pano sütunları o akışa göre yeniden kurulur (Faz 5'te çalışma başlarken yayımlanır).
 
 ## Sahne (mevcut)
 
@@ -67,7 +103,7 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
 
 | Uç | Dönen |
 |---|---|
-| `POST /api/v1/runs` `{ brief, sensitivity, label? }` | **202** `{ runId }` |
+| `POST /api/v1/runs` `{ brief, sensitivity, label?, workflow? }` | **202** `{ runId }`; `workflow` yoksa `default` |
 | `GET /api/v1/runs` | `RunSummary[]` |
 | `GET /api/v1/runs/{id}` | `RunSummary` + görevler + fazlar |
 | `GET /api/v1/runs/{id}/events` | SSE: faz/tur/mesaj kayıtları sırayla |

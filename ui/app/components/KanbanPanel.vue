@@ -94,7 +94,7 @@ function toggle(id: string) {
         <button class="x" type="button" aria-label="Detayı kapat" @click="selectedId = null">×</button>
       </dl>
 
-      <p class="hint">Sütunlar <code>config/workflow.json</code> adımları; sahnedeki küçük pano bunları dört Kanban şeridine katlar. <kbd>Esc</kbd> ya da <kbd>B</kbd> kapatır.</p>
+      <p class="hint">Sütunlar seçili iş akışının adımları (<code>config/workflows/</code>); sahnedeki küçük pano bunları dört Kanban şeridine katlar. <kbd>Esc</kbd> ya da <kbd>B</kbd> kapatır.</p>
     </section>
   </div>
 </template>

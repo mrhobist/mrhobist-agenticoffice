@@ -66,7 +66,7 @@ export class World {
   static async create(apiBase: string): Promise<World> {
     const [cfgRes, wfRes, sprites] = await Promise.all([
       fetch(`${apiBase}/api/v1/scene`),
-      fetch(`${apiBase}/api/v1/workflow`),
+      fetch(`${apiBase}/api/v1/workflows/default`),
       Sprites.load(),
     ])
     if (!cfgRes.ok) throw new Error(`scene ${cfgRes.status}`)

@@ -114,11 +114,12 @@ export type SceneEvent =
   | { type: 'agent.enter'; data: { agent: string } }
   | { type: 'clock.set'; data: { hour: number | null } }
   | { type: 'cafe.special'; data: { text: string | null } }
+  | { type: 'workflow.set'; data: { key: string } }
 
 export const EVENT_TYPES: ReadonlyArray<SceneEvent['type']> = [
   'agent.state', 'agent.say', 'agent.goto', 'agent.home', 'meet',
   'board.set', 'board.move', 'run.stage', 'cat', 'door',
-  'agent.leave', 'agent.enter', 'clock.set', 'cafe.special',
+  'agent.leave', 'agent.enter', 'clock.set', 'cafe.special', 'workflow.set',
 ]
 
 export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'mock'
@@ -131,9 +132,10 @@ export const ROLE_HEX: Record<string, string> = {
   developer: '#35b98a',
   tester: '#b58ad8',
   manager: '#c65c5c',
-  intern: '#7fa6c9',
-  devops: '#4f7fd9',
 }
+
+/** Sahne tanimi olmayan (sonradan eklenen) ajanlar icin sirayla verilen renkler. */
+export const EXTRA_ROLE_HEX: ReadonlyArray<string> = ['#7fa6c9', '#4f7fd9', '#8fbf6a', '#d98a4f', '#9a7fd9']
 
 export const STATE_LABEL: Record<AgentState, string> = {
   idle: 'boşta',

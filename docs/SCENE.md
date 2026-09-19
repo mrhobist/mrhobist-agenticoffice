@@ -6,7 +6,7 @@ kaynaktan** okur:
 | Parça | Kaynak | Kim yazar |
 |---|---|---|
 | Yerleşim (mobilya, koltuklar, duraklar, engeller) | `config/scene.json` → `GET /api/v1/scene` | insan, elle |
-| Pano sütunları | `config/workflow.json` → `GET /api/v1/workflow` | insan / İş Akışı paneli |
+| Pano sütunları | `config/workflows/{key}.json` → `GET /api/v1/workflows/{key}` (`default`; `workflow.set` olayıyla değişir) | insan / İş Akışı paneli |
 | Canlı olaylar | `GET /api/v1/scene/events` (SSE) | `POST /api/v1/scene/commands` bugün; Faz 5'te `RunService` |
 | Sprite'lar | `assets/raw/*.png` → `scripts/build-sprites.py` → `ui/public/sprites/` | script; elle düzenlenmez |
 
@@ -114,6 +114,7 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `agent.leave` / `agent.enter` | `agent` | sağ üstteki kapıya yürür ve sahneden çıkar / kapıdan girip evine yürür. Dışarıdaki ajan çizilmez, ambient almaz, `meet` hedefi olamaz |
 | `clock.set` | `hour: 0-24 \| null` | pencere manzarasının saati; `null` gerçek yerel saat |
 | `cafe.special` | `text \| null` | kahve panosundaki günün özeli; `null` listeye döner |
+| `workflow.set` | `key` | pano sütunları o iş akışına göre yeniden kurulur (`GET /api/v1/workflows/{key}`); Faz 5'te çalışma başlarken yayımlanır |
 
 **Simülasyon çizimden bağımsızdır.** `requestAnimationFrame` sekme gizliyken durur; simülasyon
 200 ms'lik `setInterval` ile sabit adımlarla (50 ms, en çok 5 s telafi) ayrıca ilerletilir. Sekme
