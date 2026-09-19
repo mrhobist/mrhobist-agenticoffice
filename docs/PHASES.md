@@ -13,7 +13,7 @@ v1'den kurtarılan `config/`
 **Ölçüldü:** `verify.ps1` 6 adımın hepsinde geçti — restore, build (0 uyarı),
 test, bağımlılık yönü, yasaklı ad alanları, Python sınırı.
 
-## Faz 1 — Domain + dosya deposu
+## Faz 1 — Domain + dosya deposu ✅
 
 `Domain`: `Agent`, `Knowledge`, `Workflow`, `Stage`, `Run`, `RunTask`, `Phase`, `Turn`,
 `Message` + enum'lar + değişmezler. Hiçbir referans yok.
@@ -24,7 +24,13 @@ test, bağımlılık yönü, yasaklı ad alanları, Python sınırı.
 döngülü bağımlılık patlamaz). `ServiceTests` geçici dizinde gidiş-dönüş kayıpsızlığını ve
 yarım JSONL satırının yok sayıldığını kanıtlar.
 
-## Faz 2 — Ajan ve iş akışı modülleri
+**Ölçüldü (2026-09-19):** 27 birim testi (iş akışı değişmezlerinin her hata kodu, ekip çapraz
+referansları, topolojik sıralama + döngü, hassasiyet politikası) ve 14 servis testi (gerçek
+`config/` kopyası üzerinde md gidiş-dönüşü, `claude` sağlayıcı adının reddi, JSONL yarım satır,
+atomik yazım, `runs/` dışına çıkışın temizlenmesi) geçti. Frontmatter için bağımlılık eklenmedi;
+dar bir alt küme (`k: v`, `k: [a, b]`, tırnaklı dize) okunur ve yazılır.
+
+## Faz 2 — Ajan ve iş akışı modülleri ✅
 
 `AgentService` (listele, oku, yaz, prompt kompozisyonu), `WorkflowService` (oku, doğrula, yaz).
 Api uçları: `GET/PUT /api/v1/agents/{key}`, `GET /api/v1/knowledge`, `GET/PUT /api/v1/workflow`.
@@ -32,6 +38,12 @@ Problem Details + `errorCode`, OpenAPI + Scalar.
 
 **Biten sayılır:** Arayüzsüz, `curl` ile bir ajan md'si okunur, değiştirilir, kaydedilir ve
 bileşik prompt çıktısı değişir. Geçersiz gövde **400** döner (v1'deki sessiz kabul tuzağı).
+
+**Ölçüldü (2026-09-19):** `curl` ile `PUT /api/v1/agents/tester` dosyayı atomik yazdı ve
+`composedPrompt` değişti; eksik alt md `400 agent.unknown_include`, `provider: claude`
+`400 agent.invalid_provider`, bozuk iş akışı `400 workflow.rounds_min`, runtime kapalıyken
+`GET /models` `503 runtime.unavailable`. Scalar eklenmedi; sözleşme `/openapi/v1.json`.
+`PythonAgentRuntimeClient` (Faz 3'ün .NET ucu) bu fazda yazıldı; sahte sunucu testi Faz 3'te.
 
 ## Faz 3 — Python runtime
 

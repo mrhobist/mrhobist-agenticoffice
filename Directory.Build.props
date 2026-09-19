@@ -19,6 +19,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
+    <!-- Test adlari okunur olsun diye alt cizgi kullanir (CA1707); test projeleri API yuzeyi degildir. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'MrHobist.AITeam.Domain'">
     <!-- Domain hicbir seye referans vermez (sozlesme §1.2).
          Yanlislikla eklenen bir paket burada gorunur. -->

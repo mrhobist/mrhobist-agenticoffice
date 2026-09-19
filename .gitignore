@@ -23,7 +23,7 @@ dist/
 appsettings.Development.json
 
 # Calisma ciktilari (dosya tabanli depo)
-runs/
+/runs/
 logs/
 *.log
 

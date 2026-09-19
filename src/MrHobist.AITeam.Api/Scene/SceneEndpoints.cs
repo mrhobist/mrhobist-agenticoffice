@@ -1,5 +1,6 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Mvc;
+using MrHobist.AITeam.Api.Errors;
+using MrHobist.AITeam.Infrastructure.Storage;
 
 namespace MrHobist.AITeam.Api.Scene;
 
@@ -32,10 +33,8 @@ public static class SceneEndpoints
     {
         var g = app.MapGroup("/api/v1");
 
-        g.MapGet("/scene", (ConfigRoot cfg) => ServeJson(cfg.Path("scene.json")));
-        g.MapGet("/workflow", (ConfigRoot cfg) => ServeJson(cfg.Path("workflow.json")));
-
-        g.MapGet("/scene/events", StreamEvents);
+        g.MapGet("/scene", (StoragePaths paths) => ServeJson(paths.ConfigFile("scene.json")));
+                g.MapGet("/scene/events", StreamEvents);
 
         g.MapPost("/scene/commands", async (HttpRequest req, SceneEventBus bus, CancellationToken ct) =>
         {
@@ -166,8 +165,5 @@ public static class SceneEndpoints
     }
 
     private static IResult Problem(string errorCode, string detail, int status = StatusCodes.Status400BadRequest)
-        => Results.Problem(
-            detail: detail,
-            statusCode: status,
-            extensions: new Dictionary<string, object?> { ["errorCode"] = errorCode });
+        => ProblemMapping.Result(status, errorCode, detail);
 }
