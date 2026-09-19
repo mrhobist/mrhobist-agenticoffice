@@ -27,6 +27,8 @@ export function isApiError(e: unknown): e is ApiError {
 export interface ApiClient {
   get<T>(path: string): Promise<T>
   put<T>(path: string, body: unknown): Promise<T>
+  /** Govdesiz POST icin body verilmez. */
+  post<T>(path: string, body?: unknown): Promise<T>
 }
 
 /** Setup icinde cagrilir (useRuntimeConfig). Donen nesne sonradan her yerde kullanilir. */
@@ -38,6 +40,11 @@ export function useApiClient(): ApiClient {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
+    }),
+    post: (path, body) => request(base, path, {
+      method: 'POST',
+      headers: body === undefined ? {} : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
     }),
   }
 }

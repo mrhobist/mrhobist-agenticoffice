@@ -31,7 +31,7 @@ public interface IWorkflowStore
 }
 
 /// <summary>
-/// <c>runs/{id}/</c> append-only JSONL deposu. Yazan tek surec Task.Api; Api yalniz okur.
+/// <c>runs/{id}/</c> append-only JSONL deposu. Yazan tek yazici Api icindeki is kanalidir; uclar IRunReader ile okur.
 /// Bozuk son satir yok sayilir, geri kalani kurtarilir.
 /// </summary>
 public interface IRunStore
@@ -41,6 +41,11 @@ public interface IRunStore
     Task UpdateAsync(Run run, CancellationToken ct);
 
     Task WriteSpecAsync(string runId, Spec spec, CancellationToken ct);
+
+    /// <summary>Calisma baslarken secilen akisin kopyasi: <c>runs/{id}/workflow.json</c>. Config sonradan degisse de calisma bunu okur.</summary>
+    Task WriteWorkflowAsync(string runId, Workflow workflow, CancellationToken ct);
+
+    Task<Workflow?> ReadWorkflowAsync(string runId, CancellationToken ct);
 
     Task AppendTurnAsync(string runId, Turn turn, CancellationToken ct);
 
@@ -55,6 +60,9 @@ public interface IRunStore
     Task<Spec?> ReadSpecAsync(string runId, CancellationToken ct);
 
     Task<IReadOnlyList<Turn>> ReadTurnsAsync(string runId, string agent, CancellationToken ct);
+
+    /// <summary><c>conversations/*.jsonl</c> dosya adlari: bu calismada LLM cagirmis ajanlar (silinmis ajanlar dahil).</summary>
+    Task<IReadOnlyList<string>> ListConversationsAsync(string runId, CancellationToken ct);
 
     Task<IReadOnlyList<Message>> ReadMessagesAsync(string runId, CancellationToken ct);
 

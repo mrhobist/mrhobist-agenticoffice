@@ -31,6 +31,18 @@ public sealed record RuntimeTurnResponse(
 /// <summary>Katalogda gorunmek erisilebilir olmak DEGILDIR; <see cref="Reachable"/> fiilen cagirarak dogrulanir.</summary>
 public sealed record RuntimeModelInfo(Provider Provider, string Model, bool Reachable, string Detail);
 
+/// <summary>Saglayici kimligi: Anthropic icin Claude Code oturumu (docs/DOMAIN.md → Model, efor ve kimlik).</summary>
+public sealed record RuntimeAuthStatus(Provider Provider, bool LoggedIn, string? Account, string Detail);
+
+/// <summary>Giris akisi kullanicinin makinesinde basladi (konsol + tarayici); tamamlanmasi kullanicida. Kimlik bilgisi tasinmaz.</summary>
+public sealed record RuntimeLoginStarted(Provider Provider, bool Started, string Detail);
+
+/// <summary>Saglayicinin bildirdigi tek kota penceresi. <see cref="Percent"/> = kullanilan yuzde; kalan = 100 - Percent.</summary>
+public sealed record RuntimeUsageLimit(string Kind, string? Group, double Percent, string? Severity, DateTimeOffset? ResetsAt, string? Scope, bool IsActive);
+
+/// <summary>Bir saglayicinin kalan kullanimi (ust bar). Saglayici vermiyorsa <see cref="Available"/> false + neden.</summary>
+public sealed record RuntimeProviderLimits(Provider Provider, bool Available, string Detail, string? Subscription, DateTimeOffset? FetchedAt, IReadOnlyList<RuntimeUsageLimit> Limits);
+
 /// <summary>
 /// Python runtime sozlesmesi (CLAUDE.md §1). Tek isi LLM cagrisi; is kurali burada yoktur.
 /// Sahte adaptorle <c>ServiceTests</c> Python olmadan gecer.
@@ -40,7 +52,21 @@ public interface IAgentRuntimeService
     Task<RuntimeTurnResponse> TurnAsync(RuntimeTurnRequest request, CancellationToken ct);
 
     Task<IReadOnlyList<RuntimeModelInfo>> ListModelsAsync(Provider? provider, CancellationToken ct);
+
+    /// <summary>Saglayici basina giris durumu; UI ilk yuklemede bakar. <paramref name="refresh"/> runtime'in kimlik onbellegini atlatir ("Yeniden kontrol et").</summary>
+    Task<IReadOnlyList<RuntimeAuthStatus>> ListAuthAsync(Provider? provider, bool refresh, CancellationToken ct);
+
+    /// <summary>Saglayicinin kendi giris akisini baslatir (Anthropic: <c>claude auth login</c>, yeni konsol). <paramref name="mode"/>: <c>claudeai | console</c>.</summary>
+    Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, CancellationToken ct);
+
+    Task<RuntimeAuthStatus> LogoutAsync(Provider provider, CancellationToken ct);
+
+    /// <summary>Kalan kullanim (kota pencereleri). Runtime 30 s onbellekler; <paramref name="refresh"/> atlar.</summary>
+    Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct);
 }
 
 /// <summary>Runtime'a ulasilamiyor: Api 503 <c>runtime.unavailable</c> doner.</summary>
 public sealed class RuntimeUnavailableException(string message) : Exception(message);
+
+/// <summary>Runtime cevap verdi ama hata dondu (5xx): kapali degil, ucu bozuk. Api 502 <c>runtime.error</c> doner.</summary>
+public sealed class RuntimeErrorException(string message) : Exception(message);

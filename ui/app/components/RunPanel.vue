@@ -1,0 +1,534 @@
+<script setup lang="ts">
+import type { AgentListItem, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
+import { useApiClient } from '~/api/client'
+import { errorText } from '~/api/errors'
+import { RUN_CANCELLABLE, RUN_RETRYABLE, RUN_STATUS_LABEL } from '~/api/labels'
+
+/**
+ * Calisma paneli (docs/DOMAIN.md → Plan onayi). Iki gorunum:
+ *  - runId yok: "Yeni calisma" formu + son calismalar listesi
+ *  - runId var: durum, plan (ozet, mimari, kurallar, gorevler + sira), onay / revize, devir notlari.
+ * Canli akis SSE degil, 2 s'de bir GET /runs/{id} (docs/API.md → varsayimla ilerlenir).
+ */
+const props = defineProps<{
+  runId: string | null
+  /** GET /agents listesi (kabuk yukler); ajan anahtarini ada cevirmek icin. null = alinamadi. */
+  agents: AgentListItem[] | null
+}>()
+const emit = defineEmits<{ close: []; open: [id: string]; jobs: [] }>()
+
+const api = useApiClient()
+
+// ------------------------------------------------------------------ yeni calisma
+
+const brief = ref('')
+const label = ref('')
+const maxCost = ref('')
+const workflowKey = ref('default')
+const workflows = ref<WorkflowListItem[]>([])
+const starting = ref(false)
+const startError = ref<string | null>(null)
+const recent = ref<RunSummary[]>([])
+
+async function loadForm() {
+  try { workflows.value = await api.get<WorkflowListItem[]>('/api/v1/workflows') } catch { workflows.value = [] }
+  try { recent.value = await api.get<RunSummary[]>('/api/v1/runs?limit=8') } catch { recent.value = [] }
+}
+
+async function start() {
+  if (starting.value || !brief.value.trim()) return
+  starting.value = true
+  startError.value = null
+  try {
+    const budget = Number.parseFloat(maxCost.value.replace(',', '.'))
+    const body: RunRequest = {
+      brief: brief.value.trim(),
+      workflow: workflowKey.value || null,
+      label: label.value.trim() || null,
+      maxCostUsd: Number.isFinite(budget) && budget > 0 ? budget : null,
+    }
+    const run = await api.post<RunSummary>('/api/v1/runs', body)
+    brief.value = ''
+    label.value = ''
+    emit('open', run.id)
+  } catch (e) {
+    startError.value = errorText(e)
+  } finally {
+    starting.value = false
+  }
+}
+
+// ------------------------------------------------------------------ calisma gorunumu
+
+const run = ref<RunDetail | null>(null)
+const loadError = ref<string | null>(null)
+const note = ref('')
+const acting = ref(false)
+const actError = ref<string | null>(null)
+let timer: ReturnType<typeof setInterval> | undefined
+
+/** Yalniz bu durumlarda kayit degisir; digerlerinde yoklama durur (approve/revise yeniden baslatir). */
+const LIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running'])
+
+async function poll() {
+  if (!props.runId) return
+  try {
+    run.value = await api.get<RunDetail>(`/api/v1/runs/${encodeURIComponent(props.runId)}`)
+    loadError.value = null
+    if (!LIVE.has(run.value.status)) stopPolling()
+    if (showLog.value) void loadTurns()
+  } catch (e) {
+    loadError.value = errorText(e)
+  }
+}
+
+// ------------------------------------------------------------------ gunluk (turlar + mesajlar + fazlar)
+
+const showLog = ref(false)
+const turns = ref<Turn[] | null>(null)
+const turnsError = ref<string | null>(null)
+
+async function loadTurns() {
+  if (!props.runId) return
+  try {
+    turns.value = await api.get<Turn[]>(`/api/v1/runs/${encodeURIComponent(props.runId)}/turns`)
+    turnsError.value = null
+  } catch (e) {
+    turnsError.value = errorText(e)
+  }
+}
+
+watch(showLog, (v) => { if (v && turns.value === null) void loadTurns() })
+
+type LogEntry =
+  | { ts: string; kind: 'turn'; turn: Turn }
+  | { ts: string; kind: 'message'; from: string; to: string; subject: string; body: string; task: string | null; stage: string | null; error: boolean }
+  | { ts: string; kind: 'phase'; agent: string; task: string; stage: string; status: string; round: number; detail: string | null }
+
+/** Tek zaman cizgisi: LLM turlari, ajanlar arasi mesajlar (devir, not, hata) ve faz gecisleri. */
+const log = computed<LogEntry[]>(() => {
+  const r = run.value
+  if (!r) return []
+  const out: LogEntry[] = []
+  for (const t of turns.value ?? []) out.push({ ts: t.ts, kind: 'turn', turn: t })
+  for (const m of r.messages) out.push({ ts: m.ts, kind: 'message', from: m.from, to: m.to, subject: m.subject, body: m.body, task: m.task, stage: m.stage, error: m.subject === 'error' })
+  for (const t of r.tasks) for (const p of t.phases) out.push({ ts: p.ts, kind: 'phase', agent: p.agent, task: p.task, stage: p.stage, status: p.status, round: p.round, detail: p.detail })
+  return out.sort((a, b) => a.ts.localeCompare(b.ts))
+})
+
+function startPolling() {
+  stopPolling()
+  void poll()
+  timer = setInterval(() => { void poll() }, 2000)
+}
+function stopPolling() { clearInterval(timer); timer = undefined }
+
+watch(() => props.runId, (id) => {
+  run.value = null
+  loadError.value = null
+  actError.value = null
+  note.value = ''
+  if (id) startPolling()
+  else { stopPolling(); void loadForm() }
+}, { immediate: true })
+
+onBeforeUnmount(stopPolling)
+
+async function approve() {
+  if (!props.runId || acting.value) return
+  acting.value = true
+  actError.value = null
+  try {
+    await api.post(`/api/v1/runs/${encodeURIComponent(props.runId)}/approve`)
+    startPolling()
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    acting.value = false
+  }
+}
+
+async function revise() {
+  if (!props.runId || acting.value || !note.value.trim()) return
+  acting.value = true
+  actError.value = null
+  try {
+    await api.post(`/api/v1/runs/${encodeURIComponent(props.runId)}/revise`, { note: note.value.trim() })
+    note.value = ''
+    startPolling()
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    acting.value = false
+  }
+}
+
+/** Yeniden dene: kaldigi adimdan surer (POST /runs/{id}/retry, 202). Onay beklerken iptal edilmisse yalniz onaya doner. */
+async function retry() {
+  if (!props.runId || acting.value) return
+  acting.value = true
+  actError.value = null
+  try {
+    await api.post(`/api/v1/runs/${encodeURIComponent(props.runId)}/retry`)
+    startPolling()
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    acting.value = false
+  }
+}
+
+/** Iptal: hemen yazilir; suren LLM cagrisinin sonucu yazilmaz. Geri donus "Yeniden dene". */
+async function cancel() {
+  if (!props.runId || acting.value) return
+  const q = canRetry.value
+    ? 'Çalışma kapatılsın mı? Gelen kutusundan düşer; gerekirse "Yeniden dene" ile kaldığı yerden sürdürebilirsin.'
+    : 'Çalışma iptal edilsin mi? Gerekirse "Yeniden dene" ile kaldığı yerden sürdürebilirsin.'
+  if (!window.confirm(q)) return
+  acting.value = true
+  actError.value = null
+  try {
+    await api.post(`/api/v1/runs/${encodeURIComponent(props.runId)}/cancel`)
+    await poll()
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    acting.value = false
+  }
+}
+
+// ------------------------------------------------------------------ turetilenler
+
+const awaiting = computed(() => run.value?.status === 'awaitingApproval')
+const busy = computed(() => run.value?.status === 'running')
+const canRetry = computed(() => !!run.value && RUN_RETRYABLE.has(run.value.status))
+const canCancel = computed(() => !!run.value && RUN_CANCELLABLE.has(run.value.status))
+
+/** Gorevler yurutme sirasinda; her birinin son fazi (varsa). */
+const orderedTasks = computed(() => {
+  const r = run.value
+  if (!r?.spec) return []
+  const byId = new Map(r.spec.tasks.map(t => [t.id, t]))
+  const ids = r.order.length ? r.order : r.spec.tasks.map(t => t.id)
+  return ids.flatMap((id, i) => {
+    const t = byId.get(id)
+    if (!t) return []
+    const phases = r.tasks.find(x => x.id === id)?.phases ?? []
+    const last = phases[phases.length - 1]
+    return [{ ...t, index: i + 1, last }]
+  })
+})
+
+const handoffs = computed(() => run.value?.messages.filter(m => m.kind === 'handoff') ?? [])
+const revisions = computed(() => run.value?.messages.filter(m => m.subject === 'plan-revision') ?? [])
+
+function agentName(key: string): string {
+  return props.agents?.find(a => a.key === key)?.name ?? key
+}
+
+function stageTitle(id: string): string {
+  return run.value?.workflowDef?.stages.find(s => s.id === id)?.title ?? id
+}
+
+function fmtCost(v: number): string { return v ? `$${v.toFixed(4)}` : '$0' }
+function fmtTime(s: string): string { return new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) }
+function fmtClock(s: string): string { return new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
+const PHASE_LABEL: Record<string, string> = { started: 'başladı', done: 'bitti', rejected: 'reddedildi', failed: 'başarısız', skipped: 'atlandı' }
+const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 'error').length ?? 0)
+</script>
+
+<template>
+  <div class="wrap" @click.self="emit('close')">
+    <section class="panel" role="dialog" aria-labelledby="run-title">
+      <header>
+        <h2 id="run-title">{{ runId ? `Çalışma · ${run?.label ?? '…'}` : 'Yeni çalışma' }}</h2>
+        <code v-if="runId" class="key">{{ runId }}</code>
+        <button v-if="runId" type="button" class="ghost small" @click="emit('open', '')">← yeni</button>
+        <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
+      </header>
+
+      <!-- ---------------------------------------------------------------- yeni calisma -->
+      <form v-if="!runId" class="form" @submit.prevent="start">
+        <div class="field">
+          <label class="lbl" for="run-brief">Brief</label>
+          <textarea id="run-brief" v-model="brief" class="brief" placeholder="Ne yapılacak? Analist bunu plana çevirir; plan senin onayına gelir." required />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label class="lbl" for="run-workflow">İş akışı</label>
+            <select id="run-workflow" v-model="workflowKey">
+              <option v-for="w in workflows" :key="w.key" :value="w.key">{{ w.title }} · {{ w.roles.join(' → ') }}</option>
+              <option v-if="!workflows.length" value="default">Varsayılan</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="lbl" for="run-label">Etiket <span class="sub">(isteğe bağlı)</span></label>
+            <input id="run-label" v-model="label" type="text" placeholder="brief'in ilk satırı">
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label class="lbl" for="run-budget">Bütçe üst sınırı <span class="sub">($, isteğe bağlı)</span></label>
+            <input id="run-budget" v-model="maxCost" type="text" inputmode="decimal" placeholder="örn. 2.00 — aşılınca çalışma durur">
+          </div>
+        </div>
+        <p class="sub">Hassasiyet: <strong>anthropic</strong> — içerik yalnız Anthropic'e çıkar. Plan onaylanmadan hiçbir ajan iş almaz.</p>
+        <div class="actions">
+          <button class="primary" type="submit" :disabled="starting || !brief.trim()">{{ starting ? 'Başlatılıyor…' : 'Analize gönder' }}</button>
+          <span v-if="startError" class="err" role="alert">{{ startError }}</span>
+        </div>
+
+        <div v-if="recent.length" class="recent">
+          <span class="lbl">Son çalışmalar <button type="button" class="link" @click="emit('jobs')">tüm işler →</button></span>
+          <ul>
+            <li v-for="r in recent" :key="r.id">
+              <button type="button" class="link" @click="emit('open', r.id)">{{ r.label }}</button>
+              <span class="status" :class="r.status">{{ RUN_STATUS_LABEL[r.status] }}</span>
+              <span class="sub">{{ fmtTime(r.startedAt) }} · {{ fmtCost(r.totalCostUsd) }}</span>
+            </li>
+          </ul>
+        </div>
+      </form>
+
+      <!-- ---------------------------------------------------------------- calisma -->
+      <template v-else>
+        <p v-if="loadError" class="err" role="alert">{{ loadError }}</p>
+        <p v-else-if="!run" class="msg">Yükleniyor…</p>
+
+        <div v-else class="run">
+          <div class="statusline">
+            <span class="status" :class="run.status">{{ RUN_STATUS_LABEL[run.status] }}</span>
+            <span v-if="busy" class="spin" aria-hidden="true" />
+            <span class="sub">{{ run.detail }}</span>
+            <span class="sub right">{{ run.workflow }} · {{ fmtCost(run.totalCostUsd) }}<template v-if="run.retries"> · {{ run.retries }}× yeniden</template></span>
+            <button v-if="canRetry" type="button" class="small" :disabled="acting" @click="retry">Yeniden dene</button>
+            <button v-if="canCancel" type="button" class="small danger" :disabled="acting" @click="cancel">{{ canRetry ? 'Kapat (iptal)' : 'İptal et' }}</button>
+          </div>
+          <p v-if="actError && !awaiting" class="err" role="alert">{{ actError }}</p>
+
+          <details class="brief-box">
+            <summary>Brief</summary>
+            <pre>{{ run.brief }}</pre>
+          </details>
+
+          <!-- Hata varsa en uste: "takildi" tek basina bilgi degildir. -->
+          <section v-if="errorCount" class="errors">
+            <h3>Hata</h3>
+            <article v-for="(m, i) in run.messages.filter(x => x.subject === 'error')" :key="i">
+              <div class="sub">{{ fmtClock(m.ts) }} · {{ agentName(m.from) }} · {{ stageTitle(m.stage ?? '') }}<template v-if="m.task"> · <code>{{ m.task }}</code></template></div>
+              <pre class="errtext">{{ m.body }}</pre>
+            </article>
+          </section>
+
+          <template v-if="run.spec">
+            <section class="plan">
+              <h3>Plan <span class="sub">({{ run.spec.tasks.length }} görev)</span></h3>
+              <p class="summary">{{ run.spec.summary }}</p>
+              <details>
+                <summary>Mimari</summary>
+                <pre>{{ run.spec.architecture }}</pre>
+              </details>
+              <details v-if="run.spec.rules.length">
+                <summary>Kurallar ({{ run.spec.rules.length }})</summary>
+                <ul class="rules"><li v-for="(r, i) in run.spec.rules" :key="i">{{ r }}</li></ul>
+              </details>
+
+              <ol class="tasks">
+                <li v-for="t in orderedTasks" :key="t.id">
+                  <div class="task-head">
+                    <code class="tid">{{ t.id }}</code>
+                    <strong>{{ t.title }}</strong>
+                    <span v-if="t.last" class="phase" :class="t.last.status">{{ stageTitle(t.last.stage) }} · {{ agentName(t.last.agent) }}</span>
+                    <span v-else class="phase queued">sırada</span>
+                  </div>
+                  <p>{{ t.description }}</p>
+                  <dl>
+                    <div v-if="t.files.length"><dt>Dosyalar</dt><dd><code v-for="f in t.files" :key="f">{{ f }}</code></dd></div>
+                    <div v-if="t.acceptance.length"><dt>Kabul</dt><dd><ul><li v-for="(a, i) in t.acceptance" :key="i">{{ a }}</li></ul></dd></div>
+                    <div v-if="t.dependsOn.length"><dt>Bağlı</dt><dd><code v-for="d in t.dependsOn" :key="d">{{ d }}</code></dd></div>
+                  </dl>
+                </li>
+              </ol>
+            </section>
+
+            <section v-if="awaiting" class="approve" aria-live="polite">
+              <h3><span class="qmark" aria-hidden="true">?</span> Soru: bu planı onaylıyor musun?</h3>
+              <p class="sub">Senden cevap bekleniyor; onaysız hiçbir ajan iş almaz. Onaylanınca görevler panoya açılır ve organizatör ilk işi dağıtır. Değişiklik istiyorsan not yaz; analist planı yeniden üretir.</p>
+              <div class="actions">
+                <button class="primary" type="button" :disabled="acting" @click="approve">{{ acting ? '…' : 'Planı onayla' }}</button>
+              </div>
+              <div class="field">
+                <label class="lbl" for="run-note">Revize notu</label>
+                <textarea id="run-note" v-model="note" class="note" placeholder="Örn. t2'yi ikiye böl; testler pytest ile olsun." />
+              </div>
+              <div class="actions">
+                <button type="button" :disabled="acting || !note.trim()" @click="revise">Revize et</button>
+                <span v-if="actError" class="err" role="alert">{{ actError }}</span>
+              </div>
+            </section>
+          </template>
+          <p v-else-if="busy" class="msg">Analist planı hazırlıyor…</p>
+
+          <section v-if="revisions.length" class="notes">
+            <h3>Revize notları</h3>
+            <ul><li v-for="(m, i) in revisions" :key="i"><span class="sub">{{ fmtTime(m.ts) }}</span> {{ m.body }}</li></ul>
+          </section>
+
+          <section v-if="handoffs.length" class="notes">
+            <h3>Devir notları</h3>
+            <article v-for="(m, i) in handoffs" :key="i">
+              <div class="sub">{{ fmtTime(m.ts) }} · {{ agentName(m.from) }} → {{ agentName(m.to) }} · <code>{{ m.task }}</code> · {{ stageTitle(m.stage ?? '') }}</div>
+              <pre>{{ m.body }}</pre>
+            </article>
+          </section>
+
+          <!-- Gunluk: ajanlarin yaptigi her sey, zaman sirasiyla. Prompt ve cikti tam metin, acilir. -->
+          <section class="log">
+            <div class="log-head">
+              <h3>Günlük</h3>
+              <button type="button" class="small" @click="showLog = !showLog">{{ showLog ? 'Gizle' : 'Göster' }}</button>
+              <button v-if="showLog" type="button" class="small" @click="loadTurns">Yenile</button>
+              <span class="sub">LLM turları (tam prompt ve çıktı), devir ve hata notları, faz geçişleri. Kaynak: <code>runs/{{ run.id }}/</code></span>
+            </div>
+            <template v-if="showLog">
+              <p v-if="turnsError" class="err">{{ turnsError }}</p>
+              <p v-else-if="turns === null" class="sub">Yükleniyor…</p>
+              <p v-else-if="!log.length" class="sub">Henüz kayıt yok.</p>
+              <ol v-else class="entries">
+                <li v-for="(e, i) in log" :key="i" :class="e.kind">
+                  <template v-if="e.kind === 'turn'">
+                    <div class="entry-head">
+                      <span class="when">{{ fmtClock(e.ts) }}</span>
+                      <span class="tag turn">LLM turu</span>
+                      <strong>{{ agentName(e.turn.agent) }}</strong>
+                      <span class="sub">{{ e.turn.provider }} · <code>{{ e.turn.model }}</code> · {{ e.turn.durationS.toFixed(1) }} s · {{ e.turn.inputTokens ?? '?' }}→{{ e.turn.outputTokens ?? '?' }} tk · {{ fmtCost(e.turn.costUsd ?? 0) }}<template v-if="e.turn.stage"> · {{ stageTitle(e.turn.stage) }}</template><template v-if="e.turn.task"> · <code>{{ e.turn.task }}</code></template></span>
+                    </div>
+                    <details><summary>Gönderilen (son mesaj, {{ e.turn.promptChars }} kr)</summary><pre>{{ e.turn.prompt }}</pre></details>
+                    <details open><summary>Çıktı ({{ e.turn.outputChars }} kr)</summary><pre>{{ e.turn.output }}</pre></details>
+                  </template>
+                  <template v-else-if="e.kind === 'message'">
+                    <div class="entry-head">
+                      <span class="when">{{ fmtClock(e.ts) }}</span>
+                      <span class="tag" :class="e.error ? 'error' : 'msg'">{{ e.error ? 'hata' : e.subject === 'handoff' ? 'devir' : e.subject === 'plan-revision' ? 'revize notu' : 'mesaj' }}</span>
+                      <strong>{{ agentName(e.from) }} → {{ agentName(e.to) }}</strong>
+                      <span v-if="e.task" class="sub"><code>{{ e.task }}</code></span>
+                    </div>
+                    <pre :class="{ errtext: e.error }">{{ e.body }}</pre>
+                  </template>
+                  <template v-else>
+                    <div class="entry-head">
+                      <span class="when">{{ fmtClock(e.ts) }}</span>
+                      <span class="tag phase">faz</span>
+                      <strong>{{ agentName(e.agent) }}</strong>
+                      <span class="sub"><code>{{ e.task }}</code> · {{ stageTitle(e.stage) }} · {{ PHASE_LABEL[e.status] ?? e.status }} · tur {{ e.round }}<template v-if="e.detail"> · {{ e.detail }}</template></span>
+                    </div>
+                  </template>
+                </li>
+              </ol>
+            </template>
+          </section>
+        </div>
+      </template>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.wrap { position: absolute; inset: 0; background: rgba(10, 12, 18, 0.55); display: flex; justify-content: flex-end; }
+.panel {
+  background: #ede9dc; color: #23283a; border-left: 6px solid #3d5a80;
+  width: min(620px, 100%); height: 100%; overflow: auto; padding: 16px 18px;
+  box-shadow: -20px 0 60px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 12px;
+}
+.panel > header { display: flex; align-items: center; gap: 10px; }
+h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; }
+h3 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #4a5068; }
+.key { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 3px; }
+.x { background: none; border: none; font-size: 22px; cursor: pointer; color: #23283a; line-height: 1; margin-left: auto; padding: 0 4px; }
+.msg { margin: 0; font-size: 13px; color: #4a5068; }
+
+.form, .run { display: flex; flex-direction: column; gap: 12px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #4a5068; }
+input[type="text"], select, textarea {
+  font: inherit; font-size: 13px; background: #fff; color: #23283a;
+  border: 1px solid #c9c3b3; border-radius: 4px; padding: 6px 8px; width: 100%;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid #4f8ef7; outline-offset: 0; }
+.brief { min-height: 160px; resize: vertical; line-height: 1.45; }
+.note { min-height: 70px; resize: vertical; }
+.sub { font-size: 11px; color: #6b7285; line-height: 1.4; }
+.sub.right { margin-left: auto; }
+
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+button { font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px; border: 1px solid #c9c3b3; background: #fff; color: #23283a; }
+button:disabled { opacity: 0.5; cursor: default; }
+.primary { background: #23283a; color: #fff; border-color: #23283a; }
+.ghost { background: transparent; }
+.small { padding: 3px 8px; font-size: 11px; }
+.link { border: none; background: none; padding: 0; text-decoration: underline; cursor: pointer; color: #23283a; font-size: 13px; text-align: left; }
+.err { color: #b3261e; font-size: 12px; }
+
+.recent ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.recent li { display: flex; gap: 8px; align-items: baseline; }
+
+.statusline { display: flex; align-items: center; gap: 8px; }
+.status { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.08); text-transform: uppercase; letter-spacing: 0.04em; }
+.status.awaitingApproval { background: #f3c34a; }
+.status.running { background: #4fa3e0; color: #fff; }
+.status.paused { background: #a889e6; color: #fff; }
+.status.completed { background: #7cc46b; }
+.status.failed, .status.policyRejected, .status.interrupted, .status.budgetExceeded { background: #d23b3b; color: #fff; }
+.spin { width: 10px; height: 10px; border: 2px solid #4fa3e0; border-top-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+details summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #4a5068; }
+pre { margin: 6px 0 0; white-space: pre-wrap; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; background: #fff; border: 1px solid #c9c3b3; padding: 8px; border-radius: 4px; }
+.summary { margin: 0; font-size: 13px; line-height: 1.5; }
+.rules { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+
+.tasks { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; counter-reset: t; }
+.tasks > li { background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; padding: 8px 10px; counter-increment: t; }
+.task-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.task-head::before { content: counter(t); font-size: 11px; font-weight: 700; color: #6b7285; min-width: 14px; }
+.tid { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; }
+.tasks p { margin: 4px 0 6px; font-size: 12px; line-height: 1.45; color: #4a5068; }
+.tasks dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 11px; }
+.tasks dl > div { display: contents; }
+.tasks dt { color: #6b7285; font-weight: 600; }
+.tasks dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.tasks dd ul { margin: 0; padding-left: 16px; }
+.tasks dd code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; }
+.phase { margin-left: auto; font-size: 10px; padding: 1px 7px; border-radius: 999px; background: rgba(0,0,0,0.08); }
+.phase.started { background: #4fa3e0; color: #fff; }
+.phase.done { background: #7cc46b; }
+.phase.rejected, .phase.failed { background: #d23b3b; color: #fff; }
+
+.approve { background: #fff8e1; border: 2px solid #f3c34a; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.approve h3 { display: flex; align-items: center; gap: 8px; color: #23283a; font-size: 14px; text-transform: none; letter-spacing: 0; }
+.qmark { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #d23b3b; color: #fff; font-weight: 700; font-size: 13px; }
+.danger { border-color: #d23b3b; color: #9c1f1f; }
+.danger:hover:not(:disabled) { background: #fdecec; }
+.errors { background: #fdecec; border: 1px solid #e0a0a0; border-radius: 6px; padding: 10px 12px; }
+.errtext { border-color: #e0a0a0; color: #7a1f1f; }
+.log-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.log-head h3 { margin: 0; }
+.entries { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.entries li { background: #fff; border: 1px solid #c9c3b3; border-left-width: 4px; border-radius: 6px; padding: 6px 10px; }
+.entries li.turn { border-left-color: #4f8ef7; }
+.entries li.message { border-left-color: #d9a13a; }
+.entries li.phase { border-left-color: #7cc46b; }
+.entry-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.when { font-variant-numeric: tabular-nums; color: #6b7285; font-size: 11px; }
+.tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 999px; background: rgba(0,0,0,0.08); }
+.tag.turn { background: #dbe8fb; }
+.tag.msg { background: #f6e6c2; }
+.tag.error { background: #e05252; color: #fff; }
+.tag.phase { background: #dff2d8; }
+.entries pre { max-height: 360px; overflow: auto; }
+.entries details summary { font-size: 11px; }
+.notes ul { margin: 0; padding-left: 16px; font-size: 12px; }
+.notes article + article { margin-top: 8px; }
+code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
+</style>

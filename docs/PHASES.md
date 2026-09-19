@@ -65,10 +65,9 @@ Her tur/faz/mesaj `runs/<id>/` altına yazılır.
 aşılınca görev reddedilmiş sayılır, bütçe aşımı çalışmayı durdurur, geçmiş dosyaları
 beklenen kayıtları içerir. **Python çalışmadan geçer.**
 
-## Faz 5 — Task.Api + SSE
+## Faz 5 — Çalışma SSE'si (Task.Api 2026-09-19'da kaldırıldı; iş kanalı Api içinde)
 
-`Task.Api`: `POST /api/v1/jobs/run-pipeline` (kuyruğu işler), `JobRunResult` döner.
-`Api`: `POST /api/v1/runs` → 202 + `runId`, `GET /api/v1/runs/{id}/events` → SSE.
+`Api`: `POST /api/v1/runs` → 202 (Faz 4a'da geldi; iş kanalı süreç içi), `GET /api/v1/runs/{id}/events` → SSE (henüz yok; UI yoklar).
 JWT tek şema, tek sınıf; roller claim ile ayrılır. Hostlar yalnız `127.0.0.1`.
 
 **Biten sayılır:** `curl` ile bir çalışma baştan sona tamamlanır; SSE akışı fazları sırayla
@@ -96,7 +95,7 @@ Kaynak: `../MrHobist.AITeam.v1-yedek/orchestrator/` (Python, 2170 satır, 17 dos
 | `providers/claude_sdk.py` | Agent SDK `query`, `output_format json_schema`, `structured_output`, maliyet, `allowed_tools/cwd/mcp` | `runtime/app/providers/anthropic.py` (ad: `claude` → `anthropic`) |
 | `providers/ollama.py` | yerel, `destination=local` | `runtime/app/providers/ollama.py` |
 | `office.py` | KbWen ofisine tam kadro POST (replace semantiği dersi) | Silinir; yerine `SceneEventBus` (var). `RunService` sahne olaylarını yayımlar |
-| `__main__.py doctor/run` | ortam kontrolü, CLI çalıştırma, özet | `Task.Api` `POST jobs/run-pipeline`; doctor → `/health/ready` + `GET /v1/models` |
+| `__main__.py doctor/run` | ortam kontrolü, CLI çalıştırma, özet | Api `POST /runs` + iş kanalı; doctor → `GET /api/v1/providers` |
 
 **Taşınmayan / dikkat:** v1 `.env` gerçek `NVIDIA_API_KEY` içerir — depoya asla kopyalanmaz.
 `vendor/agent-virtual-office` ve `.office-state` gereksiz. `team.yaml`'ın rol→sağlayıcı bilgisi
@@ -116,7 +115,7 @@ deler; reddedildi. Faz 4'te ölçülür.
 
 **Önerilen sıra:** Faz 1 → 2 (Domain, depolar, ajan/iş akışı uçları) → Faz 3 (sağlayıcıları
 runtime'a taşı; en çok kopya, en az risk) → Faz 4 (RunService, sahte runtime ile testler) →
-Faz 5 (Task.Api iş ucu, `POST /api/v1/runs` → 202, SSE; `RunService` → `SceneEventBus`).
+Faz 5 (`POST /api/v1/runs` → 202, SSE; `RunService` → `SceneEventBus`).
 Faz 6 sahnesi hazır: `agent.state`, `meet`, `board.*`, `run.stage` olayları `RunService`'in
 yayımlayacağı sözleşmedir (`docs/SCENE.md`).
 
@@ -154,6 +153,93 @@ denetimi); uçlar `POST/DELETE /agents`, `GET/PUT/DELETE /workflows[/{key}]`; 40
 `config/workflows/default.json` (analiz → geliştirme → test → karar, devir: organizer) ve
 `tasarimli.json`; `manager.md` altı şapka. Smoke: tüm uçlar sözleşmedeki kodları döndü;
 kapı 32 + 22 test ile yeşil. UI paneli ayrı ajanda (Faz 6).
+
+## Faz 4a — Analiz → plan onayı → devir (2026-09-19, kullanıcı kararları) 🔶
+
+Kullanıcının 1. önceliği: "bir analist rolü iş alsın, düzgün yapsın, organizatör tasarımcıya
+(ya da akışa göre developer'a) atasın" — bunu ekranda görmek. Faz 3/4/5'in dar bir dilimi olarak
+kesildi; kararların tamamı `docs/DOMAIN.md`, sözleşme `docs/API.md` (Çalışmalar, Sağlayıcı kimliği).
+
+**Sorularak alınan kararlar (varsayım değil):** tetikleme UI'da "Yeni çalışma" formu · model kaynağı
+Claude Code oturumu (Agent SDK; ayrı anahtar yok; farklı Windows kullanıcısı = farklı oturum, UI ilk
+yüklemede giriş kontrolü) · bugün yalnız Anthropic, dört model (fable/opus/sonnet/haiku), varsayılan
+`claude-opus-5` · efor seçimi ajan başına (`effort`) · akış otomatik ilerler **ama** analistin planı
+insan onayından geçer, onaysız panoya iş açılmaz; revize notu → analist yeniden → onaya kadar döngü ·
+organizatör = kod dağıtıcı (bekleyen iş / boş ajan), LLM yalnız devir notu için · ajan başına tek iş,
+farklı ajanlar paralel · developer bu teslimde **çalışmaz**, iş masasında bekler → çalışma `Paused`.
+
+**Kapsam:** runtime `anthropic` sağlayıcısı + `/v1/auth` · `Agent.Effort` · `Run.Workflow` + akış
+kopyası · `RunService` (analiz, onay/revize, `Dispatcher`) · Api içinde tek yazıcı iş kanalı (`JobChannel`/`JobWorker`) ·
+Api `runs` uçları + `providers` · UI: giriş kontrolü, "Yeni çalışma",
+plan onay paneli, ajan panelinde efor, `workflow.set`.
+
+**Biten sayılır:** Runtime kapalıyken `ServiceTests` sahte runtime ile analiz → onay → devir →
+`Paused` akışını ve `runs/` dosyalarını doğrular. Gerçek modelle: UI'dan brief girilir, analist
+gerçek plan üretir, plan panelde görünür, bir revize notu planı değiştirir, onaydan sonra organizatör
+sahnede developer'a yürür, görev panoda Geliştirme sütununa geçer, çalışma `Paused` görünür.
+
+**Ölçüldü (2026-09-19, sahte runtime):** 9 yeni servis testi yeşil (toplam 32 birim + 31 servis):
+analiz → `AwaitingApproval`, `spec.json` + `workflow.json` yazılır, onaysız faz/pano yok; revize notu
+geçmişle (`user → assistant → user`) analiste gider ve plan değişir; onay → `board.set`, organizatör
+devir notu (haiku/low) → `meet` → `board.move` → t1 developer'da `Started`, t2 bağımlı bekler, çalışma
+`Paused`; 409/400 kodları; hassasiyet `local` iken `PolicyRejected`; yeniden başlatmada `Interrupted`.
+Runtime: 15 pytest (Agent SDK sahte). Canlı zincir (UI 3005 → Api 5082 → runtime 5090; Task.Api aynı gün kaldırıldı, bkz. CLAUDE.md Sapmalar):
+"Yeni çalışma" formundan brief gitti, analist sahnede "takıldı", çalışma panelinde `başarısız` +
+`runtime runtime.not_logged_in` ayrıntısı, üst şeritte "Anthropic: giriş yok · `claude login`" uyarısı
+göründü. **Gerçek modelle plan/onay/devir henüz gözle görülmedi**: bu kullanıcıda Claude Code oturumu yok.
+
+**Aynı gün eklenenler:** Task.Api kaldırıldı, iş kanalı Api içinde (CLAUDE.md → Sapmalar). Kod incelemesi
+sonrası `RunReader` / `Prompts` ayrımı, `WorkflowMapping`, CORS açık liste (`AITeam:UiOrigins`), kimlik
+`refresh`, üretilen tipler (`ui/shared/types/api.ts`). **Ayarlar ekranı**: LLM bağlantıları (durum, hesap,
+modeller, tek tıkla giriş = runtime `claude auth login`'i yeni konsolda başlatır, çıkış) ve kullanım tablosu
+(`GET /usage`, runs/ turlarından). Abonelik limiti CLI'dan alınamıyor, ekran bunu söyler.
+
+**İlk gerçek deneme (2026-09-19 16:27):** kullanıcı giriş yaptı, brief verdi; analist cevap üretti ama runtime
+`max_turns=1` ile çağırdığı için Agent SDK yapısal çıktının ikinci turunda "Reached maximum number of turns" kesti
+(çalışma `Failed`, günlükte kayıt yok). Düzeltmeler: `max_turns=4`; hata `messages.jsonl`'e `subject: error` ile
+yazılır; UI'da Hata kutusu + **Günlük** (LLM turları tam prompt/çıktı, devir/hata notları, faz geçişleri;
+`GET /runs/{id}/turns`). Ölçüm: `tools=[]` çağrı başına prompt'u 23k → 4,5k token'a düşürdü (Haiku: $0.047 → $0.010).
+**Üst barda kalan kullanım** (`GET /limits`): 5 saatlik oturum, haftalık, modele özel pencereler; kaynak Claude Code'un
+`/usage` ucu (belgesiz, 429'a duyarlı → runtime 90 s önbellek + son iyi değer). Model alanı açılır menü oldu.
+
+**Ortam notu:** Bu oturum Windows'ta `SemihAI` kullanıcısıyla çalıştı; `runtime/.venv` bu kullanıcı
+için Python 3.12 ile yeniden kuruldu (`pyproject` `>=3.12`). Agent SDK, Claude masaüstü uygulamasının
+`%APPDATA%\Claude\claude-code\<sürüm>\claude.exe` ikilisini kullanır; `claude auth status` bu
+kullanıcı için **"giriş yok"** dedi — gerçek model denemesi için `claude login` gerekir.
+`semih` kullanıcısının eski Api (5080) ve UI (3000) süreçleri durdurulamadığı için doğrulama
+`AITeam:ApiUrl=http://127.0.0.1:5082` ve `NUXT_PUBLIC_API_BASE` ile ikinci kopyalar üzerinde yapıldı;
+Api CORS'u artık her loopback kökeni kabul eder. Windows Uygulama Denetimi, `bin/Debug|Release/net10.0`
+dışına derlenen Api dll'ini çalıştırmadı (`-p:OutDir` ile derlenen kopyalar); standart yol kullanılmalı.
+
+**2026-09-19 akşam — İşler, gelen kutusu, kalan hak (kullanıcı isteği):** "İşleri göreyim, kaç iş var bileyim, benden
+cevap bekleneni soru olduğunu anlayarak göreyim, Kanban'dan takip edeyim, kalan hakkımı üst barda göreyim."
+Eklenenler: `GET /runs/overview` (sayaçlar + `inbox`, `docs/DOMAIN.md → Gelen kutusu`), `POST /runs/{id}/retry` ve
+`/cancel` uçları (servis zaten vardı, uç yoktu; 409 `run.not_retryable` / `run.not_cancellable`), UI **İşler** paneli
+(`JobsPanel.vue`: gelen kutusu, durum filtreleri, tüm çalışmalar; kısayol I), üst barda İşler düğmesi + kırmızı rozet +
+sekme başlığında `(N)`, "Senden cevap bekleniyor" şeridi, sahne panosunda rozet (`Board.attention`), büyük Kanban'da
+"Senden bekleniyor" şeridi, çalışma panelinde **Yeniden dene / İptal et** ve onay bölümünün "Soru: bu planı onaylıyor
+musun?" başlığı. `cancelled` durumu UI'a eşlendi; `shared/types/api.ts` yeniden üretildi.
+**Kalan hak:** runtime `/v1/limits` 500 dönüyordu → üst bar bunu "runtime kapalı" sanıyordu (yanlış teşhis). Runtime
+artık asla 500 dönmez (ayrıştırma hatası `available=false` + neden; `resets_at` epoch gelirse ISO'ya çevrilir), Api
+runtime 5xx'ini 502 `runtime.error` diye ayırır, üst bar üç durumu ayrı yazar. **Ölçülmedi:** bu oturumda runtime
+yeniden başlatılamadı (aşağıdaki ortam notu); düzeltme runtime yeniden başlayınca görünür. Gerçek 500'ün kök nedeni
+bilinmiyor; ilk yanıt `detail` alanında okunacak. Testler: 32 birim + 32 servis yeşil; runtime pytest'e 1 test eklendi,
+**koşturulamadı** (Python yok).
+
+**2026-09-19 gece (SemihAI, kullanıcı kararları: paralel + ajan başına tek iş · elle + otomatik tekrar · panoda çalışma
+sekmeleri · iptal + bütçe):** `JobChannel` havuz oldu (`AITeam:MaxParallelJobs`=3, çalışma başına kilit, iptal
+belirteci), `AgentCaller` ajan kilidi + `RetryPolicy`, dağıtımda çalışmalar arası meşguliyet, `maxCostUsd` →
+`BudgetExceeded`, Kanban'da Sahne + çalışma sekmeleri (durumdan türetilir), ajan panelinde **Özellikler / İşler**
+sekmeleri (`GET /agents/{key}/work`), brief formunda bütçe alanı, üst barda tüm kota pencereleri (pasifler soluk).
+Runtime `/v1/limits` ölçüldü: 200, oturum/hafta/modele özel pencereler geliyor. `.venv` `SemihAI` için yeniden kuruldu.
+
+**Ortam notu (2026-09-19, `SemihAI2` kullanıcısı):** `semih` ve `SemihAI` kullanıcılarının bıraktığı Api (5080, 5082),
+UI (3000, 3005) ve runtime (5090) süreçleri bu kullanıcıdan durdurulamıyor (`Erişim engellendi`) ve Api'nin hem
+`bin/Debug` hem `bin/Release` çıktısını kilitliyor. Çözüm: Api `-p:OutputPath=<scratch>/bin/Debug/net10.0/` ile
+derlendi ve oradan 5083'te çalıştırıldı (Uygulama Denetimi bu yolu engellemedi; `launch.json` → `ui-5083`, UI 3006).
+`runtime/.venv` `SemihAI`'nin Python'unu gösteriyor; `SemihAI2` için Python yok → pytest ve yeni runtime başlatılamaz;
+çalışan 5090 runtime'ı (kodu güncel, Anthropic girişi var: `opugmai2@…`) yeniden kullanıldı. Kalıcı çözüm: eski süreçleri
+kapatmak (Görev Yöneticisi, yönetici) ve bu kullanıcıya Python 3.12 kurup `.venv`'i yeniden oluşturmak.
 
 ## Faz 6 — UI (canlı sahne) 🔶 sahne kuruldu
 

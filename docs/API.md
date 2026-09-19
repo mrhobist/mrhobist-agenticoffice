@@ -9,9 +9,8 @@ Enum'lar JSON'da **adıyla** taşınır. Hostlar yalnız `127.0.0.1`.
 
 | Host | Port | Sorumluluk |
 |---|---|---|
-| Api | 5080 | okuma, yapılandırma yazma, SSE yayını, kuyruğa koyma |
-| Task.Api | 5081 | çalışmayı fiilen yürütür (`runs/` JSONL'e yazan tek süreç) |
-| runtime (Python) | 5090 | yalnız LLM çağrısı; UI doğrudan konuşmaz |
+| Api | 5080 | tüm uçlar, SSE yayını, iş kanalı (`runs/` JSONL'e yazan tek yazıcı) |
+| runtime (Python) | 5090 | yalnız LLM çağrısı ve sağlayıcı kimliği; UI doğrudan konuşmaz |
 
 ## Ajanlar — `config/agents/*.md`
 
@@ -23,11 +22,12 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
 | `GET /api/v1/agents/{key}` | `AgentDetail` | `prompt` (gövde) + `composedPrompt` (gövde + alt md'ler; modele giden metin) |
 | `PUT /api/v1/agents/{key}` | `AgentDetail` | **tüm alanlar zorunlu**, kısmi güncelleme yok: eksik/null liste ya da metin → 400 `request.invalid`; `provider`/`model`/`canAsk` için `null` = "yok / varsayılan". Dosya atomik yazılır; doğrulama hataları 400 |
 | `GET /api/v1/knowledge` | `KnowledgeItem[]` | alt md'ler: `key, title, body` |
+| `GET /api/v1/agents/{key}/work?runs=30` | `AgentRunWork[]` `{ run: RunSummary, turns: Turn[], messages: Message[], phases: Phase[] }` | Ajan panelinin **İşler** sekmesi: son N çalışmada bu ajanın her LLM turu (tam gönderilen metin ve çıktı, o anki sağlayıcı/model), ona gelen/giden notlar (devir, hata, tekrar), faz geçişleri. Payı olmayan çalışma listede yoktur |
 
 ```jsonc
 // AgentListItem
 { "key": "developer", "name": "Developer", "summary": "…",
-  "officeRoles": ["dev"], "provider": "nvidia", "model": "z-ai/glm-5.3",
+  "officeRoles": ["dev"], "provider": "anthropic", "model": "claude-opus-5", "effort": "high",
   "includes": ["mimari-kurallar", "kodlama-standartlari"], "canAsk": "manager" }
 
 // AgentDetail = AgentListItem + { "prompt": "…", "composedPrompt": "…" }
@@ -36,8 +36,10 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
 
 - `provider`: `anthropic | nvidia | ollama` ya da `null` (varsayılan kullanılır). `claude` **kabul
   edilmez**, 400 `agent.invalid_provider` — sessizce çevrilmez.
-- `model`: serbest metin ya da `null` (sağlayıcı varsayılanı). Erişilebilirlik `GET /api/v1/models`
-  ile ayrıca doğrulanır; katalogda görünmek erişilebilir olmak değildir (LESSONS).
+- `model`: serbest metin ya da `null` (sağlayıcı varsayılanı: Anthropic için `claude-opus-5`). Erişilebilirlik
+  `GET /api/v1/models` ile ayrıca doğrulanır; katalogda görünmek erişilebilir olmak değildir (LESSONS).
+- `effort`: `low | medium | high | max` ya da `null` (varsayılan `high`). Başka değer 400 `agent.invalid_effort`.
+  Frontmatter anahtarı `effort`.
 - `includes[]`: her biri `config/knowledge/` içinde var olmalı → yoksa 400 `agent.unknown_include`.
 - `canAsk`: var olan bir ajan anahtarı ya da `null` → yoksa 400 `agent.unknown_can_ask`.
 - `prompt` boş olamaz → 400 `agent.prompt_empty`.
@@ -99,12 +101,65 @@ Değişmezler (400): tam 1 `analyze` ve ilk sırada (`workflow.analyze_count`, `
 `GET /api/v1/scene`, `GET /api/v1/scene/events` (SSE), `POST /api/v1/scene/commands` — bkz.
 `docs/SCENE.md`. Faz 5'te `RunService` aynı olayları yayımlar.
 
-## Çalışmalar (Faz 5, henüz yok)
+## Sağlayıcı kimliği
 
-| Uç | Dönen |
-|---|---|
-| `POST /api/v1/runs` `{ brief, sensitivity, label?, workflow? }` | **202** `{ runId }`; `workflow` yoksa `default` |
-| `GET /api/v1/runs` | `RunSummary[]` |
-| `GET /api/v1/runs/{id}` | `RunSummary` + görevler + fazlar |
-| `GET /api/v1/runs/{id}/events` | SSE: faz/tur/mesaj kayıtları sırayla |
-| Task.Api `POST /api/v1/jobs/run-pipeline` | `JobRunResult` |
+| Uç | Dönen | Not |
+|---|---|---|
+| `GET /api/v1/providers?refresh=` | `ProviderStatus[]` `{ provider, loggedIn, account, detail, models: ModelInfo[] }` | runtime `/v1/auth` + `/v1/models`'a vekâlet eder; runtime kapalıysa **503** `runtime.unavailable`. UI **ilk yüklemede** çağırır; `loggedIn=false` ise giriş talimatı gösterir (`docs/DOMAIN.md` → Model, efor ve kimlik). Runtime kimliği 60 s önbellekler; `refresh=true` ("Yeniden kontrol et") önbelleği atlar |
+| `POST /api/v1/providers/{provider}/login` `{ mode?: claudeai\|console, email? }` | `LoginStarted` `{ provider, started, detail }` | Runtime, sağlayıcının **kendi** giriş akışını kullanıcının makinesinde başlatır (Anthropic: `claude auth login`, yeni konsol + tarayıcı). Şifre/token bu uçtan geçmez. Tamamlanma `GET /providers?refresh=true` ile görülür |
+| `POST /api/v1/providers/{provider}/logout` | `ProviderStatus`'un kimlik kısmı `{ provider, loggedIn, account, detail }` | Anthropic: `claude auth logout` |
+| `GET /api/v1/limits?refresh=` | `ProviderLimits[]` `{ provider, available, detail, subscription, fetchedAt, limits: [{ kind, group, percent, severity, resetsAt, scope, isActive }] }` | **Kalan kullanım** (üst bar): sağlayıcının kota pencereleri; `percent` kullanılan yüzde. Anthropic: Claude Code'un `/usage` ekranının okuduğu uç, CLI'nin makinede sakladığı oturumla; belirteç hiçbir yanıta yazılmaz. Runtime 90 s önbellekler. Sağlayıcı vermiyorsa ya da yanıt ayrıştırılamıyorsa `available=false` + neden (runtime **500 dönmez**). Runtime'ın kendisi 5xx dönerse Api **502** `runtime.error` (kapalı değil, uç bozuk); ulaşılamıyorsa 503 `runtime.unavailable` |
+| `GET /api/v1/usage?runs=200` | `UsageItem[]` `{ provider, model, turns, runs, inputTokens, outputTokens, costUsd, lastAt }` | Son N çalışmanın `conversations/*.jsonl` turlarından toplanır. **Abonelik limiti / kalan kota değil**: sağlayıcı bunu CLI'a açmıyor; UI bunu söyler |
+
+## Çalışmalar — `runs/<id>/`
+
+Davranış `docs/DOMAIN.md` (yaşam döngüsü, plan onayı, dağıtım). Yazma uçları hızlı doğrular (400/409 hemen),
+uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve **202** döner; ilerleme `GET /runs/{id}` ile izlenir.
+
+| Uç | Dönen | Not |
+|---|---|---|
+| `POST /api/v1/runs` `{ brief, workflow?, sensitivity?, label? }` | **202** `RunSummary` | `workflow` yoksa `default` (yoksa 404 `workflow.not_found`); `sensitivity` yoksa `anthropic`; boş `brief` 400 `run.brief_empty` |
+| `GET /api/v1/runs?limit=20` | `RunSummary[]` | yeni → eski |
+| `GET /api/v1/runs/{id}` | `RunDetail` | 404 `run.not_found` |
+| `GET /api/v1/runs/{id}/turns?agent=` | `Turn[]` | Tüm ajanların LLM turları, **tam prompt ve çıktı** ile, zamana göre (`conversations/*.jsonl`). Günlük ekranı |
+| `POST /api/v1/runs/{id}/approve` | **202** `RunSummary` | yalnız `AwaitingApproval`; değilse 409 `run.not_awaiting_approval` |
+| `POST /api/v1/runs/{id}/revise` `{ note }` | **202** `RunSummary` | boş `note` 400 `run.note_empty`; 409 gibi yukarıda |
+| `POST /api/v1/runs/{id}/retry` | **202** `RunSummary` | yalnız `failed \| interrupted \| budgetExceeded \| cancelled`; değilse 409 `run.not_retryable`. Kaldığı adımdan sürer (plan yoksa/analizde düştüyse analiz, yoksa dağıtım); onay beklerken iptal edilmişse yalnız `awaitingApproval`'a döner, kuyruğa iş girmez |
+| `POST /api/v1/runs/{id}/cancel` | **200** `RunSummary` | yalnız `running \| awaitingApproval \| paused \| failed \| interrupted \| budgetExceeded`; değilse 409 `run.not_cancellable`. Düşen çalışmada anlamı **kapat**: karar verildi, gelen kutusundan düşer. Hemen yazılır; süren LLM çağrısının sonucu yazılmaz |
+| `GET /api/v1/runs/overview` | `RunsOverview` | **İşler** ekranı ve üst bar: kaç iş var, kaçı ne durumda, kaçı kullanıcıdan bir şey bekliyor (`inbox`). UI 5 s'de bir yoklar |
+| `GET /api/v1/jobs/health` | `{ status, pending }` | iş kanalında bekleyen iş sayısı |
+
+```jsonc
+// RunSummary — run.json
+{ "id": "20260919-153000-a1b2", "label": "slugify", "brief": "…", "sensitivity": "anthropic",
+  "workflow": "default", "status": "AwaitingApproval", "startedAt": "…", "finishedAt": null,
+  "totalCostUsd": 0.0421, "detail": null }
+
+// RunDetail = RunSummary + dondurulan akış + plan + faz/mesaj kayıtları
+{ ...RunSummary,
+  "workflowDef": { /* Workflow, runs/<id>/workflow.json */ },
+  "spec": { "summary": "…", "architecture": "…", "rules": ["…"],
+            "tasks": [{ "id": "t1", "title": "…", "description": "…", "files": ["…"], "acceptance": ["…"], "dependsOn": [] }] },
+  "order": ["t1", "t2"],                       // topolojik yürütme sırası
+  "tasks": [{ "id": "t1", "phases": [ /* Phase[] */ ] }],
+  "messages": [ /* Message[]: plan notları, devir notları, sorular */ ] }
+
+// RunsOverview — GET /runs/overview. failed = failed + interrupted + budgetExceeded + policyRejected
+{ "total": 7, "running": 1, "awaitingApproval": 1, "paused": 1, "failed": 2, "completed": 1, "cancelled": 1,
+  "inbox": [ // kullanıcıdan bir şey bekleyenler, yeni → eski (docs/DOMAIN.md → Gelen kutusu)
+    { "runId": "…", "label": "slugify", "status": "awaitingApproval", "kind": "approval",
+      "ts": "…", "title": "Plan onayı bekliyor", "detail": "<plan özeti>", "task": null },
+    { "runId": "…", "label": "…", "status": "failed", "kind": "decision",
+      "ts": "…", "title": "Başarısız oldu", "detail": "<run.detail>", "task": null } ] }
+```
+
+- Enum'lar HTTP'de **camelCase adıyla** (Api JSON seçenekleri; dosyada PascalCase): `status`:
+  `running | completed | failed | interrupted | budgetExceeded | policyRejected | awaitingApproval | paused | cancelled`.
+- `InboxKind` (adıyla): `approval` = soru, plan onayı (onayla / revize et) · `decision` = karar, çalışma durdu (yeniden dene / iptal) ·
+  `question` = bir ajan kullanıcıya `ask` yazdı ve `ref`'i eşleşen `answer` yok (bugün üretilmiyor; sözleşme hazır).
+- `Phase`: `{ ts, task, stage, stageTitle, kind, agent, round, status: started|done|rejected|failed|skipped, durationS, detail }`.
+- `Message`: `{ ts, kind: ask|answer|handoff|note, from, to, body, task, stage, ref, subject }`. Plan revize notu
+  `from: "user", to: "analyst", kind: "note", subject: "plan-revision"`. Bir adım hata ile bitince
+  `from: <ajan>, to: "user", kind: "note", subject: "error", body: <neden>` yazılır ("takıldı" tek başına bilgi değildir).
+- `Turn`: `{ ts, agent, stage, task, round, provider, model, destination, durationS, promptChars, outputChars, costUsd, prompt, output, inputTokens, outputTokens }`.
+- SSE (`GET /runs/{id}/events`) **henüz yok**; UI aktif çalışmayı 2 s'de bir `GET /runs/{id}` ile yoklar — varsayımla ilerlenir.

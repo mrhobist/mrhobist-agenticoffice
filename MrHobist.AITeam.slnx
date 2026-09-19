@@ -4,7 +4,6 @@
     <Project Path="src/MrHobist.AITeam.Application/MrHobist.AITeam.Application.csproj" />
     <Project Path="src/MrHobist.AITeam.Domain/MrHobist.AITeam.Domain.csproj" />
     <Project Path="src/MrHobist.AITeam.Infrastructure/MrHobist.AITeam.Infrastructure.csproj" />
-    <Project Path="src/MrHobist.AITeam.Task.Api/MrHobist.AITeam.Task.Api.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/MrHobist.AITeam.ServiceTests/MrHobist.AITeam.ServiceTests.csproj" />

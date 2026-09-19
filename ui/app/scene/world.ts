@@ -40,6 +40,7 @@ export class World {
     readonly cfg: SceneConfig,
     readonly wf: WorkflowConfig,
     readonly sprites: Sprites,
+    private readonly apiBase: string,
   ) {
     this.nav = new NavGrid(cfg)
     this.props = cfg.props.map(p => {
@@ -73,7 +74,7 @@ export class World {
     if (!wfRes.ok) throw new Error(`workflow ${wfRes.status}`)
     const cfg = (await cfgRes.json()) as SceneConfig
     const wf = (await wfRes.json()) as WorkflowConfig
-    return new World(cfg, wf, sprites)
+    return new World(cfg, wf, sprites, apiBase)
   }
 
   // ------------------------------------------------------------------ olaylar
@@ -161,6 +162,20 @@ export class World {
       case 'cafe.special':
         this.specialOverride = e.data.text
         break
+      case 'workflow.set':
+        // Calisma hangi akisla kosuyorsa pano onu kurar (docs/SCENE.md). Yukleme asenkron; bu arada eski sutunlar kalir.
+        void this.loadWorkflow(e.data.key)
+        break
+    }
+  }
+
+  private async loadWorkflow(key: string): Promise<void> {
+    try {
+      const res = await fetch(`${this.apiBase}/api/v1/workflows/${encodeURIComponent(key)}`)
+      if (!res.ok) return
+      this.board.setWorkflow((await res.json()) as WorkflowConfig)
+    } catch (err) {
+      console.warn('workflow.set', key, err)
     }
   }
 

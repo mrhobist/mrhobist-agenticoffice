@@ -14,6 +14,7 @@ public static class ErrorCodes
     public const string AgentUnknownCanAsk = "agent.unknown_can_ask";
     public const string AgentExists = "agent.exists";
     public const string AgentInUse = "agent.in_use";
+    public const string AgentInvalidEffort = "agent.invalid_effort";
 
     public const string KnowledgeInvalidKey = "knowledge.invalid_key";
 
@@ -31,8 +32,16 @@ public static class ErrorCodes
     public const string RunPolicyViolation = "run.policy_violation";
     public const string RunBudgetExceeded = "run.budget_exceeded";
     public const string RunNotFound = "run.not_found";
+    public const string RunBriefEmpty = "run.brief_empty";
+    public const string RunNoteEmpty = "run.note_empty";
+    public const string RunNotAwaitingApproval = "run.not_awaiting_approval";
+    public const string RunPlanInvalid = "run.plan_invalid";
+    public const string RunNotRetryable = "run.not_retryable";
+    public const string RunNotCancellable = "run.not_cancellable";
+    public const string RunBudgetInvalid = "run.budget_invalid";
 
     public const string ConfigFileMissing = "config.file_missing";
     public const string ConfigFileInvalid = "config.file_invalid";
     public const string RuntimeUnavailable = "runtime.unavailable";
+    public const string RuntimeError = "runtime.error";
 }

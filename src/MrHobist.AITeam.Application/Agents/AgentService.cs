@@ -12,6 +12,7 @@ public sealed record AgentListItem(
     IReadOnlyList<string> OfficeRoles,
     Provider? Provider,
     string? Model,
+    string? Effort,
     IReadOnlyList<string> Includes,
     string? CanAsk);
 
@@ -22,6 +23,7 @@ public sealed record AgentDetail(
     IReadOnlyList<string> OfficeRoles,
     Provider? Provider,
     string? Model,
+    string? Effort,
     IReadOnlyList<string> Includes,
     string? CanAsk,
     string Prompt,
@@ -41,7 +43,8 @@ public sealed record UpdateAgentRequest(
     string? Model,
     IReadOnlyList<string> Includes,
     string? CanAsk,
-    string Prompt);
+    string Prompt,
+    string? Effort = null);
 
 /// <summary>POST govdesi: <see cref="UpdateAgentRequest"/> + anahtar.</summary>
 public sealed record CreateAgentRequest(
@@ -53,7 +56,8 @@ public sealed record CreateAgentRequest(
     string? Model,
     IReadOnlyList<string> Includes,
     string? CanAsk,
-    string Prompt);
+    string Prompt,
+    string? Effort = null);
 
 public sealed record KnowledgeItem(string Key, string Title, string Body);
 
@@ -104,7 +108,7 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows) : 
 
         var agent = Compose(
             new Agent(key, key, "", [], null, null, [], null, ""),
-            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt));
+            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort));
         return await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
     }
 
@@ -159,6 +163,7 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows) : 
         OfficeRoles = request.OfficeRoles,
         Provider = Providers.Parse(request.Provider),
         Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model.Trim(),
+        Effort = Efforts.Parse(request.Effort),
         Includes = request.Includes,
         CanAsk = string.IsNullOrWhiteSpace(request.CanAsk) ? null : request.CanAsk.Trim(),
         Prompt = request.Prompt,
@@ -188,8 +193,8 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows) : 
     }
 
     private static AgentListItem ToItem(Agent a)
-        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Includes, a.CanAsk);
+        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk);
 
     private static AgentDetail ToDetail(Agent a, Team team)
-        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge));
+        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge));
 }

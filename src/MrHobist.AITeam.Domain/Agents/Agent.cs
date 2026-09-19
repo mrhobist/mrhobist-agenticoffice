@@ -8,9 +8,35 @@ public enum Provider
     Ollama,
 }
 
+/// <summary>Akil yurutme eforu. Tel adi kucuk harf; bos = varsayilan (<see cref="Efforts.Default"/>).</summary>
+public static class Efforts
+{
+    public const string Default = "high";
+
+    public static readonly IReadOnlyList<string> All = ["low", "medium", "high", "max"];
+
+    /// <summary>Bos → null (varsayilan). Bilinmeyen deger → <c>agent.invalid_effort</c>.</summary>
+    public static string? Parse(string? text, string? context = null)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var value = text.Trim().ToLowerInvariant();
+        if (All.Contains(value, StringComparer.Ordinal))
+        {
+            return value;
+        }
+
+        var prefix = context is null ? "" : context + ": ";
+        throw new DomainException(ErrorCodes.AgentInvalidEffort, $"{prefix}bilinmeyen effort '{text}' (low | medium | high | max).");
+    }
+}
+
 /// <summary>
 /// Bir ajan: <c>config/agents/{Key}.md</c>. Frontmatter ustveri, govde sistem promptu.
-/// <see cref="Provider"/> ve <see cref="Model"/> bossa varsayilan kullanilir (CLAUDE.md §4).
+/// <see cref="Provider"/>, <see cref="Model"/> ve <see cref="Effort"/> bossa varsayilan kullanilir (CLAUDE.md §4).
 /// </summary>
 public sealed record Agent(
     string Key,
@@ -21,9 +47,10 @@ public sealed record Agent(
     string? Model,
     IReadOnlyList<string> Includes,
     string? CanAsk,
-    string Prompt)
+    string Prompt,
+    string? Effort = null)
 {
-    /// <summary>Kendi basina tutarli mi: anahtar, bos prompt, include anahtarlari.</summary>
+    /// <summary>Kendi basina tutarli mi: anahtar, bos prompt, include anahtarlari, efor.</summary>
     public void Validate()
     {
         Identifiers.Require(Key, ErrorCodes.AgentInvalidKey, "ajan");
@@ -31,6 +58,8 @@ public sealed record Agent(
         {
             throw new DomainException(ErrorCodes.AgentPromptEmpty, $"{Key}: govde bos; sistem promptu olmadan rol calisamaz.");
         }
+
+        Efforts.Parse(Effort, Key);
 
         foreach (var include in Includes)
         {

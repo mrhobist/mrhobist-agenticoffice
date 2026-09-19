@@ -2,12 +2,14 @@
 name = "mrhobist-aiteam-runtime"
 version = "0.1.0"
 description = "LLM cagri katmani. Durum tutmaz, veritabani gormez, is kurali bilmez."
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.120",
     "uvicorn[standard]>=0.38",
     "httpx>=0.28",
     "pydantic>=2.11",
+    # Anthropic saglayicisi (app/providers/anthropic.py): Claude Code oturumunu kullanan Agent SDK.
+    "claude-agent-sdk>=0.2",
 ]
 
 [project.optional-dependencies]

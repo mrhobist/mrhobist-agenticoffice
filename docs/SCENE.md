@@ -7,6 +7,7 @@ kaynaktan** okur:
 |---|---|---|
 | Yerleşim (mobilya, koltuklar, duraklar, engeller) | `config/scene.json` → `GET /api/v1/scene` | insan, elle |
 | Pano sütunları | `config/workflows/{key}.json` → `GET /api/v1/workflows/{key}` (`default`; `workflow.set` olayıyla değişir) | insan / İş Akışı paneli |
+| Pano rozeti (kırmızı sayı) | `GET /api/v1/runs/overview → inbox.length`; kabuk 5 s'de bir yoklar, `Board.attention` alanına yazar. **Sahne olayı değil**, UI türetir | — |
 | Canlı olaylar | `GET /api/v1/scene/events` (SSE) | `POST /api/v1/scene/commands` bugün; Faz 5'te `RunService` |
 | Sprite'lar | `assets/raw/*.png` → `scripts/build-sprites.py` → `ui/public/sprites/` | script; elle düzenlenmez |
 

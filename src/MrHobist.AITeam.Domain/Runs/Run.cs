@@ -19,6 +19,7 @@ public enum Sensitivity
     Open,
 }
 
+/// <summary>Calisma durumu. JSON'da adiyla tasinir; yeni uye SONA eklenir (CLAUDE.md §5). Gecisler docs/DOMAIN.md.</summary>
 public enum RunStatus
 {
     Running,
@@ -27,6 +28,12 @@ public enum RunStatus
     Interrupted,
     BudgetExceeded,
     PolicyRejected,
+    /// <summary>Analist plani uretti; insan onayi (approve) ya da revize notu bekleniyor. Panoya is acilmadi.</summary>
+    AwaitingApproval,
+    /// <summary>Yurutucusu olmayan bir adima gelindi; hata degil, teslim siniri. <see cref="Run.Detail"/> adimi soyler.</summary>
+    Paused,
+    /// <summary>Kullanici durdurdu. Bitmis sayilir; "Yeniden dene" ile kaldigi adimdan devam edebilir.</summary>
+    Cancelled,
 }
 
 public enum PhaseStatus
@@ -58,7 +65,12 @@ public static class SensitivityPolicy
     };
 }
 
-/// <summary>Calisma ustverisi: <c>runs/{Id}/run.json</c>.</summary>
+/// <summary>
+/// Calisma ustverisi: <c>runs/{Id}/run.json</c>. <see cref="Workflow"/> baslarken secilen akisin anahtaridir;
+/// tanimin kendisi <c>runs/{Id}/workflow.json</c> olarak dondurulur (docs/DOMAIN.md). <see cref="Detail"/>
+/// durumun insan icin kisa aciklamasi (Paused: hangi adim, Failed: neden). <see cref="MaxCostUsd"/> asildiginda
+/// calisma <see cref="RunStatus.BudgetExceeded"/> ile durur (CLAUDE.md §4). <see cref="Retries"/> "Yeniden dene" sayisi.
+/// </summary>
 public sealed record Run(
     string Id,
     string Label,
@@ -67,7 +79,22 @@ public sealed record Run(
     DateTimeOffset StartedAt,
     RunStatus Status,
     DateTimeOffset? FinishedAt = null,
-    decimal TotalCostUsd = 0m);
+    decimal TotalCostUsd = 0m,
+    string Workflow = "default",
+    string? Detail = null,
+    decimal? MaxCostUsd = null,
+    int Retries = 0)
+{
+    /// <summary>
+    /// Kullanicinin durdurabilecegi ya da "kapat" diyebilecegi durumlar. Dusen calismalar (Failed/Interrupted/BudgetExceeded)
+    /// da iptal edilir: yoksa "yeniden dene ya da vazgec" kararinin ikinci sikki olmaz ve is gelen kutusundan hic dusmez.
+    /// </summary>
+    public bool IsCancellable => Status is RunStatus.Running or RunStatus.AwaitingApproval or RunStatus.Paused
+        or RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded;
+
+    /// <summary>"Yeniden dene" ile kaldigi adimdan devam edebilecek durumlar.</summary>
+    public bool IsRetryable => Status is RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded or RunStatus.Cancelled;
+}
 
 /// <summary>Analistin urettigi gorev; <see cref="DependsOn"/> gercek bagimliliklar.</summary>
 public sealed record RunTask(
@@ -109,7 +136,9 @@ public sealed record Turn(
     int OutputChars,
     decimal? CostUsd = null,
     string? Prompt = null,
-    string? Output = null);
+    string? Output = null,
+    int? InputTokens = null,
+    int? OutputTokens = null);
 
 /// <summary>Ajanlar arasi mesaj: <c>runs/{id}/messages.jsonl</c>. <see cref="Ref"/> ask ile answer'i esler.</summary>
 public sealed record Message(

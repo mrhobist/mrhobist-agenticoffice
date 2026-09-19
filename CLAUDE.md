@@ -5,7 +5,7 @@ organizatör) bir brief'i alıp kod üretir; akış 2B piksel bir ofiste canlı 
 
 | Klasör | Ne | Port |
 |---|---|---|
-| [`src/`](src/) | .NET 10 — Onion; `Api` + `Task.Api` iki host | 5080 / 5081 |
+| [`src/`](src/) | .NET 10 — Onion; tek host `Api` (uçlar + iş kanalı) | 5080 |
 | [`runtime/`](runtime/) | Python FastAPI — **yalnız LLM çağrısı** | 5090 |
 | [`ui/`](ui/) | Nuxt 4 + TypeScript + Canvas 2D — sprite tabanlı canlı piksel ofis | 3000 |
 | [`assets/`](assets/) | Ham sprite sayfaları (`raw/`) ve plan panoları (`reference/`) | — |
@@ -54,7 +54,8 @@ Veritabanı **yoktur**. İki ayrı sorumluluk, iki ayrı biçim:
 | Çalışma, görev, faz, tur, mesaj | `runs/<id>/` — JSONL | Append-only, çökme kayıtları bozmaz, UI sonunu okuyup canlı akar |
 
 - Yazma **atomiktir**: geçici dosya + `File.Move(overwrite)`. Yarım dosya okunmaz.
-- JSONL'e yazan **tek süreç** vardır (`Task.Api` worker). Api yalnız okur.
+- JSONL'e yazan **tek yazıcı** vardır: Api içindeki iş kanalı (`JobChannel` + `JobWorker`, sıralı).
+  Uçlar hızlı doğrulamayı yapar, uzun işi kanala bırakır, 202 döner. Okuma `IRunReader`.
 - Bozuk son satır **yok sayılır**, geri kalanı kurtarılır.
 - `config/` değişince Api yeniden yükler; çalışma sürerken yüklenen tanım **donar**.
 
@@ -89,11 +90,9 @@ makinede, tek kullanıcıyla çalışan bir geliştirici aracıdır — aşağı
 | **Cache yok** (FusionCache/Redis) | Sıcak veri küçük, tek okuyucu |
 | **Elastic / APM yok** | Serilog dosyaya yazar. `GenericLog` sözleşmesi korunur, sink değişikliği tek satır |
 | **`Common` projesi yok** | İçeriği `Application`'a sığıyor (Appointo'daki gibi) |
-| **JWT tek şema, tek sınıf** | `UserLogin` / `Automation` / `ExternalApi` ayrımı yerine tek şema. Task.Api aynı şemayı kullanır, ayrımı **rol claim'i** yapar |
+| **JWT tek şema, tek sınıf** | `UserLogin` / `Automation` / `ExternalApi` ayrımı yerine tek şema; ayrımı **rol claim'i** yapar |
 | **`Asp.Versioning` yok** | Tek istemci, sürümleme yolu `/api/v1` sabitiyle |
-
-`Task.Api` **korunur**: bir çalışma dakikalar sürer, Api isteği bunu bekleyemez.
-İşi Task.Api yürütür, Api yalnız kuyruğa koyar ve SSE ile yayınlar.
+| **Task.Api yok** (2026-09-19 kararı) | "Çalışma dakikalar sürer, istek bekleyemez" sorununu ayrı süreç değil süreç içi kuyruk çözer: istek 202 döner, iş `JobWorker`'da koşar. Ayrı host iki süreç, HTTP iletim, HTTP sahne yayını ve çift `ProblemMapping` getiriyordu; tek kullanıcıda karşılığı yok. Katmanlama (`RunService`, `Dispatcher`) aynı; ileride ayırmak bir host + DI kaydı |
 
 ## Komutlar
 
@@ -106,11 +105,7 @@ dotnet run --project src/MrHobist.AITeam.Api
 ```
 
 ```bash
-dotnet run --project src/MrHobist.AITeam.Task.Api
-```
-
-```bash
-python -m uvicorn app.main:app --host 127.0.0.1 --port 5090 --app-dir runtime
+runtime/.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5090 --app-dir runtime
 ```
 
 ```bash

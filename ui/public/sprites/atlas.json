@@ -306,7 +306,7 @@
     },
     "door": {
       "image": "door.png",
-      "frameW": 171,
+      "frameW": 146,
       "frameH": 262,
       "cols": 3,
       "rows": 1

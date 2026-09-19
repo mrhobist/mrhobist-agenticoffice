@@ -27,6 +27,8 @@ export class Board {
   /** Gorev -> hareket animasyonu (0..1). */
   private anim = new Map<string, { fromCol: number; fromRow: number; t: number }>()
   private lastCol = new Map<string, number>()
+  /** Kullanicidan bir sey bekleyen is sayisi (GET /runs/overview → inbox). 0 ise rozet cizilmez. Sahne olayi degil, UI turetir. */
+  attention = 0
 
   constructor(readonly rect: { x: number; y: number; w: number; h: number; title: string }) {}
 
@@ -107,6 +109,7 @@ export class Board {
     ctx.textBaseline = 'alphabetic'
     ctx.fillStyle = '#2a2f3d'
     ctx.fillText(title, x + 10, y + 19)
+    if (this.attention > 0) this.drawAttention(ctx, x + w - 4, y - 4, now)
 
     if (!this.columns.length) return
     const pad = 8
@@ -169,6 +172,30 @@ export class Board {
         ctx.setLineDash([])
       }
     }
+  }
+
+  /** Sag ust kosede nabiz atan kirmizi rozet: "senden N cevap bekleniyor". Panoya tiklaninca liste acilir. */
+  private drawAttention(ctx: CanvasRenderingContext2D, cx: number, cy: number, now: number): void {
+    const pulse = 1 + Math.sin(now / 260) * 0.08
+    const r = 8 * pulse
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 3, 0, Math.PI * 2)
+    ctx.fillStyle = `rgba(210, 59, 59, ${0.25 + Math.sin(now / 260) * 0.12})`
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fillStyle = '#d23b3b'
+    ctx.fill()
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+    ctx.fillStyle = '#fff'
+    ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(this.attention > 9 ? '9+' : String(this.attention), cx, cy + 0.5)
+    ctx.restore()
   }
 
   private drawNote(

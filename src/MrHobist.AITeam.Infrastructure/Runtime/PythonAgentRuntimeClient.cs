@@ -45,6 +45,116 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
 
     private sealed record ModelDto(string Provider, string Model, bool Reachable, string? Detail);
 
+    private sealed record AuthDto(string Provider, bool LoggedIn, string? Account, string? Detail);
+
+    private sealed record LoginDto(string Provider, string Mode, string? Email);
+
+    private sealed record LoginStartedDto(string Provider, bool Started, string? Detail);
+
+    private sealed record LogoutDto(string Provider);
+
+    private sealed record LimitDto(string Kind, string? Group, double Percent, string? Severity, DateTimeOffset? ResetsAt, string? Scope, bool IsActive);
+
+    private sealed record LimitsDto(string Provider, bool Available, string? Detail, string? Subscription, DateTimeOffset? FetchedAt, IReadOnlyList<LimitDto>? Limits);
+
+    public async Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct)
+    {
+        var query = new List<string>();
+        if (provider is not null)
+        {
+            query.Add($"provider={Providers.Wire(provider.Value)}");
+        }
+
+        if (refresh)
+        {
+            query.Add("refresh=true");
+        }
+
+        var url = query.Count == 0 ? "/v1/limits" : "/v1/limits?" + string.Join('&', query);
+        IReadOnlyList<LimitsDto>? items;
+        try
+        {
+            items = await http.GetFromJsonAsync<IReadOnlyList<LimitsDto>>(url, Json, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is not null)
+        {
+            // Runtime ayakta ama kota ucu patladi: "kapali" degil, "bozuk". UI ikisini ayri soyler (LESSONS: yanlis teshis).
+            throw new RuntimeErrorException($"runtime /v1/limits HTTP {(int)ex.StatusCode}");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new RuntimeUnavailableException($"runtime'a ulasilamadi: {ex.Message}");
+        }
+
+        return (items ?? []).Select(l => new RuntimeProviderLimits(
+            ParseProvider(l.Provider), l.Available, l.Detail ?? "", l.Subscription, l.FetchedAt,
+            (l.Limits ?? []).Select(x => new RuntimeUsageLimit(x.Kind, x.Group, x.Percent, x.Severity, x.ResetsAt, x.Scope, x.IsActive)).ToList())).ToList();
+    }
+
+    public async Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, CancellationToken ct)
+    {
+        var result = await PostAsync<LoginDto, LoginStartedDto>("/v1/auth/login", new LoginDto(Providers.Wire(provider), mode, email), ct).ConfigureAwait(false);
+        return new RuntimeLoginStarted(ParseProvider(result.Provider), result.Started, result.Detail ?? "");
+    }
+
+    public async Task<RuntimeAuthStatus> LogoutAsync(Provider provider, CancellationToken ct)
+    {
+        var result = await PostAsync<LogoutDto, AuthDto>("/v1/auth/logout", new LogoutDto(Providers.Wire(provider)), ct).ConfigureAwait(false);
+        return new RuntimeAuthStatus(ParseProvider(result.Provider), result.LoggedIn, result.Account, result.Detail ?? "");
+    }
+
+    private async Task<TResult> PostAsync<TBody, TResult>(string path, TBody body, CancellationToken ct)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await http.PostAsJsonAsync(path, body, Json, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new RuntimeUnavailableException($"runtime'a ulasilamadi: {ex.Message}");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                throw new InvalidOperationException(DescribeError((int)response.StatusCode, text));
+            }
+
+            return await response.Content.ReadFromJsonAsync<TResult>(Json, ct).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"runtime {path} bos govde dondu.");
+        }
+    }
+
+    public async Task<IReadOnlyList<RuntimeAuthStatus>> ListAuthAsync(Provider? provider, bool refresh, CancellationToken ct)
+    {
+        var query = new List<string>();
+        if (provider is not null)
+        {
+            query.Add($"provider={Providers.Wire(provider.Value)}");
+        }
+
+        if (refresh)
+        {
+            query.Add("refresh=true");
+        }
+
+        var url = query.Count == 0 ? "/v1/auth" : "/v1/auth?" + string.Join('&', query);
+        IReadOnlyList<AuthDto>? items;
+        try
+        {
+            items = await http.GetFromJsonAsync<IReadOnlyList<AuthDto>>(url, Json, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new RuntimeUnavailableException($"runtime'a ulasilamadi: {ex.Message}");
+        }
+
+        return (items ?? []).Select(a => new RuntimeAuthStatus(ParseProvider(a.Provider), a.LoggedIn, a.Account, a.Detail ?? "")).ToList();
+    }
+
     public async Task<RuntimeTurnResponse> TurnAsync(RuntimeTurnRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -70,7 +180,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            throw new InvalidOperationException($"runtime /v1/turn HTTP {(int)response.StatusCode}: {Clip(body)}");
+            throw new InvalidOperationException(DescribeError((int)response.StatusCode, body));
         }
 
         var result = await response.Content.ReadFromJsonAsync<TurnResultDto>(Json, ct).ConfigureAwait(false)
@@ -107,6 +217,30 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
     /// <summary>Runtime'in dondugu ad; bos donmez, bilinmeyen ad sozlesme hatasidir (500).</summary>
     private static Provider ParseProvider(string s)
         => Providers.Parse(s) ?? throw new InvalidOperationException("runtime bos provider dondu.");
+
+    /// <summary>Runtime hatasi <c>{"detail":{"errorCode","message"}}</c> gelir; insan icin tek satira indirilir.</summary>
+    private static string DescribeError(int status, string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.Object)
+            {
+                var code = detail.TryGetProperty("errorCode", out var c) ? c.GetString() : null;
+                var message = detail.TryGetProperty("message", out var m) ? m.GetString() : null;
+                if (code is not null)
+                {
+                    return $"runtime {code}: {Clip(message ?? "")}";
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Govde JSON degil; oldugu gibi kirp.
+        }
+
+        return $"runtime /v1/turn HTTP {status}: {Clip(body)}";
+    }
 
     private static string Clip(string s) => s.Length <= 300 ? s : s[..300];
 }

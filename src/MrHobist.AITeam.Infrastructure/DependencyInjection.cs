@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Agents;
+using MrHobist.AITeam.Application.Runs;
 using MrHobist.AITeam.Application.Workflows;
 using MrHobist.AITeam.Infrastructure.Runtime;
 using MrHobist.AITeam.Infrastructure.Storage;
@@ -19,6 +20,11 @@ public static class DependencyInjection
         services.AddSingleton<IRunStore, JsonlRunStore>();
         services.AddSingleton<IAgentService, AgentService>();
         services.AddSingleton<IWorkflowService, WorkflowService>();
+        services.AddSingleton<IRunReader, RunReader>();
+        services.AddSingleton<IUsageReader, UsageReader>();
+        services.AddSingleton(RetryPolicy.Default);
+        services.AddSingleton<AgentCaller>();
+        services.AddSingleton<IRunService, RunService>();
         return services;
     }
 

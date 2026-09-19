@@ -54,6 +54,7 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
             new("office_roles", agent.OfficeRoles.Count > 0 ? agent.OfficeRoles : null),
             new("provider", agent.Provider is { } p ? Providers.Wire(p) : null),
             new("model", agent.Model),
+            new("effort", agent.Effort),
             new("includes", agent.Includes.Count > 0 ? agent.Includes : null),
             new("can_ask", agent.CanAsk),
         };
@@ -86,7 +87,8 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
             NullIfEmpty(Frontmatter.GetString(m, "model")),
             Frontmatter.GetList(m, "includes"),
             NullIfEmpty(Frontmatter.GetString(m, "can_ask")),
-            doc.Body);
+            doc.Body,
+            Efforts.Parse(Frontmatter.GetString(m, "effort"), key));
         agent.Validate();
         return agent;
     }

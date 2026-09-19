@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Domain.Runs;
+using MrHobist.AITeam.Domain.Workflows;
 
 namespace MrHobist.AITeam.Infrastructure.Storage;
 
@@ -39,6 +40,39 @@ public sealed class JsonlRunStore(StoragePaths paths) : IRunStore
 
     public Task WriteSpecAsync(string runId, Spec spec, CancellationToken ct)
         => WriteJsonAsync(Path.Combine(RunDir(runId), "spec.json"), spec, ct);
+
+    /// <summary>Akis kopyasi config dosyasiyla ayni sekilde (+ <c>key</c>) yazilir; hesaplanan ozellikler (Roles, TaskStages) yazilmaz.</summary>
+    public Task WriteWorkflowAsync(string runId, Workflow workflow, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+        var dto = new WorkflowSnapshot(
+            workflow.Key,
+            workflow.Title,
+            workflow.MaxReviewRounds,
+            workflow.HandoffRole,
+            workflow.Stages.Select(s => new StageSnapshot(s.Id, s.Title, s.Kind, s.Role, s.OfficeRole, s.Description)).ToList());
+        return WriteJsonAsync(Path.Combine(RunDir(runId), "workflow.json"), dto, ct);
+    }
+
+    public async Task<Workflow?> ReadWorkflowAsync(string runId, CancellationToken ct)
+    {
+        var dto = await ReadJsonAsync<WorkflowSnapshot>(Path.Combine(RunDir(runId), "workflow.json"), ct).ConfigureAwait(false);
+        if (dto is null)
+        {
+            return null;
+        }
+
+        return new Workflow(
+            dto.Key,
+            dto.Title,
+            dto.MaxReviewRounds,
+            dto.HandoffRole,
+            (dto.Stages ?? []).Select(s => new Stage(s.Id, s.Title, s.Kind, s.Role, s.OfficeRole, s.Description ?? "")).ToList());
+    }
+
+    private sealed record StageSnapshot(string Id, string Title, StageKind Kind, string Role, string OfficeRole, string? Description);
+
+    private sealed record WorkflowSnapshot(string Key, string Title, int MaxReviewRounds, string? HandoffRole, IReadOnlyList<StageSnapshot>? Stages);
 
     public Task AppendTurnAsync(string runId, Turn turn, CancellationToken ct)
     {
@@ -87,6 +121,15 @@ public sealed class JsonlRunStore(StoragePaths paths) : IRunStore
 
     public Task<IReadOnlyList<Turn>> ReadTurnsAsync(string runId, string agent, CancellationToken ct)
         => AtomicFile.ReadJsonLinesAsync(Path.Combine(RunDir(runId), "conversations", Safe(agent) + ".jsonl"), ParseLine<Turn>, ct);
+
+    public Task<IReadOnlyList<string>> ListConversationsAsync(string runId, CancellationToken ct)
+    {
+        var dir = Path.Combine(RunDir(runId), "conversations");
+        IReadOnlyList<string> agents = Directory.Exists(dir)
+            ? Directory.EnumerateFiles(dir, "*.jsonl").Select(Path.GetFileNameWithoutExtension).Where(n => n is not null).Select(n => n!).Order(StringComparer.Ordinal).ToList()
+            : [];
+        return Task.FromResult(agents);
+    }
 
     public Task<IReadOnlyList<Message>> ReadMessagesAsync(string runId, CancellationToken ct)
         => AtomicFile.ReadJsonLinesAsync(Path.Combine(RunDir(runId), "messages.jsonl"), ParseLine<Message>, ct);

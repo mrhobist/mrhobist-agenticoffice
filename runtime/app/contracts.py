@@ -75,3 +75,61 @@ class ModelInfo(BaseModel):
     #: cagirarak dogrulanir (bkz. docs/LESSONS.md).
     reachable: bool
     detail: str = ""
+
+
+class AuthStatus(BaseModel):
+    """Saglayicinin kimlik durumu. Bu bir is durumu DEGIL, oturum bilgisidir."""
+
+    provider: Provider
+    logged_in: bool = Field(alias="loggedIn")
+    account: str | None = None
+    detail: str = ""
+
+    model_config = {"populate_by_name": True}
+
+
+class LoginRequest(BaseModel):
+    """Saglayici oturumunu baslat. `claudeai` = Claude aboneligi, `console` = Anthropic Console (API faturasi)."""
+
+    provider: Provider
+    mode: Literal["claudeai", "console"] = "claudeai"
+    email: str | None = None
+
+
+class LoginStarted(BaseModel):
+    """Giris akisi kullanicinin makinesinde basladi (yeni konsol penceresi + tarayici). Tamamlanmasi kullanicida."""
+
+    provider: Provider
+    started: bool
+    detail: str = ""
+
+
+class LogoutRequest(BaseModel):
+    provider: Provider
+
+
+class UsageLimit(BaseModel):
+    """Saglayicinin bildirdigi tek bir kota penceresi (5 saat, hafta, modele ozel...). `percent` = kullanilan yuzde."""
+
+    kind: str
+    group: str | None = None
+    percent: float = 0.0
+    severity: str | None = None
+    resets_at: str | None = Field(default=None, alias="resetsAt")
+    scope: str | None = None
+    is_active: bool = Field(default=True, alias="isActive")
+
+    model_config = {"populate_by_name": True}
+
+
+class ProviderLimits(BaseModel):
+    """Bir saglayicinin kalan kullanimi. Token bu modelden GECMEZ; yalniz yuzdeler ve sifirlanma zamanlari."""
+
+    provider: Provider
+    available: bool
+    detail: str = ""
+    subscription: str | None = None
+    fetched_at: str | None = Field(default=None, alias="fetchedAt")
+    limits: list[UsageLimit] = []
+
+    model_config = {"populate_by_name": True}

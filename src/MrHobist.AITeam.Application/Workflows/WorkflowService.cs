@@ -73,7 +73,5 @@ public sealed class WorkflowService(IWorkflowStore store, IAgentStore agents) : 
 
     private static string RequireKey(string key) => Identifiers.Require(key, ErrorCodes.WorkflowInvalidStage, "akis");
 
-    private static WorkflowDetail ToDetail(Workflow wf)
-        => new(wf.Key, wf.Title, wf.MaxReviewRounds, wf.HandoffRole,
-            wf.Stages.Select(s => new StageModel(s.Id, s.Title, s.Kind, s.Role, s.OfficeRole, s.Description)).ToList());
+    private static WorkflowDetail ToDetail(Workflow wf) => WorkflowMapping.ToDetail(wf);
 }

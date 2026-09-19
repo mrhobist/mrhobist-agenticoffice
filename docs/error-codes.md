@@ -25,12 +25,20 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `workflow.unknown_role` | 400 | `role` ya da `handoffRole` ekipte tanımlı bir ajan değil |
 | `workflow.not_found` | 404 | Böyle bir iş akışı dosyası yok |
 | `workflow.default_protected` | 409 | `default` akışı silinemez |
+| `agent.invalid_effort` | 400 | `effort` `low / medium / high / max` dışında |
 | `run.policy_violation` | 400 | Bir rolün hedefi çalışmanın hassasiyetine aykırı; çalışma başlamadı |
 | `run.budget_exceeded` | — | Bütçe tavanı aşıldı; çalışma durduruldu (çalışma durumu) |
 | `run.not_found` | 404 | Böyle bir çalışma yok |
+| `run.brief_empty` | 400 | `POST /runs`: `brief` boş |
+| `run.note_empty` | 400 | `POST /runs/{id}/revise`: `note` boş |
+| `run.not_awaiting_approval` | 409 | `approve`/`revise` yalnız `AwaitingApproval` durumunda geçerli |
+| `run.not_retryable` | 409 | `retry` yalnız `Failed / Interrupted / BudgetExceeded / Cancelled` durumunda geçerli |
+| `run.not_cancellable` | 409 | `cancel` yalnız `Running / AwaitingApproval / Paused / Failed / Interrupted / BudgetExceeded` durumunda geçerli (Completed, Cancelled, PolicyRejected kapatılamaz) |
+| `run.plan_invalid` | — | Analist çıktısı şemaya uymadı ya da görevsiz (çalışma `Failed`, `detail` söyler) |
 | `config.file_missing` | 404/500 | Yapılandırma dosyası yok |
 | `config.file_invalid` | 500 | Yapılandırma dosyası geçersiz JSON |
 | `runtime.unavailable` | 503 | Python runtime'a ulaşılamıyor |
+| `runtime.error` | 502 | Runtime ayakta ama istenen uç 5xx döndü (kapalı değil, uç bozuk) |
 | `scene.command.type_missing` | 400 | Sahne komutunda `type` yok |
 | `scene.command.type_unknown` | 400 | Bilinmeyen sahne olayı türü |
 | `scene.command.data_missing` | 400 | Sahne komutunda `data` nesnesi yok |

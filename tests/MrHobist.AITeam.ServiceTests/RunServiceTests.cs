@@ -1,0 +1,355 @@
+using System.Text.Json;
+using MrHobist.AITeam.Application.Abstractions;
+using MrHobist.AITeam.Application.Runs;
+using MrHobist.AITeam.Domain;
+using MrHobist.AITeam.Domain.Agents;
+using MrHobist.AITeam.Domain.Runs;
+using MrHobist.AITeam.Infrastructure.Storage;
+
+namespace MrHobist.AITeam.ServiceTests;
+
+/// <summary>
+/// Faz 4a "biten sayilir": Python calismadan, sahte runtime ile analiz → onay/revize → dagitim → Paused akisi
+/// ve runs/ dosyalari (docs/DOMAIN.md, docs/PHASES.md).
+/// </summary>
+public sealed class RunServiceTests : IDisposable
+{
+    private readonly StorageFixture _fx = new();
+    private readonly FakeRuntime _runtime = new();
+    private readonly FakeScene _scene = new();
+    private readonly JsonlRunStore _store;
+    private readonly RunReader _reader;
+    private readonly RunService _svc;
+
+    public RunServiceTests()
+    {
+        _store = new JsonlRunStore(_fx.Paths);
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        _reader = new RunReader(_store);
+        _svc = new RunService(_store, workflows, agents, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene);
+    }
+
+    public void Dispose() => _fx.Dispose();
+
+    private static readonly CancellationToken Ct = CancellationToken.None;
+
+    [Fact]
+    public async Task Analiz_plani_uretir_ve_onay_bekler()
+    {
+        var run = await _svc.CreateAsync(new RunRequest("Türkçe slugify fonksiyonu yaz"), Ct);
+        Assert.Equal(RunStatus.Running, run.Status);
+        Assert.Equal("default", run.Workflow);
+        Assert.True(File.Exists(Path.Combine(_fx.Paths.RunsRoot, run.Id, "workflow.json")));
+
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.AwaitingApproval, run.Status);
+        var spec = await _store.ReadSpecAsync(run.Id, Ct);
+        Assert.NotNull(spec);
+        Assert.Equal(["t1", "t2"], spec.Tasks.Select(t => t.Id));
+        Assert.Empty(await _store.ListTasksAsync(run.Id, Ct)); // onaysiz panoya/faza is acilmaz
+
+        // Varsayilanlar: analistin md'sinde model yok → claude-opus-5 + high (kullanici karari).
+        var call = Assert.Single(_runtime.Calls);
+        Assert.Equal(Provider.Anthropic, call.Provider);
+        Assert.Equal("claude-opus-5", call.Model);
+        Assert.Equal("high", call.ReasoningEffort);
+        Assert.NotNull(call.SchemaJson);
+
+        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.WorkflowSet && e.Json.Contains("\"default\"", StringComparison.Ordinal));
+        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.AgentState && e.Json.Contains("\"analyst\"", StringComparison.Ordinal) && e.Json.Contains("\"done\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(_scene.Events, e => e.Type == SceneEventTypes.BoardSet);
+    }
+
+    [Fact]
+    public async Task Revize_notu_gecmisle_analiste_gider_ve_plan_degisir()
+    {
+        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+
+        run = await _svc.BeginReviseAsync(run.Id, "t3 olarak dokümantasyon görevi ekle", Ct);
+        Assert.Equal(RunStatus.Running, run.Status);
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.AwaitingApproval, run.Status);
+        var spec = await _store.ReadSpecAsync(run.Id, Ct);
+        Assert.Equal(3, spec!.Tasks.Count);
+
+        // Ikinci cagri gecmisi tasir: [brief] → [onceki plan] → [not]; runtime hicbir sey hatirlamaz.
+        var second = _runtime.Calls[1];
+        Assert.Equal(["user", "assistant", "user"], second.Messages.Select(m => m.Role));
+        Assert.Contains("dokümantasyon", second.Messages[2].Content, StringComparison.Ordinal);
+
+        var note = Assert.Single(await _store.ReadMessagesAsync(run.Id, Ct));
+        Assert.Equal("user", note.From);
+        Assert.Equal("analyst", note.To);
+        Assert.Equal("plan-revision", note.Subject);
+    }
+
+    [Fact]
+    public async Task Onay_sonrasi_organizator_ilk_gorevi_developera_verir_ve_calisma_duraklar()
+    {
+        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        run = await _svc.BeginApproveAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Running, run.Status);
+
+        run = await _svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Paused, run.Status);
+        Assert.Contains("gelistirme", run.Detail, StringComparison.Ordinal);
+
+        // t2, t1'e bagli: yalniz t1 atanir. Developer tek is alir.
+        Assert.Equal(["t1"], await _store.ListTasksAsync(run.Id, Ct));
+        var phase = Assert.Single(await _store.ReadPhasesAsync(run.Id, "t1", Ct));
+        Assert.Equal(("gelistirme", "developer", PhaseStatus.Started, 1), (phase.Stage, phase.Agent, phase.Status, phase.Round));
+
+        // Devir notu: organizator → developer, ucuz model (organizer.md: haiku + low).
+        var handoff = Assert.Single(await _store.ReadMessagesAsync(run.Id, Ct));
+        Assert.Equal((MessageKind.Handoff, "organizer", "developer", "t1"), (handoff.Kind, handoff.From, handoff.To, handoff.Task));
+        var organizerCall = _runtime.Calls.Last();
+        Assert.Equal("claude-haiku-4-5-20251001", organizerCall.Model);
+        Assert.Equal("low", organizerCall.ReasoningEffort);
+        Assert.Contains("t1", organizerCall.Messages[0].Content, StringComparison.Ordinal);
+
+        // Sahne: pano onaydan sonra kurulur, organizator developer'a yurur, gorev sutun degistirir.
+        var types = _scene.Events.Select(e => e.Type).ToList();
+        Assert.Contains(SceneEventTypes.BoardSet, types);
+        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.Meet && e.Json.Contains("\"organizer\"", StringComparison.Ordinal) && e.Json.Contains("\"developer\"", StringComparison.Ordinal));
+        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.BoardMove && e.Json.Contains("\"t1\"", StringComparison.Ordinal) && e.Json.Contains("\"gelistirme\"", StringComparison.Ordinal));
+        Assert.True(types.IndexOf(SceneEventTypes.BoardSet) < types.IndexOf(SceneEventTypes.BoardMove));
+
+        // Ikinci dagitim bir sey yapmaz: developer dolu, t2 bekliyor; durum Paused kalir.
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Paused, run.Status);
+        Assert.Single(await _store.ReadPhasesAsync(run.Id, "t1", Ct));
+    }
+
+    [Fact]
+    public async Task Onay_ve_revize_yalniz_bekleyen_calismada()
+    {
+        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.BeginApproveAsync(run.Id, Ct));
+        Assert.Equal(ErrorCodes.RunNotAwaitingApproval, ex.ErrorCode);
+        ex = await Assert.ThrowsAsync<DomainException>(() => _svc.BeginReviseAsync(run.Id, "not", Ct));
+        Assert.Equal(ErrorCodes.RunNotAwaitingApproval, ex.ErrorCode);
+
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        ex = await Assert.ThrowsAsync<DomainException>(() => _svc.BeginReviseAsync(run.Id, "  ", Ct));
+        Assert.Equal(ErrorCodes.RunNoteEmpty, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Bos_brief_ve_bilinmeyen_akis_reddedilir()
+    {
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("  "), Ct));
+        Assert.Equal(ErrorCodes.RunBriefEmpty, ex.ErrorCode);
+        ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief", Workflow: "yok"), Ct));
+        Assert.Equal(ErrorCodes.WorkflowNotFound, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Hassasiyet_local_iken_anthropic_ajanlar_calismayi_baslatmaz()
+    {
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief", Sensitivity: Sensitivity.Local), Ct));
+        Assert.Equal(ErrorCodes.RunPolicyViolation, ex.ErrorCode);
+        var run = Assert.Single(await _store.ListAsync(10, Ct));
+        Assert.Equal(RunStatus.PolicyRejected, run.Status);
+        Assert.Empty(_runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Analist_gecersiz_plan_donerse_calisma_failed()
+    {
+        _runtime.SpecJson = "{\"summary\":\"x\",\"architecture\":\"y\",\"rules\":[],\"tasks\":[]}";
+        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Failed, run.Status);
+        Assert.Contains("gorev yok", run.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Butce_asilinca_calisma_durur_ve_tekrar_ile_surer()
+    {
+        // Sahte analiz turu $0.02: tavan $0.01 → analiz biter ama BudgetExceeded; plan yine de yazilmistir.
+        var run = await _svc.CreateAsync(new RunRequest("brief", MaxCostUsd: 0.01m), Ct);
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.BudgetExceeded, run.Status);
+        Assert.Contains("bütçe", run.Detail, StringComparison.Ordinal);
+        Assert.NotNull(await _store.ReadSpecAsync(run.Id, Ct));
+        Assert.Contains(await _store.ReadMessagesAsync(run.Id, Ct), m => m.Subject == "error");
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief", MaxCostUsd: 0m), Ct));
+        Assert.Equal(ErrorCodes.RunBudgetInvalid, ex.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Gecici_hatada_otomatik_tekrar_sonra_basarir()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var caller = new AgentCaller(agents, _runtime, _store, _scene, new RetryPolicy(3, TimeSpan.Zero));
+        var svc = new RunService(_store, workflows, agents, _reader, caller, _scene);
+
+        _runtime.FailTransientTimes = 2; // ilk iki deneme 503, ucuncu gecer
+        var run = await svc.CreateAsync(new RunRequest("brief"), Ct);
+        run = await svc.AnalyzeAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.AwaitingApproval, run.Status);
+        Assert.Equal(3, _runtime.Calls.Count);
+        Assert.Equal(2, (await _store.ReadMessagesAsync(run.Id, Ct)).Count(m => m.Subject == "retry"));
+
+        // Denemeler bitince kalici hata: Failed + error notu.
+        _runtime.FailTransientTimes = 5;
+        var run2 = await svc.CreateAsync(new RunRequest("brief 2"), Ct);
+        run2 = await svc.AnalyzeAsync(run2.Id, Ct);
+        Assert.Equal(RunStatus.Failed, run2.Status);
+        Assert.Contains(await _store.ReadMessagesAsync(run2.Id, Ct), m => m.Subject == "error");
+        _runtime.FailTransientTimes = 0;
+    }
+
+    [Fact]
+    public async Task Yeniden_baslatmada_running_calismalar_interrupted()
+    {
+        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        Assert.Equal(1, await _svc.MarkInterruptedAsync(Ct));
+        Assert.Equal(RunStatus.Interrupted, (await _reader.GetAsync(run.Id, Ct)).Status);
+        Assert.Equal(0, await _svc.MarkInterruptedAsync(Ct));
+    }
+
+    [Fact]
+    public async Task Detay_akis_kopyasini_plani_ve_sirayi_verir()
+    {
+        var run = await _svc.CreateAsync(new RunRequest("brief", Label: "etiket"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        var detail = await _reader.GetDetailAsync(run.Id, Ct);
+        Assert.Equal("etiket", detail.Label);
+        Assert.Equal("default", detail.WorkflowDef!.Key);
+        Assert.Equal(4, detail.WorkflowDef.Stages.Count);
+        Assert.Equal(["t1", "t2"], detail.Order);
+        Assert.Empty(detail.Tasks);
+    }
+
+    [Fact]
+    public async Task Gelen_kutusu_onay_bekleyeni_ve_duseni_sayar_iptal_ve_yeniden_dene_calisir()
+    {
+        var a = await _svc.CreateAsync(new RunRequest("brief a", Label: "a"), Ct);
+        await _svc.AnalyzeAsync(a.Id, Ct); // AwaitingApproval → soru
+
+        _runtime.SpecJson = "{\"summary\":\"x\",\"architecture\":\"y\",\"rules\":[],\"tasks\":[]}";
+        var b = await _svc.CreateAsync(new RunRequest("brief b", Label: "b"), Ct);
+        await _svc.AnalyzeAsync(b.Id, Ct); // Failed → karar
+        _runtime.SpecJson = null;
+
+        var o = await _reader.GetOverviewAsync(Ct);
+        Assert.Equal((2, 1, 1, 0), (o.Total, o.AwaitingApproval, o.Failed, o.Running));
+        Assert.Equal(2, o.Inbox.Count);
+        var approval = Assert.Single(o.Inbox, i => i.RunId == a.Id);
+        Assert.Equal((InboxKind.Approval, RunStatus.AwaitingApproval, "slugify"), (approval.Kind, approval.Status, approval.Detail));
+        var decision = Assert.Single(o.Inbox, i => i.RunId == b.Id);
+        Assert.Equal(InboxKind.Decision, decision.Kind);
+        Assert.Contains("gorev yok", decision.Detail, StringComparison.Ordinal);
+
+        // Iptal: hic baslamamis (PolicyRejected) ya da zaten iptal edilmis calisma iptal edilemez; onay bekleyen edilir.
+        await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief c", Sensitivity: Sensitivity.Local), Ct));
+        var c = (await _store.ListAsync(10, Ct)).Single(r => r.Status == RunStatus.PolicyRejected);
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CancelAsync(c.Id, Ct));
+        Assert.Equal(ErrorCodes.RunNotCancellable, ex.ErrorCode);
+        a = await _svc.CancelAsync(a.Id, Ct);
+        Assert.Equal(RunStatus.Cancelled, a.Status);
+        ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CancelAsync(a.Id, Ct)); // ikinci kez iptal edilemez
+        Assert.Equal(ErrorCodes.RunNotCancellable, ex.ErrorCode);
+
+        // Dusen calisma "kapat" anlaminda iptal edilir ve gelen kutusundan duser; PolicyRejected zaten kutuda degildir.
+        var d = await _svc.CreateAsync(new RunRequest("brief d", Label: "d"), Ct);
+        _runtime.SpecJson = "{\"summary\":\"x\",\"architecture\":\"y\",\"rules\":[],\"tasks\":[]}";
+        await _svc.AnalyzeAsync(d.Id, Ct);
+        _runtime.SpecJson = null;
+        Assert.Equal(RunStatus.Cancelled, (await _svc.CancelAsync(d.Id, Ct)).Status);
+        o = await _reader.GetOverviewAsync(Ct);
+        Assert.DoesNotContain(o.Inbox, i => i.RunId == d.Id || i.RunId == c.Id);
+
+        // Yeniden dene: dusen calisma analizden surer (Running); onay beklerken iptal edilen onaya doner, kuyruga is girmez.
+        var retryB = await _svc.RetryAsync(b.Id, Ct);
+        Assert.Equal((RetryStep.Analyze, RunStatus.Running), (retryB.Step, retryB.Run.Status));
+        var retryA = await _svc.RetryAsync(a.Id, Ct);
+        Assert.Equal(RunStatus.AwaitingApproval, retryA.Run.Status);
+
+        o = await _reader.GetOverviewAsync(Ct);
+        Assert.Equal((4, 1, 1, 1, 1), (o.Total, o.Running, o.AwaitingApproval, o.Failed, o.Cancelled)); // failed = c (PolicyRejected), cancelled = d
+        var only = Assert.Single(o.Inbox); // b calisiyor, bir sey beklemiyor; a yine onay soruyor
+        Assert.Equal((a.Id, InboxKind.Approval), (only.RunId, only.Kind));
+    }
+
+    // ------------------------------------------------------------------ sahteler
+
+    /// <summary>Python yerine: sema istenirse plan JSON'u, yoksa devir notu metni. Cagrilari kaydeder.</summary>
+    private sealed class FakeRuntime : IAgentRuntimeService
+    {
+        public List<RuntimeTurnRequest> Calls { get; } = [];
+
+        public string? SpecJson { get; set; }
+
+        private const string Plan2 = """
+            {"summary":"slugify","architecture":"tek modül","rules":["stdlib dışı bağımlılık yok"],
+             "tasks":[
+               {"id":"t1","title":"slugify fonksiyonu","description":"...","files":["slug.py"],"acceptance":["çalışır"],"dependsOn":[]},
+               {"id":"t2","title":"testler","description":"...","files":["test_slug.py"],"acceptance":["geçer"],"dependsOn":["t1"]}]}
+            """;
+
+        private const string Plan3 = """
+            {"summary":"slugify","architecture":"tek modül","rules":[],
+             "tasks":[
+               {"id":"t1","title":"slugify fonksiyonu","description":"...","files":["slug.py"],"acceptance":["çalışır"],"dependsOn":[]},
+               {"id":"t2","title":"testler","description":"...","files":["test_slug.py"],"acceptance":["geçer"],"dependsOn":["t1"]},
+               {"id":"t3","title":"dokümantasyon","description":"...","files":["README.md"],"acceptance":["var"],"dependsOn":["t1"]}]}
+            """;
+
+        /// <summary>Kac cagri "gecici hata" (runtime kapali) ile dussun; AgentCaller'in otomatik tekrari icin.</summary>
+        public int FailTransientTimes { get; set; }
+
+        public Task<RuntimeTurnResponse> TurnAsync(RuntimeTurnRequest request, CancellationToken ct)
+        {
+            Calls.Add(request);
+            if (FailTransientTimes > 0)
+            {
+                FailTransientTimes--;
+                throw new RuntimeUnavailableException("runtime'a ulasilamadi: sahte 503");
+            }
+
+            var destination = RunDefaults.DestinationOf(request.Provider);
+            if (request.SchemaJson is null)
+            {
+                return Task.FromResult(new RuntimeTurnResponse("Devir notu: t1 developer'a.", null, request.Provider, request.Model, destination, new RuntimeUsage(10, 5, 0), 0.001m, 0.2, 1));
+            }
+
+            var json = SpecJson ?? (request.Messages.Count > 1 ? Plan3 : Plan2);
+            // Structured alan JSON olarak gider; runtime gibi bir kez dogrulanir.
+            using var _ = JsonDocument.Parse(json);
+            return Task.FromResult(new RuntimeTurnResponse("", json, request.Provider, request.Model, destination, new RuntimeUsage(100, 50, 0), 0.02m, 1.5, 1));
+        }
+
+        public Task<IReadOnlyList<RuntimeModelInfo>> ListModelsAsync(Provider? provider, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<RuntimeModelInfo>>([]);
+
+        public Task<IReadOnlyList<RuntimeAuthStatus>> ListAuthAsync(Provider? provider, bool refresh, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<RuntimeAuthStatus>>([]);
+
+        public Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, CancellationToken ct)
+            => Task.FromResult(new RuntimeLoginStarted(provider, false, "sahte"));
+
+        public Task<RuntimeAuthStatus> LogoutAsync(Provider provider, CancellationToken ct)
+            => Task.FromResult(new RuntimeAuthStatus(provider, false, null, "sahte"));
+
+        public Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<RuntimeProviderLimits>>([]);
+    }
+
+    private sealed class FakeScene : ISceneEventPublisher
+    {
+        public List<(string Type, string Json)> Events { get; } = [];
+
+        public void Publish(string type, string json) => Events.Add((type, json));
+    }
+}

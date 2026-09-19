@@ -8,9 +8,9 @@ namespace MrHobist.AITeam.Api.Errors;
 /// <summary>
 /// Sinir: alan istisnalari Problem Details + <c>errorCode</c> olur (docs/error-codes.md).
 /// <see cref="DomainException"/> 400 · <see cref="NotFoundException"/> 404 ·
-/// <see cref="RuntimeUnavailableException"/> 503 · kalanlar 500 (ayrinti sizdirilmaz).
+/// <see cref="RuntimeUnavailableException"/> 503 · <see cref="RuntimeErrorException"/> 502 · kalanlar 500 (ayrinti sizdirilmaz).
 /// </summary>
-public sealed class ProblemMapping : IExceptionHandler
+public sealed partial class ProblemMapping(ILogger<ProblemMapping> logger) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
@@ -20,14 +20,24 @@ public sealed class ProblemMapping : IExceptionHandler
             DomainException d => (StatusCode(d.ErrorCode), d.ErrorCode, d.Message),
             NotFoundException n => (StatusCodes.Status404NotFound, n.ErrorCode, n.Message),
             RuntimeUnavailableException r => (StatusCodes.Status503ServiceUnavailable, ErrorCodes.RuntimeUnavailable, r.Message),
+            RuntimeErrorException r => (StatusCodes.Status502BadGateway, ErrorCodes.RuntimeError, r.Message),
             BadHttpRequestException b => (StatusCodes.Status400BadRequest, "request.invalid", b.Message),
             _ => (StatusCodes.Status500InternalServerError, "internal", "Beklenmeyen hata."),
         };
+
+        if (status == StatusCodes.Status500InternalServerError)
+        {
+            // Sessiz 500 saatler kaybettirir (LESSONS): ayrinti istemciye degil, log'a.
+            LogUnexpected(logger, exception, httpContext.Request.Method, httpContext.Request.Path);
+        }
 
         httpContext.Response.StatusCode = status;
         await httpContext.Response.WriteAsJsonAsync(Problem(status, code, detail, httpContext), cancellationToken).ConfigureAwait(false);
         return true;
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "beklenmeyen hata: {Method} {Path}")]
+    private static partial void LogUnexpected(ILogger logger, Exception ex, string method, PathString path);
 
     public static IResult Result(int status, string errorCode, string detail)
         => Results.Problem(detail: detail, statusCode: status, extensions: new Dictionary<string, object?> { ["errorCode"] = errorCode });
@@ -36,14 +46,15 @@ public sealed class ProblemMapping : IExceptionHandler
     {
         ErrorCodes.ConfigFileInvalid or ErrorCodes.KnowledgeInvalidKey => StatusCodes.Status500InternalServerError,
         ErrorCodes.ConfigFileMissing or ErrorCodes.WorkflowNotFound => StatusCodes.Status404NotFound,
-        ErrorCodes.AgentExists or ErrorCodes.AgentInUse or ErrorCodes.WorkflowDefaultProtected => StatusCodes.Status409Conflict,
+        ErrorCodes.AgentExists or ErrorCodes.AgentInUse or ErrorCodes.WorkflowDefaultProtected
+            or ErrorCodes.RunNotAwaitingApproval or ErrorCodes.RunNotRetryable or ErrorCodes.RunNotCancellable => StatusCodes.Status409Conflict,
         _ => StatusCodes.Status400BadRequest,
     };
 
     private static Microsoft.AspNetCore.Mvc.ProblemDetails Problem(int status, string code, string detail, HttpContext ctx) => new()
     {
         Status = status,
-        Title = status switch { 400 => "Bad Request", 404 => "Not Found", 409 => "Conflict", 503 => "Service Unavailable", _ => "Error" },
+        Title = status switch { 400 => "Bad Request", 404 => "Not Found", 409 => "Conflict", 502 => "Bad Gateway", 503 => "Service Unavailable", _ => "Error" },
         Detail = detail,
         Extensions = { ["errorCode"] = code, ["traceId"] = ctx.TraceIdentifier },
     };

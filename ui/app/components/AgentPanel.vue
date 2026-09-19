@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { AgentDetail, AgentListItem, AgentUpdate, KnowledgeItem, ModelInfo, Provider } from '~/api/types'
+import type { AgentDetail, AgentListItem, AgentRunWork, AgentUpdate, Effort, KnowledgeItem, ModelInfo, Phase as RunPhase, Provider, RunMessage, Turn } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { PROVIDERS, PROVIDER_LABEL } from '~/api/labels'
+import { EFFORTS, EFFORT_LABEL, PROVIDERS, PROVIDER_LABEL, RUN_STATUS_LABEL } from '~/api/labels'
 
 /**
  * Bir ajanin md dosyasini duzenler: ustveri (saglayici, model, bilgi dosyalari, sorabilir)
@@ -47,6 +47,7 @@ function toUpdate(d: AgentDetail): AgentUpdate {
     officeRoles: d.officeRoles,
     provider: d.provider,
     model: d.model?.trim() || null,
+    effort: d.effort,
     includes: d.includes,
     canAsk: d.canAsk,
     prompt: d.prompt,
@@ -83,7 +84,8 @@ async function load() {
   apply(detail)
   phase.value = 'ready'
   if (knowledge.value === null) void loadKnowledge()
-  void loadModels(detail.provider)
+  // Saglayici bos = varsayilan (anthropic): listeyi yine de getir ki model secilebilsin.
+  void loadModels(detail.provider ?? 'anthropic')
 }
 
 async function loadKnowledge() {
@@ -100,12 +102,12 @@ async function loadModels(p: Provider | null) {
   modelsState.value = 'loading'
   try {
     const list = await api.get<ModelInfo[]>(`/api/v1/models?provider=${encodeURIComponent(p)}`)
-    if (form.value?.provider !== p) return
+    if ((form.value?.provider ?? 'anthropic') !== p) return
     modelCache.set(p, list)
     models.value = list
     modelsState.value = 'ready'
   } catch (e) {
-    if (form.value?.provider !== p) return
+    if ((form.value?.provider ?? 'anthropic') !== p) return
     if (isApiError(e) && e.errorCode === 'runtime.unavailable') modelsState.value = 'runtime-down'
     else if (isApiError(e) && e.endpointMissing) modelsState.value = 'missing'
     else { modelsError.value = errorText(e); modelsState.value = 'error' }
@@ -121,7 +123,7 @@ const providerModel = computed<Provider | ''>({
   set: (v) => {
     if (!form.value) return
     form.value.provider = v || null
-    void loadModels(form.value.provider)
+    void loadModels(form.value.provider ?? 'anthropic')
   },
 })
 
@@ -130,9 +132,23 @@ const modelText = computed<string>({
   set: (v) => { if (form.value) form.value.model = v || null },
 })
 
+/** Acilir menu secenekleri: liste + (listede olmayan) mevcut deger, secim kaybolmasin. */
+const modelOptions = computed<ModelInfo[]>(() => {
+  const cur = form.value?.model
+  if (cur && !models.value.some(m => m.model === cur)) {
+    return [...models.value, { provider: (form.value?.provider ?? 'anthropic') as Provider, model: cur, reachable: false, detail: 'listede yok' }]
+  }
+  return models.value
+})
+
 const canAskModel = computed<string>({
   get: () => form.value?.canAsk ?? '',
   set: (v) => { if (form.value) form.value.canAsk = v || null },
+})
+
+const effortModel = computed<Effort | ''>({
+  get: () => form.value?.effort ?? '',
+  set: (v) => { if (form.value) form.value.effort = v || null },
 })
 
 /** Kendisi haric ajanlar; liste yoksa yalniz mevcut deger secilebilir kalir. */
@@ -146,7 +162,7 @@ const dirty = computed(() => form.value !== null && JSON.stringify(toUpdate(form
 
 const modelsHint = computed(() => {
   switch (modelsState.value) {
-    case 'idle': return 'Sağlayıcı seçilmedi; öneri listesi için sağlayıcı seçin. Boş bırakılırsa sağlayıcı varsayılanı kullanılır.'
+    case 'idle': return 'Boş bırakılırsa sağlayıcı varsayılanı (claude-opus-5) kullanılır.'
     case 'loading': return 'Model listesi alınıyor…'
     case 'runtime-down': return 'Runtime kapalı, model adı elle yazılır.'
     case 'missing': return 'Model ucu hazır değil, model adı elle yazılır.'
@@ -180,6 +196,41 @@ async function save() {
   }
 }
 
+// ------------------------------------------------------------------ Isler sekmesi (GET /agents/{key}/work)
+
+const tab = ref<'props' | 'work'>('props')
+const work = ref<AgentRunWork[] | null>(null)
+const workError = ref<string | null>(null)
+
+async function loadWork() {
+  try {
+    work.value = await api.get<AgentRunWork[]>(`/api/v1/agents/${encodeURIComponent(props.agentKey)}/work?runs=30`)
+    workError.value = null
+  } catch (e) {
+    workError.value = errorText(e)
+  }
+}
+watch([tab, () => props.agentKey], ([t]) => { if (t === 'work') void loadWork() })
+watch(() => props.agentKey, () => { work.value = null })
+
+type WorkEntry =
+  | { ts: string; kind: 'turn'; turn: Turn }
+  | { ts: string; kind: 'message'; msg: RunMessage }
+  | { ts: string; kind: 'phase'; phase: RunPhase }
+
+/** Bir calismadaki isi zaman sirasina dizer: tur, not, faz. */
+function timelineOf(w: AgentRunWork): WorkEntry[] {
+  const out: WorkEntry[] = []
+  for (const t of w.turns) out.push({ ts: t.ts, kind: 'turn', turn: t })
+  for (const m of w.messages) out.push({ ts: m.ts, kind: 'message', msg: m })
+  for (const p of w.phases) out.push({ ts: p.ts, kind: 'phase', phase: p })
+  return out.sort((a, b) => a.ts.localeCompare(b.ts))
+}
+
+function fmtCost(v: number): string { return v ? `$${v.toFixed(4)}` : '$0' }
+function fmtClock(s: string): string { return new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
+function fmtWhen(s: string): string { return new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) }
+
 /** Kabuk kapatmadan / baska ajana gecmeden once sorar. Edit kaybi geri alinamaz. */
 function canLeave(): boolean {
   return !dirty.value || window.confirm('Kaydedilmemiş değişiklikler var. Vazgeçilsin mi?')
@@ -196,7 +247,58 @@ defineExpose({ canLeave })
         <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
       </header>
 
-      <p v-if="phase === 'loading'" class="msg">Yükleniyor…</p>
+      <!-- Iki sekme (kullanici istegi): Ozellikler = md/ayarlar; Isler = calisma basina bu ajanin turlari, mesajlari, fazlari. -->
+      <nav class="tabs" role="tablist">
+        <button type="button" role="tab" :aria-selected="tab === 'props'" :class="{ on: tab === 'props' }" @click="tab = 'props'">Özellikler</button>
+        <button type="button" role="tab" :aria-selected="tab === 'work'" :class="{ on: tab === 'work' }" @click="tab = 'work'">İşler <b v-if="work">{{ work.length }}</b></button>
+      </nav>
+
+      <section v-if="tab === 'work'" class="work">
+        <div class="work-head">
+          <span class="sub">Bu ajanın çalışma başına yaptıkları: her LLM turunun gönderilen metni ve çıktısı, o anda kullanılan sağlayıcı/model/efor, aldığı ve verdiği notlar, faz geçişleri. Kaynak <code>runs/*/conversations/{{ agentKey }}.jsonl</code>.</span>
+          <button type="button" class="small" @click="loadWork">Yenile</button>
+        </div>
+        <p v-if="workError" class="err">{{ workError }}</p>
+        <p v-else-if="work === null" class="msg">Yükleniyor…</p>
+        <p v-else-if="!work.length" class="msg">Bu ajan henüz bir çalışmada yer almadı.</p>
+        <details v-for="(w, i) in work" :key="w.run.id" class="job" :open="i === 0">
+          <summary>
+            <span class="status" :class="w.run.status">{{ RUN_STATUS_LABEL[w.run.status] }}</span>
+            <strong>{{ w.run.label }}</strong>
+            <span class="sub">{{ fmtWhen(w.run.startedAt) }} · {{ w.turns.length }} tur · {{ w.messages.length }} not · {{ fmtCost(w.turns.reduce((s, t) => s + (t.costUsd ?? 0), 0)) }}</span>
+          </summary>
+          <ol class="timeline">
+            <li v-for="(e, i) in timelineOf(w)" :key="i" :class="e.kind">
+              <template v-if="e.kind === 'turn'">
+                <div class="entry-head">
+                  <span class="when">{{ fmtClock(e.turn.ts) }}</span>
+                  <span class="tag turn">LLM turu</span>
+                  <span class="sub">{{ e.turn.provider }} · <code>{{ e.turn.model }}</code> · {{ e.turn.durationS.toFixed(1) }} s · {{ e.turn.inputTokens ?? '?' }}→{{ e.turn.outputTokens ?? '?' }} tk · {{ fmtCost(e.turn.costUsd ?? 0) }}<template v-if="e.turn.stage"> · {{ e.turn.stage }}</template><template v-if="e.turn.task"> · <code>{{ e.turn.task }}</code></template></span>
+                </div>
+                <details><summary>Gönderilen ({{ e.turn.promptChars }} kr)</summary><pre>{{ e.turn.prompt }}</pre></details>
+                <details><summary>Çıktı ({{ e.turn.outputChars }} kr)</summary><pre>{{ e.turn.output }}</pre></details>
+              </template>
+              <template v-else-if="e.kind === 'message'">
+                <div class="entry-head">
+                  <span class="when">{{ fmtClock(e.msg.ts) }}</span>
+                  <span class="tag" :class="e.msg.subject === 'error' ? 'error' : 'msg'">{{ e.msg.subject === 'error' ? 'hata' : e.msg.subject === 'handoff' ? 'devir' : e.msg.subject === 'retry' ? 'tekrar' : e.msg.subject === 'plan-revision' ? 'revize notu' : 'not' }}</span>
+                  <span class="sub">{{ e.msg.from }} → {{ e.msg.to }}<template v-if="e.msg.task"> · <code>{{ e.msg.task }}</code></template></span>
+                </div>
+                <pre :class="{ errtext: e.msg.subject === 'error' }">{{ e.msg.body }}</pre>
+              </template>
+              <template v-else>
+                <div class="entry-head">
+                  <span class="when">{{ fmtClock(e.phase.ts) }}</span>
+                  <span class="tag phase">faz</span>
+                  <span class="sub"><code>{{ e.phase.task }}</code> · {{ e.phase.stageTitle }} · {{ e.phase.status }} · tur {{ e.phase.round }}</span>
+                </div>
+              </template>
+            </li>
+          </ol>
+        </details>
+      </section>
+
+      <p v-else-if="phase === 'loading'" class="msg">Yükleniyor…</p>
 
       <div v-else-if="phase === 'missing'" class="msg empty">
         <strong>Api'de ajan uçları henüz hazır değil.</strong>
@@ -251,22 +353,33 @@ defineExpose({ canLeave })
           </div>
         </div>
 
-        <div class="field">
-          <label class="lbl" for="agent-model">Model</label>
-          <input
-            id="agent-model"
-            v-model="modelText"
-            type="text"
-            list="agent-model-options"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="sağlayıcı varsayılanı"
-          >
-          <datalist id="agent-model-options">
-            <option v-for="m in models" :key="m.model" :value="m.model">{{ m.reachable ? 'erişilebilir' : 'katalogda, erişim doğrulanmadı' }}</option>
-          </datalist>
-          <span class="sub" :class="{ warn: modelsState === 'runtime-down' || modelsState === 'error' }">{{ modelsHint }}</span>
+        <div class="row model-row">
+          <div class="field">
+            <label class="lbl" for="agent-model">Model</label>
+            <!-- Liste geldiyse acilir menu (kullanici karari: metin degil secim); runtime kapaliysa metin alani kalir. -->
+            <select v-if="modelsState === 'ready' && models.length" id="agent-model" v-model="modelText">
+              <option value="">varsayılan (claude-opus-5)</option>
+              <option v-for="m in modelOptions" :key="m.model" :value="m.model">{{ m.model }}{{ m.reachable ? '' : ' · giriş gerekli' }}</option>
+            </select>
+            <input
+              v-else
+              id="agent-model"
+              v-model="modelText"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="varsayılan: claude-opus-5"
+            >
+          </div>
+          <div class="field">
+            <label class="lbl" for="agent-effort">Efor</label>
+            <select id="agent-effort" v-model="effortModel">
+              <option value="">varsayılan (yüksek)</option>
+              <option v-for="e in EFFORTS" :key="e" :value="e">{{ EFFORT_LABEL[e] }}</option>
+            </select>
+          </div>
         </div>
+        <span class="sub" :class="{ warn: modelsState === 'runtime-down' || modelsState === 'error' }">{{ modelsHint }}</span>
 
         <div class="field">
           <span class="lbl">Bilgi dosyaları</span>
@@ -318,6 +431,42 @@ defineExpose({ canLeave })
 }
 .panel > header { display: flex; align-items: center; gap: 10px; }
 h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid rgba(0,0,0,0.12); }
+.tabs button {
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; background: transparent; color: #4a5068;
+  border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 10px; margin-bottom: -1px;
+}
+.tabs button.on { color: #23283a; border-bottom-color: #23283a; }
+.tabs button b { background: rgba(0,0,0,0.08); border-radius: 999px; padding: 0 6px; font-size: 10px; margin-left: 4px; }
+.work { display: flex; flex-direction: column; gap: 8px; }
+.work-head { display: flex; align-items: flex-start; gap: 10px; }
+.work-head .sub { flex: 1; }
+.small { padding: 3px 8px; font-size: 11px; }
+.job { background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; padding: 6px 10px; }
+.job > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; list-style: none; }
+.job > summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(0,0,0,0.08); text-transform: uppercase; letter-spacing: 0.04em; }
+.status.awaitingApproval { background: #f3c34a; }
+.status.running { background: #4fa3e0; color: #fff; }
+.status.paused { background: #a889e6; color: #fff; }
+.status.completed { background: #7cc46b; }
+.status.failed, .status.policyRejected, .status.interrupted, .status.budgetExceeded, .status.cancelled { background: #d23b3b; color: #fff; }
+.timeline { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.timeline li { border-left: 3px solid #c9c3b3; padding: 4px 8px; }
+.timeline li.turn { border-left-color: #4f8ef7; }
+.timeline li.message { border-left-color: #d9a13a; }
+.timeline li.phase { border-left-color: #7cc46b; }
+.entry-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.when { font-variant-numeric: tabular-nums; color: #6b7285; font-size: 11px; }
+.tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 999px; background: rgba(0,0,0,0.08); }
+.tag.turn { background: #dbe8fb; }
+.tag.msg { background: #f6e6c2; }
+.tag.error { background: #e05252; color: #fff; }
+.tag.phase { background: #dff2d8; }
+.timeline pre { margin: 4px 0 0; white-space: pre-wrap; font: 11px/1.45 Consolas, "Cascadia Mono", monospace; background: #f7f5ef; border: 1px solid #e0dbcc; padding: 6px; border-radius: 4px; max-height: 300px; overflow: auto; }
+.timeline details summary { font-size: 11px; cursor: pointer; color: #4a5068; }
+.errtext { border-color: #e0a0a0 !important; color: #7a1f1f; }
 .key { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 3px; }
 .x { background: none; border: none; font-size: 22px; cursor: pointer; color: #23283a; line-height: 1; margin-left: auto; padding: 0 4px; }
 
@@ -328,6 +477,7 @@ h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: upperca
 
 .form { display: flex; flex-direction: column; gap: 12px; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.model-row { grid-template-columns: 2fr 1fr; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #4a5068; }
 input[type="text"], select, textarea {

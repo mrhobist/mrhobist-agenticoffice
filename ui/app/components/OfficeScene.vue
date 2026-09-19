@@ -83,7 +83,11 @@ function onClick(ev: MouseEvent) {
 function publishBoard() {
   if (world) emit('board', world.board.snapshot())
 }
-defineExpose({ publishBoard })
+/** Kullanicidan bir sey bekleyen is sayisi; sahnedeki panoya rozet olarak duser (kabuk /runs/overview'dan besler). */
+function setAttention(n: number) {
+  if (world) world.board.attention = n
+}
+defineExpose({ publishBoard, setAttention })
 
 function fit() {
   const el = host.value
