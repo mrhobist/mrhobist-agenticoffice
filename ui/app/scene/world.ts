@@ -1,9 +1,10 @@
-import type { Facing, MeetKind, Pt, PropDef, SceneConfig, SceneEvent, SeatDef, WorkflowConfig } from './contract'
+import { STATE_LABEL, type Facing, type MeetKind, type Pt, type PropDef, type SceneConfig, type SceneEvent, type SeatDef, type WorkflowConfig } from './contract'
 import { Sprites } from './atlas'
 import { NavGrid } from './nav'
 import { Agent, Cat, Door, type Action } from './entities'
 import { Board } from './board'
 import { drawSky } from './sky'
+import { authHeaders } from '~/composables/useAuth'
 
 export interface Hud {
   stage: string
@@ -66,8 +67,8 @@ export class World {
 
   static async create(apiBase: string): Promise<World> {
     const [cfgRes, wfRes, sprites] = await Promise.all([
-      fetch(`${apiBase}/api/v1/scene`),
-      fetch(`${apiBase}/api/v1/workflows/default`),
+      fetch(`${apiBase}/api/v1/scene`, { headers: authHeaders() }),
+      fetch(`${apiBase}/api/v1/workflows/default`, { headers: authHeaders() }),
       Sprites.load(),
     ])
     if (!cfgRes.ok) throw new Error(`scene ${cfgRes.status}`)
@@ -87,6 +88,8 @@ export class World {
         if (!a) return
         a.state = e.data.state
         a.note = e.data.note ?? null
+        a.job = e.data.runLabel ? `${e.data.runLabel}${e.data.task ? ` · ${e.data.task}` : ''}` : null
+        if (a.frozen) { this.refreshFocusBubble(a); break }
         a.lastCommandAt = now
         if (a.ambient) a.command(this.goHome(a), now)
         if ((e.data.state === 'working' || e.data.state === 'thinking') && !a.seated && !a.busy) a.command(this.goHome(a), now)
@@ -171,12 +174,42 @@ export class World {
 
   private async loadWorkflow(key: string): Promise<void> {
     try {
-      const res = await fetch(`${this.apiBase}/api/v1/workflows/${encodeURIComponent(key)}`)
+      const res = await fetch(`${this.apiBase}/api/v1/workflows/${encodeURIComponent(key)}`, { headers: authHeaders() })
       if (!res.ok) return
       this.board.setWorkflow((await res.json()) as WorkflowConfig)
     } catch (err) {
       console.warn('workflow.set', key, err)
     }
+  }
+
+  /**
+   * Kullanici bir ajana tikladi (kullanici istegi 2026-09-19): animasyon durur, ajan izleyiciye (asagi) bakar,
+   * basinda isini yazan balon acik kalir. Panel kapaninca `unfocus` eski akisi surdurur.
+   */
+  focus(key: string): void {
+    for (const a of this.agents.values()) if (a.frozen && a.key !== key) this.unfocusAgent(a)
+    const a = this.agents.get(key)
+    if (!a || a.offstage) return
+    a.frozen = true
+    a.facing = 'down'
+    this.refreshFocusBubble(a)
+  }
+
+  unfocus(): void {
+    for (const a of this.agents.values()) if (a.frozen) this.unfocusAgent(a)
+  }
+
+  private unfocusAgent(a: Agent): void {
+    a.frozen = false
+    a.bubble = null
+    if (a.seated) a.facing = a.seated.facing
+    a.lastCommandAt = performance.now()
+  }
+
+  private refreshFocusBubble(a: Agent): void {
+    const state = STATE_LABEL[a.state]
+    const card = [a.def.name, a.job ? `▸ ${a.job}` : '▸ iş yok — masasında bekliyor', a.note ? `${state} · ${a.note}` : state]
+    a.bubble = { kind: a.state === 'blocked' ? 'alert' : 'talk', until: Number.POSITIVE_INFINITY, card }
   }
 
   /** Duragi tutan ajanlar (kapasite sayimi). */
@@ -279,11 +312,11 @@ export class World {
     const half = ms / 2
     from.command([
       { t: 'walk', to: target },
-      { t: 'call', fn: () => { from.faceTo(to.pos); to.faceTo(from.pos); if (to.seated) to.facing = 'down' } },
+      { t: 'call', fn: () => { from.faceTo(to.pos); to.faceTo(from.pos); if (to.seated && !to.frozen) to.facing = 'down' } },
       { t: 'say', kind: fromKind, ms: half },
       { t: 'call', fn: () => { to.bubble = { kind: 'talk', until: performance.now() + half } } },
       { t: 'wait', ms: half },
-      { t: 'call', fn: () => { if (to.seated) to.facing = to.seated.facing } },
+      { t: 'call', fn: () => { if (to.seated && !to.frozen) to.facing = to.seated.facing } },
       ...this.goHome(from),
     ], now)
   }
@@ -324,7 +357,7 @@ export class World {
     const away = [...this.agents.values()].filter(a => a.busy || (!a.seated && this.homeOf(a.key).seat)).length
     if (away >= 2) return
     const idle = [...this.agents.values()].filter(a =>
-      !a.offstage && !a.busy && (a.state === 'idle' || a.state === 'done') && now > a.ambientReadyAt && now - a.lastCommandAt > 10_000)
+      !a.offstage && !a.frozen && !a.busy && (a.state === 'idle' || a.state === 'done') && now > a.ambientReadyAt && now - a.lastCommandAt > 10_000)
     if (!idle.length) return
     const a = idle[Math.floor(Math.random() * idle.length)]!
     const r = Math.random()
@@ -369,11 +402,11 @@ export class World {
       const ms = 3500 + Math.random() * 2500
       actions = [
         { t: 'walk', to: target },
-        { t: 'call', fn: () => { a.faceTo(o.pos); o.facing = 'down' } },
+        { t: 'call', fn: () => { a.faceTo(o.pos); if (!o.frozen) o.facing = 'down' } },
         { t: 'say', kind: 'talk', ms: ms / 2 },
         { t: 'call', fn: () => { o.bubble = { kind: 'talk', until: performance.now() + ms / 2 } } },
         { t: 'wait', ms: ms / 2 },
-        { t: 'call', fn: () => { if (o.seated) o.facing = o.seated.facing } },
+        { t: 'call', fn: () => { if (o.seated && !o.frozen) o.facing = o.seated.facing } },
         ...this.goHome(a),
       ]
     }

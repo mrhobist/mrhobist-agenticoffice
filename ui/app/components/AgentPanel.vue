@@ -198,7 +198,8 @@ async function save() {
 
 // ------------------------------------------------------------------ Isler sekmesi (GET /agents/{key}/work)
 
-const tab = ref<'props' | 'work'>('props')
+/** Isler sekmesi onde (kullanici istegi): once ne yaptigi, istenirse ozellikleri. */
+const tab = ref<'props' | 'work'>('work')
 const work = ref<AgentRunWork[] | null>(null)
 const workError = ref<string | null>(null)
 
@@ -210,7 +211,7 @@ async function loadWork() {
     workError.value = errorText(e)
   }
 }
-watch([tab, () => props.agentKey], ([t]) => { if (t === 'work') void loadWork() })
+watch([tab, () => props.agentKey], ([t]) => { if (t === 'work') void loadWork() }, { immediate: true }) // Isler onde: acilista yuklenir
 watch(() => props.agentKey, () => { work.value = null })
 
 type WorkEntry =
@@ -242,7 +243,7 @@ defineExpose({ canLeave })
   <div class="wrap" @click.self="emit('close')">
     <section class="panel" role="dialog" aria-labelledby="agent-title">
       <header>
-        <h2 id="agent-title">Ajan · {{ form?.name || sceneName }}</h2>
+        <h2 id="agent-title">Ekip · {{ form?.name || sceneName }}</h2>
         <code class="key">{{ agentKey }}</code>
         <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
       </header>
@@ -420,13 +421,13 @@ defineExpose({ canLeave })
 
 <style scoped>
 .wrap {
-  position: absolute; inset: 0; background: rgba(10, 12, 18, 0.55);
-  display: flex; justify-content: flex-end;
+  position: absolute; inset: 0; background: rgba(10, 12, 18, 0.25);
+  display: flex; justify-content: flex-end; align-items: flex-start; padding: 12px;
 }
 .panel {
-  background: #ede9dc; color: #23283a; border-left: 6px solid #6b4a2b;
-  width: min(560px, 100%); height: 100%; overflow: auto; padding: 16px 18px;
-  box-shadow: -20px 0 60px rgba(0,0,0,0.5);
+  background: #ede9dc; color: #23283a; border: 6px solid #6b4a2b; border-radius: 6px;
+  width: min(560px, 100%); max-height: 100%; overflow: auto; padding: 14px 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   display: flex; flex-direction: column; gap: 12px;
 }
 .panel > header { display: flex; align-items: center; gap: 10px; }

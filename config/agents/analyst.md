@@ -1,7 +1,8 @@
 ---
 name: Analist
-summary: Brief'i çözümler, mimariyi kurar, bağımlılık sıralı görev grafiğini ve bağlayıcı kuralları üretir.
+summary: "Brief'i çözümler, mimariyi kurar, bağımlılık sıralı görev grafiğini ve bağlayıcı kuralları üretir."
 office_roles: [pm, arch, res]
+effort: low
 includes: [mimari-kurallar]
 can_ask: manager
 ---

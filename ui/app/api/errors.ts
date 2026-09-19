@@ -39,6 +39,9 @@ const MESSAGES: Record<string, string> = {
   'run.plan_invalid': 'Analistin planı şemaya uymadı; çalışma durdu.',
   'run.project_required': 'İş bir projenin içinde başlar; önce proje seç.',
 
+  'auth.required': 'Giriş gerekli.',
+  'auth.invalid_credentials': 'Kullanıcı adı ya da şifre yanlış.',
+
   'project.invalid_key': 'Proje anahtarı geçersiz: yalnız küçük harf, rakam, tire ve alt çizgi.',
   'project.not_found': 'Proje bulunamadı.',
   'project.exists': 'Bu anahtarla bir proje zaten var.',

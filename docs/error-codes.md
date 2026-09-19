@@ -36,6 +36,8 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `run.not_cancellable` | 409 | `cancel` yalnız `Running / AwaitingApproval / Paused / Failed / Interrupted / BudgetExceeded` durumunda geçerli (Completed, Cancelled, PolicyRejected kapatılamaz) |
 | `run.plan_invalid` | — | Analist çıktısı şemaya uymadı ya da görevsiz (çalışma `Failed`, `detail` söyler) |
 | `run.project_required` | 400 | `POST /runs`: `project` boş; iş yalnız bir projenin içinde başlar |
+| `auth.required` | 401 | `/api/v1/*` için giriş gerekli (`/auth/login` hariç) |
+| `auth.invalid_credentials` | 401 | Kullanıcı adı ya da şifre yanlış |
 | `project.invalid_key` | 400 | Proje anahtarı `[a-z0-9][a-z0-9_-]*` değil |
 | `project.not_found` | 404 | Böyle bir proje yok |
 | `project.exists` | 409 | `POST /projects`: bu anahtarla proje var |

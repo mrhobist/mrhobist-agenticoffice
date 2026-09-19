@@ -14,6 +14,7 @@ public sealed class StorageFixture : IDisposable
         Root = Path.Combine(Path.GetTempPath(), "aiteam-tests", Guid.NewGuid().ToString("N"));
         var config = Path.Combine(Root, "config");
         CopyTree(repoConfig, config);
+        Isolate(config);
         Paths = new StoragePaths(config, Path.Combine(Root, "runs"));
     }
 
@@ -30,6 +31,30 @@ public sealed class StorageFixture : IDisposable
         catch (IOException)
         {
             // Gecici dizin; kilitliyse isletim sistemi temizler.
+        }
+    }
+
+    /// <summary>
+    /// Kullanicinin canli duzenlemeleri testi etkilemesin: projeler kopyalanmaz (testler kendini ekler) ve analistin
+    /// md'sinden model/efor satirlari atilir (testler VARSAYILANLARI dogrular; kullanici UI'dan eforu degistirebilir).
+    /// </summary>
+    private static void Isolate(string config)
+    {
+        var projects = Path.Combine(config, "projects");
+        if (Directory.Exists(projects))
+        {
+            foreach (var f in Directory.EnumerateFiles(projects))
+            {
+                File.Delete(f);
+            }
+        }
+
+        var analyst = Path.Combine(config, "agents", "analyst.md");
+        if (File.Exists(analyst))
+        {
+            var lines = File.ReadAllLines(analyst)
+                .Where(l => !l.StartsWith("effort:", StringComparison.Ordinal) && !l.StartsWith("model:", StringComparison.Ordinal));
+            File.WriteAllLines(analyst, lines);
         }
     }
 

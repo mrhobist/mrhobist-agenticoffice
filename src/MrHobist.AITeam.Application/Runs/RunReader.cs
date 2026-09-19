@@ -136,12 +136,12 @@ public sealed class RunReader(IRunStore runs) : IRunReader
             items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Approval, lastTs, "Plan onayı bekliyor", spec?.Summary, null));
         }
 
-        // Karar: calisma durdu. Paused yalniz iptal edilebilir, dusenler yeniden denenebilir; UI dugmeyi duruma gore secer.
-        if (run.Status is RunStatus.Paused or RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded)
+        // Karar: calisma dustu, yeniden denenebilir ya da kapatilabilir. Paused GELEN KUTUSUNA GIRMEZ: yurutucusu olmayan
+        // adimda bekleme kullanicidan bir sey istemez (kullanici sorusu 2026-09-19: "cevap bekleniyor ama islem yapamiyorum").
+        if (run.Status is RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded)
         {
             var title = run.Status switch
             {
-                RunStatus.Paused => "Durakladı: yürütücüsü olmayan adım",
                 RunStatus.BudgetExceeded => "Bütçe aşıldı",
                 RunStatus.Interrupted => "Yarıda kaldı",
                 _ => "Başarısız oldu",

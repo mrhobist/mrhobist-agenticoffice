@@ -28,8 +28,8 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 - Ekip ve bilgi dosyaları çalışma alanı düzeyinde ortaktır; proje yalnız bir akış seçer.
 - Kart özeti (`ProjectCard`): iş sayıları duruma göre, toplam maliyet, son hareket. UI'da ray kartları bunu gösterir.
 - Silme: içinde çalışma varsa **409 `project.in_use`**; geçmiş silinmez.
-- **Giriş hazırlığı:** proje ve çalışmada `ownerId`; bugün sabit `local`. JWT gelince claim'den dolar; giriş
-  ekranı tek kullanıcıda atlanır (tasarım: Login artboard'u).
+- **Sahip:** proje ve çalışmada `ownerId`; bugün sabit `local`. Giriş JWT'sindeki `sub` claim'i ile
+  doldurulması sonraki adım (bkz. Giriş).
 - Geçiş: 2026-09-19'a kadarki projesiz çalışmalar **silindi** (kullanıcı kararı; hepsi deneme kaydıydı).
 
 ## Çalışma yaşam döngüsü
@@ -70,13 +70,16 @@ Kullanıcıdan bir şey bekleyen her çalışma **gelen kutusuna** düşer (`GET
 | Tür | Ne zaman | Beklenen cevap |
 |---|---|---|
 | `approval` (soru) | `AwaitingApproval` | **Onayla** ya da **Revize et** (not) |
-| `decision` (karar) | `Paused`, `Failed`, `Interrupted`, `BudgetExceeded` | **Yeniden dene** (`retry`) ya da **Kapat** (`cancel` → `Cancelled`); Paused yalnız kapatılabilir. Kapatmadan kutudan düşmez — "okundu" yok, karar var |
+| `decision` (karar) | `Failed`, `Interrupted`, `BudgetExceeded` | **Yeniden dene** (`retry`) ya da **Kapat** (`cancel` → `Cancelled`). Kapatmadan kutudan düşmez — "okundu" yok, karar var |
 | `question` (soru) | bir ajan `kind: ask, to: user` yazdı ve `ref`'i eşleşen `answer` yok | cevap ucu **henüz yok** — sözleşme ileride ajan → kullanıcı sorusu için hazır |
 
-`Completed`, `Cancelled`, `PolicyRejected` bir şey beklemez. UI bunu üç yerde gösterir: üst barda **İşler**
-düğmesi (toplam iş + kırmızı "senden bekleyen" rozeti, sekme başlığında `(N)`), üst şeritte **"Senden cevap
-bekleniyor"** uyarısı (ilk madde + "Cevapla"), sahnedeki panoda kırmızı rozet ve büyük Kanban'ın üstünde
-"Senden bekleniyor" şeridi (onaysız plan panoya iş açmadığı için soru orada başka türlü görünmezdi).
+`Completed`, `Cancelled`, `PolicyRejected` bir şey beklemez. **`Paused` de beklemez** (2026-09-19, kullanıcı
+sorusu "cevap bekleniyor ama işlem yapamıyorum"): yürütücüsü olmayan adımda duran çalışma akışın eksikliğidir,
+kullanıcıdan bir karar istemez; proje kartında "durakladı" sayısı ve iş panelinde durum olarak görünür, kutuya
+düşmez. Developer yürütücüsü gelince bu durum zaten oluşmaz.
+UI kutuyu **işlerin dışında**, üst bardaki **bildirim zili** altında gösterir (madde + "Cevapla" → çalışma
+paneli); ayrıca İşler düğmesinde kırmızı rozet, sekme başlığında `(N)`, sahnedeki panoda rozet, proje kartında
+"senden bekliyor" ve büyük Kanban'ın üstünde "Senden bekleniyor" şeridi.
 **Varsayımla ilerlenir:** gelen kutusu 5 s'de bir yoklanır (SSE gelince olaya bağlanır); "okundu" kavramı yok,
 madde ancak cevap verilince düşer.
 
@@ -184,6 +187,21 @@ sınırıdır; yürütücü gelince kaldığı yerden devam eder.
 - `reachable` yorumu: runtime katalog için gerçek çağrı yapmaz (her model için bir tur token
   harcar); `reachable = giriş var`. `detail` alanı bunu söyler. LESSONS'taki "katalogda görünmek
   erişilebilir olmak değildir" dersi burada bilinçli olarak gevşetildi — varsayımla ilerlenir.
+
+## Giriş (2026-09-19, kullanıcı kararı)
+
+- **Bugün:** kodda gömülü tek kullanıcı **`admin / admin`** (`EmbeddedUserDirectory`, rol `owner`).
+  Kullanıcı deposu, LDAP ya da tam kullanıcı mimarisi ileride `IUserDirectory` arayüzünü uygular;
+  giriş ekranı ve belirteç akışı değişmez.
+- **Belirteç:** JWT tek şema (HS256), 12 saat, `sub` / `name` / `role` claim'leri. Yetki ayrımını
+  **rol claim'i** yapar (CLAUDE.md sapmalar: tek şema). Anahtar `AITeam:JwtKey`; boşsa geliştirme
+  anahtarı — host yalnız loopback dinlediği için kabul edilir, dışa açılırsa zorunlu olur.
+- **Kapı:** `/api/v1/*` kimlik ister; `auth/login`, `jobs/health` ve `OPTIONS` hariç. Kimliksiz istek
+  **401 `auth.required`**, yanlış şifre **401 `auth.invalid_credentials`**. SSE (`scene/events`)
+  başlık taşıyamadığından belirteci `?access_token=` ile alır; yalnız o yolda.
+- **UI:** belirteç `localStorage`'da; her istek `Authorization: Bearer`. 401 gelince oturum düşer ve giriş
+  ekranı gelir. Profil çipi sağ üstte (ad + çıkış). LLM oturumları (Ayarlar) bundan bağımsızdır: biri
+  çalışma alanına giriş, öteki modele erişimdir.
 
 ## Sahne eşlemesi
 

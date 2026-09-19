@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using MrHobist.AITeam.Api.Auth;
 using MrHobist.AITeam.Api.Config;
 using MrHobist.AITeam.Api.Errors;
 using MrHobist.AITeam.Api.Jobs;
@@ -32,6 +33,8 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
+// Giris: gomulu admin/admin + JWT tek sema, rol claim'i (docs/DOMAIN.md → Giris). Ileride LDAP IUserDirectory ile gelir.
+builder.Services.AddAiTeamAuth(builder.Configuration);
 builder.Services.AddExceptionHandler<ProblemMapping>();
 
 var paths = StoragePaths.Discover(
@@ -66,9 +69,13 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseCors();
+app.UseAuthentication();
+app.UseAiTeamAuthGate();
+app.UseAuthorization();
 
 // Sozlesme: /openapi/v1.json (CLAUDE.md §Belge haritasi).
 app.MapOpenApi();
+app.MapAuth();
 app.MapConfig();
 app.MapScene();
 app.MapRuns();

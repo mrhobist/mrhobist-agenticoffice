@@ -39,6 +39,9 @@ public static class ErrorCodes
     public const string RunProjectRequired = "run.project_required";
     public const string RunNotRetryable = "run.not_retryable";
 
+    public const string AuthRequired = "auth.required";
+    public const string AuthInvalidCredentials = "auth.invalid_credentials";
+
     public const string ProjectInvalidKey = "project.invalid_key";
     public const string ProjectNotFound = "project.not_found";
     public const string ProjectExists = "project.exists";

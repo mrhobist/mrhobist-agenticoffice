@@ -250,6 +250,18 @@ derlendi ve oradan 5083'te çalıştırıldı (Uygulama Denetimi bu yolu engelle
 çalışan 5090 runtime'ı (kodu güncel, Anthropic girişi var: `opugmai2@…`) yeniden kullanıldı. Kalıcı çözüm: eski süreçleri
 kapatmak (Görev Yöneticisi, yönetici) ve bu kullanıcıya Python 3.12 kurup `.venv`'i yeniden oluşturmak.
 
+## Faz 4c — Ofis odağı ve giriş (2026-09-19, kullanıcı istekleri) ✅
+
+- Ajana tıklanınca animasyon durur, ajan izleyiciye bakar, başında işini yazan balon açık kalır; panel
+  kapanınca akışına döner (`World.focus/unfocus`, `Agent.frozen`).
+- Ajan paneli sağ üstte "Ekip · ad" başlığıyla; **İşler** sekmesi önde, Özellikler ikinci.
+- Kanban sekmeleri **proje bazında gruplu**; kartlar çalışma detayından türetilir (canlı, 3 s).
+- "Senden bekleyenler" işlerin dışında **bildirim zili** (üst bar) altında; sahnedeki yapışkan not kaldırıldı.
+  `Paused` gelen kutusuna **girmez**: yürütücüsü olmayan adım kullanıcıdan bir şey istemez (kullanıcı sorusu).
+- Giriş: gömülü `admin/admin`, JWT tek şema, `/api/v1` kapısı, giriş ekranı, sağ üstte profil çipi.
+  Sonraki: `ownerId`'yi claim'den doldur; LDAP / kullanıcı deposu `IUserDirectory` ile.
+- Test fikstürü canlı `config/` düzenlemelerinden yalıtıldı (projeler kopyalanmaz, analist efor/model satırı atılır).
+
 ## Faz 6 — UI (canlı sahne) 🔶 sahne kuruldu
 
 Nuxt 4 + TypeScript + **Canvas 2D** (Three.js bırakıldı, bkz. `docs/SCENE.md`). Sprite'lar

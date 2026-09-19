@@ -1,4 +1,5 @@
 import type { ProblemDetails } from './types'
+import { authHeaders, setSession } from '~/composables/useAuth'
 
 /**
  * Api istegi basarisiz oldu. `status === 0` → ag hatasi, yanit hic gelmedi.
@@ -54,9 +55,13 @@ export function useApiClient(): ApiClient {
 async function request<T>(base: string, path: string, init: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`${base}${path}`, { ...init, headers: { accept: 'application/json', ...init.headers } })
+    res = await fetch(`${base}${path}`, { ...init, headers: { accept: 'application/json', ...authHeaders(), ...init.headers } })
   } catch {
     throw new ApiError(0, null, path)
+  }
+  if (res.status === 401 && !path.startsWith('/api/v1/auth/login')) {
+    // Oturum dustu ya da yok: belirteci at, kabuk giris ekranini gosterir.
+    setSession(null)
   }
   if (!res.ok) throw new ApiError(res.status, await readErrorCode(res), path)
   if (res.status === 204) return undefined as T

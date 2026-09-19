@@ -1,5 +1,7 @@
 <template>
-  <div class="shell">
+  <!-- Giris kapisi (docs/DOMAIN.md → Giris): belirtec yoksa yalniz giris ekrani; kabuk ve sahne Api'ye dokunmaz. -->
+  <LoginPanel v-if="!loggedIn" @done="onLoggedIn" />
+  <div v-else class="shell">
     <header class="bar">
       <span class="brand">MrHobist.AITeam</span>
       <span class="chip" :class="status">{{ STATUS_LABEL[status] }}</span>
@@ -14,6 +16,28 @@
           <span v-if="inboxCount" class="badge" :aria-label="`${inboxCount} iş senden cevap bekliyor`">{{ inboxCount }}</span>
         </button>
         <button type="button" class="chip action" :class="{ on: settings }" aria-label="Ayarlar" title="Ayarlar (S)" @click="toggleSettings">⚙ Ayarlar</button>
+        <!-- Bildirimler: senden cevap bekleyenler islerin DISINDA ayri bir alanda (kullanici istegi 2026-09-19). -->
+        <span class="bell-wrap">
+          <button type="button" class="chip action bell-btn" :class="{ on: bell, alert: inboxCount > 0 }" :aria-label="`Bildirimler: ${inboxCount} bekleyen`" title="Senden bekleyenler" @click="toggleBell">
+            <span aria-hidden="true">🔔</span>
+            <span v-if="inboxCount" class="badge">{{ inboxCount }}</span>
+          </button>
+          <div v-if="bell" class="bell-menu" role="dialog" aria-label="Senden bekleniyor">
+            <div class="bell-head">Senden bekleniyor <b>{{ inboxCount }}</b></div>
+            <p v-if="!inboxCount" class="bell-empty">Bekleyen bir şey yok. Plan onayı ya da düşen bir iş olunca burada görünür.</p>
+            <button v-for="i in overview?.inbox ?? []" :key="i.runId + i.kind + i.ts" type="button" class="bell-item" @click="bell = false; openRun(i.runId)">
+              <span class="kind" :class="i.kind">{{ INBOX_KIND_LABEL[i.kind] }}</span>
+              <span class="bell-text"><strong>{{ i.label }}</strong> · {{ i.title }}</span>
+              <span class="go">Cevapla →</span>
+            </button>
+          </div>
+        </span>
+        <!-- Profil: bugun gomulu tek kullanici; ileride LDAP / kullanici mimarisi ayni cipe dolar. -->
+        <span class="profile" :title="`${user?.name} · ${user?.role}`">
+          <span class="avatar">{{ initials(user?.name ?? '?') }}</span>
+          <span class="who">{{ user?.name }}</span>
+          <button type="button" class="out" title="Çıkış" aria-label="Çıkış" @click="logout">⎋</button>
+        </span>
       </span>
     </header>
 
@@ -65,12 +89,6 @@
           @board="openBoard"
         />
 
-        <!-- Senden cevap/karar bekleyen is: sahnenin ustunde sari yapiskan not. "Cevapla" o calismayi acar. -->
-        <div v-if="firstPending" class="sticky" role="alert">
-          <span class="bell" aria-hidden="true">🔔</span>
-          <span class="sticky-text"><strong>{{ firstPending.label }}</strong> · <span class="kind" :class="firstPending.kind">{{ INBOX_KIND_LABEL[firstPending.kind] }}</span> {{ firstPending.title }}<template v-if="inboxCount > 1"> · +{{ inboxCount - 1 }}</template></span>
-          <button type="button" class="sticky-go" @click="openRun(firstPending.runId)">Cevapla</button>
-        </div>
 
         <!-- Ekip pusulasi: sahnede kim ne yapiyor; tiklaninca ajan paneli. Yari saydam, sahneyi kapatmaz. -->
         <div v-if="!selected && !runPanel && !settings && !jobs && !board" class="compass" aria-label="Ekip">
@@ -130,12 +148,19 @@ import SettingsPanel from '~/components/SettingsPanel.vue'
 import LimitsBar from '~/components/LimitsBar.vue'
 import JobsPanel from '~/components/JobsPanel.vue'
 import ProjectPanel from '~/components/ProjectPanel.vue'
+import LoginPanel from '~/components/LoginPanel.vue'
+import { useAuth } from '~/composables/useAuth'
 import type { Hud } from '~/scene/world'
 import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
-import type { AgentDetail, AgentListItem, InboxItem, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
+import type { AgentDetail, AgentListItem, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel } from '~/api/labels'
+
+// ------------------------------------------------------------------ giris
+const { user, loggedIn, logout } = useAuth()
+/** Giris sonrasi kabuk ilk kez kurulur (v-else): veriler onMounted yerine burada yuklenir. */
+function onLoggedIn() { void nextTick(() => bootData()) }
 
 const hud = ref<Hud>({ stage: '—', task: '—', round: 0 })
 const status = ref<FeedStatus>('connecting')
@@ -222,7 +247,6 @@ function onSaved(d: AgentDetail) {
 
 const overview = ref<RunsOverview | null>(null)
 const inboxCount = computed(() => overview.value?.inbox.length ?? 0)
-const firstPending = computed<InboxItem | null>(() => overview.value?.inbox[0] ?? null)
 const jobsTitle = computed(() => {
   const o = overview.value
   if (!o) return 'İşler (I)'
@@ -284,6 +308,8 @@ const runId = ref<string | null>(null)
 const runProject = ref<string | null>(null)
 const settings = ref(false)
 const jobs = ref(false)
+const bell = ref(false)
+function toggleBell() { bell.value = !bell.value; if (bell.value) void loadOverview() }
 const projectPanel = ref(false)
 const projectKey = ref<string | null>(null) // null = yeni proje formu
 
@@ -354,6 +380,9 @@ function closeAgent() {
   if (leaveAgent()) selected.value = null
 }
 
+/** Secili ajan sahnede durur, izleyiciye bakar, isini balonda yazar; panel kapaninca akisina doner. */
+watch(selected, key => scene.value?.focusAgent(key))
+
 function openBoard(s: BoardSnapshot) {
   if (selected.value && !leaveAgent()) return
   selected.value = null
@@ -384,7 +413,8 @@ function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
   if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
   if (e.key === 'Escape') {
-    if (settings.value) settings.value = false
+    if (bell.value) bell.value = false
+    else if (settings.value) settings.value = false
     else if (jobs.value) jobs.value = false
     else if (runPanel.value) runPanel.value = false
     else if (projectPanel.value) projectPanel.value = false
@@ -399,16 +429,22 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 's' || e.key === 'S') toggleSettings()
   if (e.key === 'i' || e.key === 'I') toggleJobs()
 }
-onMounted(() => {
-  window.addEventListener('keydown', onKey)
-  boardTimer = setInterval(() => { if (board.value) scene.value?.publishBoard() }, 1500)
+function bootData() {
   void loadTeam()
   void loadProviders()
   void loadOverview()
   void loadRuns()
   void loadProjects()
+  clearInterval(overviewTimer)
   overviewTimer = setInterval(() => { void loadOverview(); void loadRuns(); void loadProjects() }, 5000)
+}
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  boardTimer = setInterval(() => { if (board.value) scene.value?.publishBoard() }, 1500)
+  if (loggedIn.value) bootData()
 })
+/** Oturum dustu (401 ya da cikis): sayaclar durur, giris ekrani gelir. */
+watch(loggedIn, v => { if (!v) { clearInterval(overviewTimer); bell.value = false; closeOthers(); runPanel.value = false; projectPanel.value = false } })
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearInterval(boardTimer); clearInterval(overviewTimer) })
 
 const STATUS_LABEL: Record<FeedStatus, string> = {
@@ -519,17 +555,33 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 }
 .rail-all b { margin-left: 6px; color: #d9b98f; }
 
-/* ---- Sahne ustu: sari yapiskan not ---- */
-.sticky {
-  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); max-width: min(720px, calc(100% - 40px));
-  display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #f6e2a0; color: #23283a; border-radius: 3px;
-  box-shadow: 0 3px 0 #b8964a, 0 8px 16px rgba(0,0,0,0.4); font-size: 12px; z-index: 2;
+
+/* ---- Ust bar: bildirim zili ve profil ---- */
+.bell-wrap { position: relative; }
+.bell-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; }
+.bell-btn.alert { border-color: #d23b3b; }
+.bell-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); width: 380px; max-height: 60vh; overflow: auto; z-index: 20;
+  background: #ede9dc; color: #23283a; border: 4px solid #6b4a2b; border-radius: 6px; box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column; padding: 8px;
 }
-.sticky .bell { font-size: 14px; }
-.sticky-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sticky .kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; background: #23283a; color: #f6e2a0; }
-.sticky .kind.decision { background: #9c1f1f; color: #fff; }
-.sticky-go { flex: none; font: inherit; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 4px; background: #23283a; color: #fff; border: none; cursor: pointer; }
+.bell-head { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #4a5068; padding: 4px 6px 8px; }
+.bell-head b { margin-left: 6px; color: #9c1f1f; }
+.bell-empty { margin: 0; padding: 8px 6px 10px; font-size: 12px; color: #6b7285; line-height: 1.5; }
+.bell-item {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; text-align: left; font: inherit; font-size: 12px; cursor: pointer;
+  padding: 8px 8px; margin-bottom: 4px; background: #f6e2a0; color: #23283a; border: none; border-radius: 3px; box-shadow: 0 2px 0 #b8964a;
+}
+.bell-item:hover { background: #fbeab0; }
+.bell-item .kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; background: #23283a; color: #f6e2a0; }
+.bell-item .kind.decision { background: #9c1f1f; color: #fff; }
+.bell-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bell-item .go { font-weight: 700; white-space: nowrap; }
+.profile { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 2px; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface-2); }
+.profile .avatar { width: 22px; height: 22px; border-radius: 50%; background: #d9a13a; color: #141413; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.profile .who { font-size: 12px; color: var(--ink); }
+.profile .out { font: inherit; font-size: 12px; background: transparent; color: var(--ink-3); border: none; cursor: pointer; padding: 0 4px; }
+.profile .out:hover { color: #f0a0a0; }
 
 /* ---- Sag alt: ekip pusulasi, yari saydam ---- */
 .compass {

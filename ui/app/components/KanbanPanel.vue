@@ -7,7 +7,7 @@ export type BoardSnapshot = ReturnType<World['board']['snapshot']>
 
 <script setup lang="ts">
 import type { TaskState } from '~/scene/contract'
-import type { InboxItem, RunDetail, RunStatus, RunSummary } from '~/api/types'
+import type { InboxItem, ProjectCard, RunDetail, RunStatus, RunSummary } from '~/api/types'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL } from '~/api/labels'
 import { useApiClient } from '~/api/client'
 
@@ -25,14 +25,27 @@ const api = useApiClient()
 
 const ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'awaitingApproval', 'paused'])
 const runs = ref<RunSummary[]>([])
+const projects = ref<ProjectCard[]>([])
 const tabRun = ref<string | null>(null) // null = sahne
+
+/** Sekmeler proje bazinda gruplu (kullanici istegi 2026-09-19): baslik = proje adi, altinda o projenin aktif isleri. */
+const groups = computed(() => {
+  const byKey = new Map<string, { key: string; title: string; runs: RunSummary[] }>()
+  for (const r of runs.value) {
+    const k = r.project ?? ''
+    if (!byKey.has(k)) byKey.set(k, { key: k, title: projects.value.find(p => p.key === k)?.title ?? (k || 'Projesiz'), runs: [] })
+    byKey.get(k)!.runs.push(r)
+  }
+  return [...byKey.values()].sort((a, b) => a.title.localeCompare(b.title, 'tr'))
+})
 const runDetail = ref<RunDetail | null>(null)
 let runsTimer: ReturnType<typeof setInterval> | undefined
 let detailTimer: ReturnType<typeof setInterval> | undefined
 
 async function loadRuns() {
   try {
-    const all = await api.get<RunSummary[]>('/api/v1/runs?limit=50')
+    const [all, ps] = await Promise.all([api.get<RunSummary[]>('/api/v1/runs?limit=50'), api.get<ProjectCard[]>('/api/v1/projects').catch(() => projects.value)])
+    projects.value = ps
     runs.value = all.filter(r => ACTIVE.has(r.status))
     if (tabRun.value && !runs.value.some(r => r.id === tabRun.value)) {
       // Sekmesi acik calisma bitti: sekme kalsin, detay son halini gostersin; listeye 'bitti' diye eklenir.
@@ -144,9 +157,12 @@ function toggle(id: string) {
       <!-- Sekmeler: Sahne (canli olay akisi) + aktif calismalar (durumdan turetilir). -->
       <nav class="tabs" role="tablist" aria-label="Pano">
         <button type="button" role="tab" :aria-selected="tabRun === null" :class="{ on: tabRun === null }" @click="selectTab(null)">Sahne</button>
-        <button v-for="r in runs" :key="r.id" type="button" role="tab" :aria-selected="tabRun === r.id" :class="{ on: tabRun === r.id }" :title="`${r.label} · ${RUN_STATUS_LABEL[r.status]}`" @click="selectTab(r.id)">
-          <span class="dot" :class="r.status" /> {{ r.label }}
-        </button>
+        <template v-for="g in groups" :key="g.key">
+          <span class="group">{{ g.title }}</span>
+          <button v-for="r in g.runs" :key="r.id" type="button" role="tab" :aria-selected="tabRun === r.id" :class="{ on: tabRun === r.id }" :title="`${g.title} › ${r.label} · ${RUN_STATUS_LABEL[r.status]}`" @click="selectTab(r.id)">
+            <span class="dot" :class="r.status" /> {{ r.label }}
+          </button>
+        </template>
         <span v-if="!runs.length" class="sub">aktif çalışma yok</span>
         <button v-if="tabRun" type="button" class="open" @click="emit('open', tabRun)">Çalışmayı aç →</button>
       </nav>
@@ -250,6 +266,7 @@ h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: upperca
 .tabs .dot.paused { background: #a889e6; }
 .tabs .open { margin-left: auto; font-weight: 700; color: #1f5f93; }
 .tabs .sub { font-size: 11px; color: #6b7285; padding: 6px 4px; }
+.tabs .group { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6b4a2b; padding: 0 4px 0 10px; align-self: center; border-left: 2px solid #b9ad92; }
 .tabnote { margin: 0 0 10px; }
 .cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 1fr); gap: 10px; }
 .col { background: rgba(0,0,0,0.04); border-radius: 6px; padding: 6px; min-height: 160px; }

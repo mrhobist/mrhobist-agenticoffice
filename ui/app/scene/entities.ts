@@ -42,7 +42,8 @@ export class Agent {
   state: AgentState = 'idle'
   note: string | null = null
   seated: SeatDef | null = null
-  bubble: { kind: BubbleKind; until: number; text?: string } | null = null
+  /** `card`: kagit kutucuk (odak): coklu satir, sprite balonuna sigmayan metin (ajanin isleri). */
+  bubble: { kind: BubbleKind; until: number; text?: string; card?: string[] } | null = null
   /** Kuyruk arka uctan gelen bir komutla temizlenir; ambient eylemler bu bayragi tasir. */
   queue: Action[] = []
   ambient = false
@@ -53,6 +54,10 @@ export class Agent {
   target: Pt | null = null
   /** Kapidan cikti: cizilmez, ambient almaz. */
   offstage = false
+  /** Kullanici tikladi: hareket durur, izleyiciye bakar, balon acik kalir; ambient almaz. */
+  frozen = false
+  /** Su an yaptigi is: calisma etiketi + gorev (agent.state olayindan). Balon ve pusula okur. */
+  job: string | null = null
   /** Su an tuttugu/hedefledigi durak (kapasite sayimi icin). */
   spot: string | null = null
   /** Ambient disari cikista donus zamani; arka uc komutuyla cikanda null (kendi donmez). */
@@ -97,6 +102,7 @@ export class Agent {
 
   update(dt: number, now: number, nav: NavGrid): void {
     if (this.bubble && now > this.bubble.until) this.bubble = null
+    if (this.frozen) return // dondu: kuyruk bekler, balon kalir
 
     if (!this.current) {
       this.current = this.queue.shift() ?? null
@@ -245,6 +251,7 @@ export class Agent {
 
   drawBubble(ctx: CanvasRenderingContext2D, sprites: Sprites, now: number): void {
     if (!this.bubble || this.offstage) return
+    if (this.bubble.card) { this.drawCard(ctx, this.bubble.card); return }
     const meta = sprites.atlas.fx.bubble
     const x = this.pos.x + 20
     const y = this.headY() - 2
@@ -262,6 +269,49 @@ export class Agent {
     const bw = meta.frameW / sprites.worldScale
     const bh = meta.frameH / sprites.worldScale
     ctx.fillText(glyph, x, y - bh * 0.56 - 1, bw - 10)
+  }
+
+  /** Kafa ustunde kagit kutucuk: ilk satir baslik (kalin), digerleri isler. Sahne kagidiyla ayni renkler. */
+  private drawCard(ctx: CanvasRenderingContext2D, lines: string[]): void {
+    const font = '7px "Segoe UI", system-ui, sans-serif'
+    const maxW = 120
+    ctx.font = font
+    const wrapped: Array<{ t: string; bold: boolean }> = []
+    lines.forEach((line, i) => {
+      ctx.font = (i === 0 ? 'bold ' : '') + font
+      const words = line.split(' ')
+      let cur = ''
+      for (const w of words) {
+        const next = cur ? `${cur} ${w}` : w
+        if (ctx.measureText(next).width > maxW - 10 && cur) { wrapped.push({ t: cur, bold: i === 0 }); cur = w }
+        else cur = next
+      }
+      if (cur) wrapped.push({ t: cur, bold: i === 0 })
+    })
+    const lh = 9
+    const w = maxW
+    const h = wrapped.length * lh + 8
+    const x = Math.round(this.pos.x - w / 2)
+    const y = Math.round(this.headY() - h - 10)
+    ctx.save()
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'
+    ctx.fillRect(x + 2, y + 3, w, h)
+    ctx.fillStyle = '#ede9dc'
+    ctx.fillRect(x, y, w, h)
+    ctx.strokeStyle = '#6b4a2b'
+    ctx.lineWidth = 1.5
+    ctx.strokeRect(x, y, w, h)
+    // kuyruk
+    ctx.fillStyle = '#ede9dc'
+    ctx.beginPath(); ctx.moveTo(this.pos.x - 4, y + h); ctx.lineTo(this.pos.x + 4, y + h); ctx.lineTo(this.pos.x, y + h + 5); ctx.closePath(); ctx.fill(); ctx.stroke()
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    wrapped.forEach((l, i) => {
+      ctx.font = (l.bold ? 'bold ' : '') + font
+      ctx.fillStyle = l.bold ? '#23283a' : '#4a5068'
+      ctx.fillText(l.t, x + 5, y + 4 + i * lh)
+    })
+    ctx.restore()
   }
 }
 

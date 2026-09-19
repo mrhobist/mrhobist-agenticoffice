@@ -1,5 +1,6 @@
 import type { FeedStatus, SceneEvent } from './contract'
 import { EVENT_TYPES } from './contract'
+import { tokenQuery } from '~/composables/useAuth'
 
 /**
  * Olay kaynagi. Once Api SSE denenir; baglanti kurulamazsa ayni sekildeki olaylari
@@ -26,7 +27,7 @@ export function connectFeed(
   const open = () => {
     if (stopped) return
     onStatus(live ? 'reconnecting' : 'connecting')
-    es = new EventSource(`${apiBase}/api/v1/scene/events`)
+    es = new EventSource(`${apiBase}/api/v1/scene/events${tokenQuery()}`)
     es.onopen = () => { live = true; stopMock(); onStatus('live') }
     es.onerror = () => {
       // EventSource kendi yeniden baglanir; biz bu arada sahneyi mock ile besleriz.

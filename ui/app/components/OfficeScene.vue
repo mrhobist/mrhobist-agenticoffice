@@ -87,7 +87,13 @@ function publishBoard() {
 function setAttention(n: number) {
   if (world) world.board.attention = n
 }
-defineExpose({ publishBoard, setAttention })
+/** Ajana tiklandi: dursun, izleyiciye baksin, isini balonda yazsin. `null` serbest birakir. */
+function focusAgent(key: string | null) {
+  if (!world) return
+  if (key) world.focus(key)
+  else world.unfocus()
+}
+defineExpose({ publishBoard, setAttention, focusAgent })
 
 function fit() {
   const el = host.value

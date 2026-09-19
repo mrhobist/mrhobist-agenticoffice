@@ -45,6 +45,7 @@ public sealed partial class ProblemMapping(ILogger<ProblemMapping> logger) : IEx
     private static int StatusCode(string errorCode) => errorCode switch
     {
         ErrorCodes.ConfigFileInvalid or ErrorCodes.KnowledgeInvalidKey => StatusCodes.Status500InternalServerError,
+        ErrorCodes.AuthInvalidCredentials or ErrorCodes.AuthRequired => StatusCodes.Status401Unauthorized,
         ErrorCodes.ConfigFileMissing or ErrorCodes.WorkflowNotFound or ErrorCodes.ProjectNotFound => StatusCodes.Status404NotFound,
         ErrorCodes.AgentExists or ErrorCodes.AgentInUse or ErrorCodes.WorkflowDefaultProtected
             or ErrorCodes.RunNotAwaitingApproval or ErrorCodes.RunNotRetryable or ErrorCodes.RunNotCancellable
@@ -55,7 +56,7 @@ public sealed partial class ProblemMapping(ILogger<ProblemMapping> logger) : IEx
     private static Microsoft.AspNetCore.Mvc.ProblemDetails Problem(int status, string code, string detail, HttpContext ctx) => new()
     {
         Status = status,
-        Title = status switch { 400 => "Bad Request", 404 => "Not Found", 409 => "Conflict", 502 => "Bad Gateway", 503 => "Service Unavailable", _ => "Error" },
+        Title = status switch { 400 => "Bad Request", 401 => "Unauthorized", 404 => "Not Found", 409 => "Conflict", 502 => "Bad Gateway", 503 => "Service Unavailable", _ => "Error" },
         Detail = detail,
         Extensions = { ["errorCode"] = code, ["traceId"] = ctx.TraceIdentifier },
     };

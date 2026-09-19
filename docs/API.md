@@ -101,6 +101,16 @@ Değişmezler (400): tam 1 `analyze` ve ilk sırada (`workflow.analyze_count`, `
 `GET /api/v1/scene`, `GET /api/v1/scene/events` (SSE), `POST /api/v1/scene/commands` — bkz.
 `docs/SCENE.md`. Faz 5'te `RunService` aynı olayları yayımlar.
 
+## Giriş
+
+Tüm `/api/v1/*` uçları `Authorization: Bearer <jwt>` ister; `auth/login`, `jobs/health` ve `OPTIONS` hariç.
+Kimliksiz istek **401 `auth.required`**. SSE yalnız `scene/events?access_token=<jwt>` ile.
+
+| Uç | Dönen | Not |
+|---|---|---|
+| `POST /api/v1/auth/login` `{ username, password }` | `LoginResponse` `{ token, expiresAt, user: { id, name, role } }` | Bugün gömülü `admin/admin` (`docs/DOMAIN.md` → Giriş). Yanlışsa **401 `auth.invalid_credentials`** |
+| `GET /api/v1/auth/me` | `UserInfo` `{ id, name, role }` | Belirtecin claim'lerinden |
+
 ## Sağlayıcı kimliği
 
 | Uç | Dönen | Not |

@@ -100,7 +100,7 @@ export interface BoardTask {
 }
 
 export type SceneEvent =
-  | { type: 'agent.state'; data: { agent: string; state: AgentState; note?: string } }
+  | { type: 'agent.state'; data: { agent: string; state: AgentState; note?: string; run?: string; runLabel?: string; task?: string } }
   | { type: 'agent.say'; data: { agent: string; kind: BubbleKind; text?: string; ms?: number } }
   | { type: 'agent.goto'; data: { agent: string; spot: string } }
   | { type: 'agent.home'; data: { agent: string } }
