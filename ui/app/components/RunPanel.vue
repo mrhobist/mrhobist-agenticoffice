@@ -436,7 +436,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
 <style scoped>
 .wrap { position: absolute; inset: 0; background: rgba(10, 12, 18, 0.55); display: flex; justify-content: flex-end; }
 .panel {
-  background: #ede9dc; color: #23283a; border-left: 6px solid #3d5a80;
+  background: #ede9dc; color: #23283a; border-left: 6px solid #6b4a2b;
   width: min(620px, 100%); height: 100%; overflow: auto; padding: 16px 18px;
   box-shadow: -20px 0 60px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 12px;
 }

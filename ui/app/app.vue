@@ -27,16 +27,33 @@
       <button type="button" @click="loadProviders(true)">Yeniden kontrol et</button>
     </div>
 
-    <!-- Senden cevap/karar bekleyen is varsa: gozden kacmasin diye ayri serit. Ilk madde + kalan sayi; "Cevapla" o calismayi acar. -->
-    <div v-if="firstPending" class="notice ask" role="alert">
-      <span class="bell" aria-hidden="true">🔔</span>
-      <strong>Senden cevap bekleniyor ({{ inboxCount }}):</strong>
-      <span><span class="kind" :class="firstPending.kind">{{ INBOX_KIND_LABEL[firstPending.kind] }}</span> «{{ firstPending.label }}» — {{ firstPending.title }}<template v-if="inboxCount > 1"> · ve {{ inboxCount - 1 }} iş daha</template></span>
-      <button type="button" class="primary" @click="openRun(firstPending.runId)">Cevapla</button>
-      <button type="button" @click="toggleJobs">Tümünü gör</button>
-    </div>
-
     <div class="main">
+      <!-- Sol ray: ahsap; calismalar kagit kart (proje varligi gelince kartlar proje olur, isler icine girer). -->
+      <aside class="rail" aria-label="Çalışmalar">
+        <div class="rail-head">
+          <span class="rail-title">Çalışmalar</span>
+          <span class="rail-count">{{ railRuns.length }}</span>
+          <button type="button" class="rail-add" aria-label="Yeni çalışma" title="Yeni çalışma (N)" @click="openRun('')">+</button>
+        </div>
+        <button
+          v-for="(r, i) in railRuns"
+          :key="r.id"
+          type="button"
+          class="card"
+          :class="[r.status, { on: runPanel && runId === r.id }]"
+          :style="{ transform: `rotate(${(i % 3) - 1 * 0.6}deg)` }"
+          @click="openRun(r.id)"
+        >
+          <span class="pin" :class="r.status" aria-hidden="true" />
+          <strong class="card-title">{{ r.label }}</strong>
+          <span class="card-meta">{{ RUN_STATUS_LABEL[r.status] }} · {{ fmtCost(r.totalCostUsd) }}</span>
+          <span v-if="pendingOf(r.id)" class="card-ask"><span aria-hidden="true">🔔</span> {{ INBOX_KIND_LABEL[pendingOf(r.id)!.kind] }}: {{ pendingOf(r.id)!.title }}</span>
+          <span v-else-if="r.detail" class="card-detail">{{ r.detail }}</span>
+        </button>
+        <p v-if="!railRuns.length" class="rail-empty">Aktif çalışma yok. Brief ver, analist planı çıkarsın.</p>
+        <button type="button" class="rail-all" @click="toggleJobs">Tüm işler <b v-if="overview">{{ overview.total }}</b></button>
+      </aside>
+
       <main class="stage">
         <OfficeScene
           ref="scene"
@@ -46,6 +63,24 @@
           @select="selectAgent"
           @board="openBoard"
         />
+
+        <!-- Senden cevap/karar bekleyen is: sahnenin ustunde sari yapiskan not. "Cevapla" o calismayi acar. -->
+        <div v-if="firstPending" class="sticky" role="alert">
+          <span class="bell" aria-hidden="true">🔔</span>
+          <span class="sticky-text"><strong>{{ firstPending.label }}</strong> · <span class="kind" :class="firstPending.kind">{{ INBOX_KIND_LABEL[firstPending.kind] }}</span> {{ firstPending.title }}<template v-if="inboxCount > 1"> · +{{ inboxCount - 1 }}</template></span>
+          <button type="button" class="sticky-go" @click="openRun(firstPending.runId)">Cevapla</button>
+        </div>
+
+        <!-- Ekip pusulasi: sahnede kim ne yapiyor; tiklaninca ajan paneli. Yari saydam, sahneyi kapatmaz. -->
+        <div v-if="!selected && !runPanel && !settings && !jobs && !board" class="compass" aria-label="Ekip">
+          <div class="compass-title">Ekip</div>
+          <button v-for="a in agents" :key="a.key" type="button" class="compass-row" :title="teamSummary(a.key)" @click="selectAgent(a.key)">
+            <span class="dot" :style="{ background: ROLE_HEX[a.key] }" />
+            <span class="name">{{ a.name }}</span>
+            <span class="state" :style="{ color: STATE_HEX[a.state as AgentState] }">{{ a.note || STATE_LABEL[a.state as AgentState] }}</span>
+          </button>
+          <p v-if="teamState === 'error'" class="compass-warn">Ekip listesi alınamadı: {{ teamError }}</p>
+        </div>
 
         <!-- Buyuk pano: sahnedeki Kanban'a tiklaninca ya da B. Ajan paneliyle ayni anda acilmaz. -->
         <KanbanPanel v-if="board" :board="board" :inbox="overview?.inbox ?? []" @close="board = null" @open="openRun" />
@@ -69,25 +104,6 @@
           @saved="onSaved"
         />
       </main>
-
-      <aside class="side">
-        <h2>Ekip</h2>
-        <ul class="agents">
-          <li v-for="a in agents" :key="a.key" :class="{ on: a.key === selected }" @click="selectAgent(a.key)">
-            <span class="dot" :style="{ background: ROLE_HEX[a.key] }" />
-            <span class="name">{{ a.name }}</span>
-            <span class="state" :style="{ color: STATE_HEX[a.state as AgentState] }">{{ STATE_LABEL[a.state as AgentState] }}</span>
-            <span v-if="a.note" class="note">{{ a.note }}</span>
-            <span v-if="teamMeta(a.key)" class="meta" :title="teamSummary(a.key)">{{ teamMeta(a.key) }}</span>
-          </li>
-        </ul>
-        <p v-if="teamState === 'missing'" class="hint warn">Api'de ajan uçları henüz hazır değil; model ataması Api açılınca yapılır.</p>
-        <p v-else-if="teamState === 'error'" class="hint warn">Ekip listesi alınamadı: {{ teamError }}</p>
-        <p class="hint">
-          Sahne <code>config/scene.json</code>'dan gelir; olaylar <code>/api/v1/scene/events</code> ile akar.
-          Api yoksa sahte yönetmen çalışır. Bir ajana tıklayınca model ataması açılır.
-        </p>
-      </aside>
     </div>
   </div>
 </template>
@@ -102,10 +118,10 @@ import LimitsBar from '~/components/LimitsBar.vue'
 import JobsPanel from '~/components/JobsPanel.vue'
 import type { Hud } from '~/scene/world'
 import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
-import type { AgentDetail, AgentListItem, InboxItem, ProviderStatus, RunsOverview } from '~/api/types'
+import type { AgentDetail, AgentListItem, InboxItem, ProviderStatus, RunStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { INBOX_KIND_LABEL, providerLabel } from '~/api/labels'
+import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel } from '~/api/labels'
 
 const hud = ref<Hud>({ stage: '—', task: '—', round: 0 })
 const status = ref<FeedStatus>('connecting')
@@ -141,16 +157,28 @@ function teamItem(key: string): AgentListItem | undefined {
   return team.value?.find(a => a.key === key)
 }
 
-/** Ekip satirinin alt bilgisi: saglayici · model; sahnede olup is akisinda olmayanlar icin not. */
-function teamMeta(key: string): string | null {
-  if (!team.value) return null
+/** Pusula satirinin ipucu: ozet + saglayici · model. */
+function teamSummary(key: string): string | undefined {
   const a = teamItem(key)
   if (!a) return 'iş akışında rolü yok'
-  return `${providerLabel(a.provider)} · ${a.model ?? 'varsayılan model'}`
+  return `${a.summary} — ${providerLabel(a.provider)} · ${a.model ?? 'varsayılan model'}`
 }
 
-function teamSummary(key: string): string | undefined {
-  return teamItem(key)?.summary
+// ------------------------------------------------------------------ sol ray: aktif calismalar (GET /runs, 5 s)
+
+const RAIL_ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'awaitingApproval', 'paused'])
+const runsList = ref<RunSummary[]>([])
+/** Aktif olanlar + senden bir sey bekleyen dusmus calismalar; en fazla 8 kart, kalani "Tum isler". */
+const railRuns = computed(() => {
+  const inboxIds = new Set((overview.value?.inbox ?? []).map(i => i.runId))
+  return runsList.value.filter(r => RAIL_ACTIVE.has(r.status) || inboxIds.has(r.id)).slice(0, 8)
+})
+function pendingOf(id: string): InboxItem | undefined {
+  return overview.value?.inbox.find(i => i.runId === id)
+}
+function fmtCost(v: number): string { return v ? `$${v.toFixed(2)}` : '$0' }
+async function loadRuns() {
+  try { runsList.value = await api.get<RunSummary[]>('/api/v1/runs?limit=50') } catch { /* ray eski kalir */ }
 }
 
 function sceneNameOf(key: string): string {
@@ -316,7 +344,8 @@ onMounted(() => {
   void loadTeam()
   void loadProviders()
   void loadOverview()
-  overviewTimer = setInterval(() => { void loadOverview() }, 5000)
+  void loadRuns()
+  overviewTimer = setInterval(() => { void loadOverview(); void loadRuns() }, 5000)
 })
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearInterval(boardTimer); clearInterval(overviewTimer) })
 
@@ -385,25 +414,68 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .main { flex: 1; min-height: 0; display: flex; }
 .stage { flex: 1; min-width: 0; position: relative; }
 
-.side {
-  width: 260px; flex: none; border-left: 1px solid var(--rule); background: var(--surface);
-  padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow: auto;
+/* ---- Sol ray: sahnenin ahsabi; calismalar igneli kagit kart ---- */
+.rail {
+  width: 232px; flex: none; padding: 14px 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; overflow: auto;
+  background: linear-gradient(90deg, #4e3620, #6b4a2b 60%, #5a3f24); border-right: 6px solid #3d2a17;
+  box-shadow: 10px 0 30px rgba(0,0,0,0.35);
 }
-.side h2 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); }
-.agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.agents li {
-  display: grid; grid-template-columns: 10px 1fr auto; column-gap: 8px; align-items: center;
-  padding: 6px 8px; border-radius: var(--r-ctl); cursor: pointer; border: 1px solid transparent;
+.rail-head { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
+.rail-title { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #f0dcc0; }
+.rail-count { font-size: 11px; color: #d9b98f; }
+.rail-add {
+  margin-left: auto; width: 24px; height: 24px; border-radius: 6px; background: #d9a13a; border: 2px solid #3d2a17; color: #141413;
+  font: inherit; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer;
 }
-.agents li:hover { background: var(--surface-2); }
-.agents li.on { border-color: var(--rule); background: var(--surface-2); }
-.dot { width: 10px; height: 10px; border-radius: 2px; }
-.name { font-size: 13px; color: var(--ink); }
-.state { font-size: 11px; }
-.note { grid-column: 2 / span 2; font-size: 11px; color: var(--ink-3); }
-.meta { grid-column: 2 / span 2; font-size: 10px; color: var(--ink-3); opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hint { margin: auto 0 0; font-size: 11px; color: var(--ink-3); line-height: 1.5; }
-.hint + .hint { margin-top: 8px; }
-.hint.warn { color: #f0c26a; }
-.hint code { font-size: 10px; color: var(--ink-2); }
+.card {
+  position: relative; display: flex; flex-direction: column; gap: 4px; text-align: left; font: inherit; cursor: pointer;
+  padding: 12px 12px 10px; background: #ede9dc; color: #23283a; border: none; border-radius: 3px;
+  box-shadow: 0 3px 0 #b9ad92, 0 8px 14px rgba(0,0,0,0.35);
+}
+.card:hover { background: #f3efe3; }
+.card.on { outline: 3px solid #f6e2a0; }
+.card.completed, .card.cancelled { opacity: 0.8; }
+.pin { position: absolute; left: 50%; top: -6px; width: 12px; height: 12px; border-radius: 50%; transform: translateX(-50%); background: #7b87a0; border: 2px solid #4a5068; }
+.pin.running { background: #4fa3e0; border-color: #1f5f93; }
+.pin.awaitingApproval { background: #f3c34a; border-color: #8a6d2a; }
+.pin.paused { background: #a889e6; border-color: #5b3fa0; }
+.pin.failed, .pin.interrupted, .pin.budgetExceeded { background: #d23b3b; border-color: #7a1f1f; }
+.card-title { font-size: 13px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.card-meta { font-size: 11px; color: #4a5068; }
+.card-ask { font-size: 11px; font-weight: 700; color: #7a5a00; background: #f6e2a0; padding: 3px 8px; border-radius: 3px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-detail { font-size: 10px; color: #6b7285; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-empty { margin: 0; font-size: 11px; color: #d9b98f; line-height: 1.5; padding: 0 2px; }
+.rail-all {
+  margin-top: auto; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 8px 10px; border-radius: 4px;
+  background: rgba(0,0,0,0.25); color: #f0dcc0; border: 1px solid #3d2a17;
+}
+.rail-all b { margin-left: 6px; color: #d9b98f; }
+
+/* ---- Sahne ustu: sari yapiskan not ---- */
+.sticky {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); max-width: min(720px, calc(100% - 40px));
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #f6e2a0; color: #23283a; border-radius: 3px;
+  box-shadow: 0 3px 0 #b8964a, 0 8px 16px rgba(0,0,0,0.4); font-size: 12px; z-index: 2;
+}
+.sticky .bell { font-size: 14px; }
+.sticky-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sticky .kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; background: #23283a; color: #f6e2a0; }
+.sticky .kind.decision { background: #9c1f1f; color: #fff; }
+.sticky-go { flex: none; font: inherit; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 4px; background: #23283a; color: #fff; border: none; cursor: pointer; }
+
+/* ---- Sag alt: ekip pusulasi, yari saydam ---- */
+.compass {
+  position: absolute; right: 14px; bottom: 14px; width: 232px; padding: 10px 10px 8px; border-radius: 10px;
+  background: rgba(21,24,32,0.88); border: 1px solid var(--rule); display: flex; flex-direction: column; gap: 2px; z-index: 2;
+}
+.compass-title { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); padding: 0 4px 4px; }
+.compass-row {
+  display: grid; grid-template-columns: 9px 1fr auto; column-gap: 8px; align-items: center; text-align: left;
+  font: inherit; font-size: 11px; color: var(--ink); background: transparent; border: none; border-radius: 6px; padding: 4px 6px; cursor: pointer;
+}
+.compass-row:hover { background: var(--surface-2); }
+.compass .dot { width: 9px; height: 9px; border-radius: 2px; }
+.compass .name { font-size: 12px; }
+.compass .state { font-size: 11px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compass-warn { margin: 4px 4px 0; font-size: 10px; color: #f0c26a; }
 </style>
