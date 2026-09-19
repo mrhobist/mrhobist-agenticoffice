@@ -103,7 +103,8 @@ function fit() {
 
 function frame(now: number) {
   raf = requestAnimationFrame(frame)
-  if (!world || !cv.value) return
+  // Ilk karede tuval henuz olculmemis olabilir (0x0): drawImage firlatir.
+  if (!world || !cv.value || cv.value.width === 0 || cv.value.height === 0) return
   step(now)
 
   const ctx = cv.value.getContext('2d')!
