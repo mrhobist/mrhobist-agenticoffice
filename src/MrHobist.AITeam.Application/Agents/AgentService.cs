@@ -27,15 +27,19 @@ public sealed record AgentDetail(
     string Prompt,
     string ComposedPrompt);
 
-/// <summary>PUT govdesi; anahtar yoldan gelir. <see cref="Provider"/> metin gelir ki bilinmeyen deger
-/// JSON hatasi degil <c>agent.invalid_provider</c> olsun ('claude' sessizce cevrilmez).</summary>
+/// <summary>
+/// PUT govdesi; anahtar yoldan gelir. TUM alanlar tasinir: eksik/null liste ya da metin 400 <c>request.invalid</c>
+/// (Api JSON secenekleri nullable notlarina uyar). <c>null</c> yalniz <see cref="Provider"/>, <see cref="Model"/>,
+/// <see cref="CanAsk"/> icin gecerlidir ve "yok / varsayilan" demektir; kismi guncelleme yoktur.
+/// <see cref="Provider"/> metin gelir ki bilinmeyen deger JSON hatasi degil <c>agent.invalid_provider</c> olsun.
+/// </summary>
 public sealed record UpdateAgentRequest(
     string Name,
     string Summary,
-    IReadOnlyList<string>? OfficeRoles,
+    IReadOnlyList<string> OfficeRoles,
     string? Provider,
     string? Model,
-    IReadOnlyList<string>? Includes,
+    IReadOnlyList<string> Includes,
     string? CanAsk,
     string Prompt);
 
@@ -79,13 +83,13 @@ public sealed class AgentService(IAgentStore store) : IAgentService
         var updated = current with
         {
             Name = string.IsNullOrWhiteSpace(request.Name) ? current.Name : request.Name.Trim(),
-            Summary = request.Summary?.Trim() ?? "",
-            OfficeRoles = request.OfficeRoles ?? current.OfficeRoles,
-            Provider = ParseProvider(request.Provider),
+            Summary = request.Summary.Trim(),
+            OfficeRoles = request.OfficeRoles,
+            Provider = Providers.Parse(request.Provider),
             Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model.Trim(),
-            Includes = request.Includes ?? [],
+            Includes = request.Includes,
             CanAsk = string.IsNullOrWhiteSpace(request.CanAsk) ? null : request.CanAsk.Trim(),
-            Prompt = request.Prompt ?? "",
+            Prompt = request.Prompt,
         };
 
         // Once ekip butunu dogrulanir: yazilan dosya bir sonraki yuklemede patlamamali.
@@ -107,18 +111,6 @@ public sealed class AgentService(IAgentStore store) : IAgentService
     {
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
         return Find(team, key).ComposePrompt(team.Knowledge);
-    }
-
-    private static Provider? ParseProvider(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return null;
-        }
-
-        return Enum.TryParse<Provider>(text.Trim(), ignoreCase: true, out var p)
-            ? p
-            : throw new DomainException(ErrorCodes.AgentInvalidProvider, $"Bilinmeyen provider '{text}' (anthropic | nvidia | ollama).");
     }
 
     private static Agent Find(Team team, string key)

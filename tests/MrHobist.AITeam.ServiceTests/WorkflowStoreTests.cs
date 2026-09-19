@@ -34,6 +34,16 @@ public sealed class WorkflowStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Yorum_onceden_yuklenmemis_olsa_da_korunur()
+    {
+        // Api yeni acilmis: hic GET yapilmadan PUT gelir. Yorum silinmemeli.
+        var wf = await new JsonWorkflowStore(_fx.Paths).LoadAsync(CancellationToken.None);
+        var fresh = new JsonWorkflowStore(_fx.Paths);
+        await fresh.SaveAsync(wf with { MaxReviewRounds = 7 }, CancellationToken.None);
+        Assert.Contains("\"_comment\"", await File.ReadAllTextAsync(_fx.Paths.WorkflowFile), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Servis_bozuk_akisi_yazmaz()
     {
         var service = new WorkflowService(new JsonWorkflowStore(_fx.Paths));

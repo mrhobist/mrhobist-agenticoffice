@@ -1,7 +1,6 @@
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Agents;
 using MrHobist.AITeam.Application.Workflows;
-using MrHobist.AITeam.Domain;
 using MrHobist.AITeam.Domain.Agents;
 
 namespace MrHobist.AITeam.Api.Config;
@@ -18,22 +17,9 @@ public static class ConfigEndpoints
         g.MapPut("/agents/{key}", (string key, UpdateAgentRequest body, IAgentService s, CancellationToken ct) => s.UpdateAsync(key, body, ct));
         g.MapGet("/knowledge", (IAgentService s, CancellationToken ct) => s.ListKnowledgeAsync(ct));
 
-        // Sorgu parametresi adiyla ve kucuk harfle gelir ("nvidia"); enum baglayici buyuk/kucuk harfe duyarlidir.
-        g.MapGet("/models", (string? provider, IAgentRuntimeService runtime, CancellationToken ct) =>
-        {
-            Provider? p = null;
-            if (!string.IsNullOrWhiteSpace(provider))
-            {
-                if (!Enum.TryParse<Provider>(provider, ignoreCase: true, out var parsed))
-                {
-                    throw new DomainException(ErrorCodes.AgentInvalidProvider, $"Bilinmeyen provider '{provider}' (anthropic | nvidia | ollama).");
-                }
-
-                p = parsed;
-            }
-
-            return runtime.ListModelsAsync(p, ct);
-        });
+        // Sorgu parametresi tel adiyla gelir ("nvidia"); enum baglayici buyuk/kucuk harfe duyarli oldugu icin metin alinir.
+        g.MapGet("/models", (string? provider, IAgentRuntimeService runtime, CancellationToken ct)
+            => runtime.ListModelsAsync(Providers.Parse(provider), ct));
 
         g.MapGet("/workflow", (IWorkflowService s, CancellationToken ct) => s.GetAsync(ct));
         g.MapPut("/workflow", (WorkflowModel body, IWorkflowService s, CancellationToken ct) => s.UpdateAsync(body, ct));

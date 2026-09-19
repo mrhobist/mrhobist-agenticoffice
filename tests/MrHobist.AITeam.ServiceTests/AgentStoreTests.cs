@@ -61,7 +61,7 @@ public sealed class AgentStoreTests : IDisposable
     {
         var service = new AgentService(new MarkdownAgentStore(_fx.Paths));
         var before = await File.ReadAllTextAsync(Path.Combine(_fx.Paths.AgentsDir, "tester.md"));
-        var req = new UpdateAgentRequest("Testçi", "", null, null, null, ["yok-boyle"], null, "Sen testçisin.");
+        var req = new UpdateAgentRequest("Testçi", "", ["qa"], null, null, ["yok-boyle"], null, "Sen testçisin.");
         var ex = await Assert.ThrowsAsync<DomainException>(() => service.UpdateAsync("tester", req, CancellationToken.None));
         Assert.Equal(ErrorCodes.AgentUnknownInclude, ex.ErrorCode);
         Assert.Equal(before, await File.ReadAllTextAsync(Path.Combine(_fx.Paths.AgentsDir, "tester.md")));

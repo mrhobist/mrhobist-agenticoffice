@@ -51,7 +51,7 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
             new("name", agent.Name),
             new("summary", agent.Summary),
             new("office_roles", agent.OfficeRoles.Count > 0 ? agent.OfficeRoles : null),
-            new("provider", agent.Provider?.ToString().ToLowerInvariant()),
+            new("provider", agent.Provider is { } p ? Providers.Wire(p) : null),
             new("model", agent.Model),
             new("includes", agent.Includes.Count > 0 ? agent.Includes : null),
             new("can_ask", agent.CanAsk),
@@ -64,26 +64,12 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
     {
         var doc = Frontmatter.Parse(text);
         var m = doc.Meta;
-        var providerText = Frontmatter.GetString(m, "provider");
-        Provider? provider = null;
-        if (!string.IsNullOrWhiteSpace(providerText))
-        {
-            // 'claude' sessizce cevrilmez: sozlesme adi 'anthropic' (docs/API.md).
-            provider = providerText.ToLowerInvariant() switch
-            {
-                "anthropic" => Provider.Anthropic,
-                "nvidia" => Provider.Nvidia,
-                "ollama" => Provider.Ollama,
-                _ => throw new DomainException(ErrorCodes.AgentInvalidProvider, $"{key}: bilinmeyen provider '{providerText}' (anthropic | nvidia | ollama)."),
-            };
-        }
-
         var agent = new Agent(
             key,
             Frontmatter.GetString(m, "name") ?? key,
             Frontmatter.GetString(m, "summary") ?? "",
             Frontmatter.GetList(m, "office_roles"),
-            provider,
+            Providers.Parse(Frontmatter.GetString(m, "provider"), key),
             NullIfEmpty(Frontmatter.GetString(m, "model")),
             Frontmatter.GetList(m, "includes"),
             NullIfEmpty(Frontmatter.GetString(m, "can_ask")),

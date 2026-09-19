@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using MrHobist.AITeam.Application.Abstractions;
 
 namespace MrHobist.AITeam.Api.Scene;
 
@@ -7,11 +8,10 @@ namespace MrHobist.AITeam.Api.Scene;
 public sealed record SceneEvent(string Type, string Json, DateTimeOffset At);
 
 /// <summary>
-/// Bellek ici yayin kanali: her SSE abonesi kendi kuyrugunu alir.
+/// <see cref="ISceneEventPublisher"/>'in bellek ici uygulamasi: her SSE abonesi kendi kuyrugunu alir.
 /// Kalici degildir; sahne kozmetiktir, calisma gecmisi <c>runs/</c> JSONL'dedir.
-/// Faz 5'te <c>RunService</c> ayni kanala yazar; bugun <c>POST /api/v1/scene/commands</c> yazar.
 /// </summary>
-public sealed class SceneEventBus
+public sealed class SceneEventBus : ISceneEventPublisher
 {
     private readonly ConcurrentDictionary<Channel<SceneEvent>, byte> _subscribers = new();
 
@@ -37,8 +37,9 @@ public sealed class SceneEventBus
         }
     }
 
-    public void Publish(SceneEvent evt)
+    public void Publish(string type, string json)
     {
+        var evt = new SceneEvent(type, json, DateTimeOffset.UtcNow);
         foreach (var ch in _subscribers.Keys)
         {
             ch.Writer.TryWrite(evt);

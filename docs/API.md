@@ -21,7 +21,7 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
 |---|---|---|
 | `GET /api/v1/agents` | `AgentListItem[]` | frontmatter özeti; prompt yok |
 | `GET /api/v1/agents/{key}` | `AgentDetail` | `prompt` (gövde) + `composedPrompt` (gövde + alt md'ler; modele giden metin) |
-| `PUT /api/v1/agents/{key}` | `AgentDetail` | tüm alanlar; dosya atomik yazılır; doğrulama hataları 400 |
+| `PUT /api/v1/agents/{key}` | `AgentDetail` | **tüm alanlar zorunlu**, kısmi güncelleme yok: eksik/null liste ya da metin → 400 `request.invalid`; `provider`/`model`/`canAsk` için `null` = "yok / varsayılan". Dosya atomik yazılır; doğrulama hataları 400 |
 | `GET /api/v1/knowledge` | `KnowledgeItem[]` | alt md'ler: `key, title, body` |
 
 ```jsonc

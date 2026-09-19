@@ -1,42 +1,25 @@
 using System.Text.Json;
 using MrHobist.AITeam.Api.Errors;
+using MrHobist.AITeam.Application.Abstractions;
+using MrHobist.AITeam.Domain;
 using MrHobist.AITeam.Infrastructure.Storage;
 
 namespace MrHobist.AITeam.Api.Scene;
 
 /// <summary>
 /// Sahne uclari. Yerlesim <c>config/scene.json</c>'dan oldugu gibi sunulur (tek dogru kaynak),
-/// canli olaylar SSE ile akar, komutlar dogrulanip yayimlanir.
+/// canli olaylar SSE ile akar, komutlar dogrulanip <see cref="ISceneEventPublisher"/> ile yayimlanir.
 /// </summary>
 public static class SceneEndpoints
 {
-    /// <summary>UI'in tanidigi olay turleri. Yeni tur sona eklenir, var olan silinmez (CLAUDE.md §5).</summary>
-    public static readonly IReadOnlySet<string> EventTypes = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "agent.state",   // { agent, state: idle|working|thinking|blocked|waiting|done, note? }
-        "agent.say",     // { agent, kind: talk|ask|alert, text?, ms? }
-        "agent.goto",    // { agent, spot }  -> spots[] icinden
-        "agent.home",    // { agent }
-        "meet",          // { from, to, kind: handoff|ask|reject, ms? }  from, to'nun yanina yurur, konusurlar, doner
-        "board.set",     // { tasks: [{ id, title, stage, state: queued|active|blocked|done }] }
-        "board.move",    // { task, stage, state }
-        "run.stage",     // { stage, task, round }
-        "cat",           // { action: sleep|wander|sit, spot? }
-        "door",          // { state: closed|open }  iki kare; acilan kapi 1.4 s sonra kapanir
-        "agent.leave",   // { agent }  kapiya yurur, disari cikar (sahneden kaybolur)
-        "agent.enter",   // { agent }  kapidan girer, evine yurur
-        "clock.set",     // { hour: 0-24 | null }  pencere manzarasi; null = gercek saat
-        "cafe.special",  // { text: string | null }  kahve bari panosu; null = liste doner
-    };
-
     public static IEndpointRouteBuilder MapScene(this IEndpointRouteBuilder app)
     {
         var g = app.MapGroup("/api/v1");
 
         g.MapGet("/scene", (StoragePaths paths) => ServeJson(paths.ConfigFile("scene.json")));
-                g.MapGet("/scene/events", StreamEvents);
+        g.MapGet("/scene/events", StreamEvents);
 
-        g.MapPost("/scene/commands", async (HttpRequest req, SceneEventBus bus, CancellationToken ct) =>
+        g.MapPost("/scene/commands", async (HttpRequest req, ISceneEventPublisher publisher, SceneEventBus bus, CancellationToken ct) =>
         {
             // Govde elle okunur: bozuk JSON ya da gecersiz UTF-8, 500 degil 400 + errorCode dondurur
             // (LESSONS: sessiz/yanlis hata bicimi saatler kaybettirir).
@@ -61,7 +44,7 @@ public static class SceneEndpoints
                 }
 
                 var type = typeEl.GetString()!;
-                if (!EventTypes.Contains(type))
+                if (!SceneEventTypes.All.Contains(type))
                 {
                     return Problem("scene.command.type_unknown", $"Bilinmeyen olay türü: {type}");
                 }
@@ -71,19 +54,9 @@ public static class SceneEndpoints
                     return Problem("scene.command.data_missing", "Gövdede 'data' nesnesi yok.");
                 }
 
-                string json;
-                try
-                {
-                    json = dataEl.GetRawText();
-                }
-                catch (InvalidOperationException)
-                {
-                    return Problem("scene.command.body_invalid", "Gövde geçerli UTF-8 değil.");
-                }
-
-                var evt = new SceneEvent(type, json, DateTimeOffset.UtcNow);
-                bus.Publish(evt);
-                return Results.Accepted(value: new { accepted = true, subscribers = bus.SubscriberCount, at = evt.At });
+                var at = DateTimeOffset.UtcNow;
+                publisher.Publish(type, dataEl.GetRawText());
+                return Results.Accepted(value: new { accepted = true, subscribers = bus.SubscriberCount, at });
             }
         });
 
@@ -94,7 +67,7 @@ public static class SceneEndpoints
     {
         if (!File.Exists(path))
         {
-            return Problem("config.file_missing", $"Yapılandırma dosyası yok: {Path.GetFileName(path)}", StatusCodes.Status404NotFound);
+            return Problem(ErrorCodes.ConfigFileMissing, $"Yapılandırma dosyası yok: {Path.GetFileName(path)}", StatusCodes.Status404NotFound);
         }
 
         // Dogrulama: bozuk JSON sessizce gecmez (LESSONS: sessiz kabul en kotu hata).
@@ -105,7 +78,7 @@ public static class SceneEndpoints
         }
         catch (JsonException ex)
         {
-            return Problem("config.file_invalid", $"{Path.GetFileName(path)} geçersiz JSON: {ex.Message}", StatusCodes.Status500InternalServerError);
+            return Problem(ErrorCodes.ConfigFileInvalid, $"{Path.GetFileName(path)} geçersiz JSON: {ex.Message}", StatusCodes.Status500InternalServerError);
         }
 
         return Results.Content(text, "application/json");

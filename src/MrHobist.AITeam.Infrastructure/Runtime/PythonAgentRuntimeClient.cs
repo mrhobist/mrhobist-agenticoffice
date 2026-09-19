@@ -51,7 +51,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         var dto = new TurnDto(
             request.SystemPrompt,
             request.Messages.Select(m => new MessageDto(m.Role, m.Content)).ToList(),
-            Wire(request.Provider),
+            Providers.Wire(request.Provider),
             request.Model,
             request.SchemaJson is null ? null : JsonDocument.Parse(request.SchemaJson).RootElement,
             request.MaxTokens,
@@ -90,7 +90,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
 
     public async Task<IReadOnlyList<RuntimeModelInfo>> ListModelsAsync(Provider? provider, CancellationToken ct)
     {
-        var url = provider is null ? "/v1/models" : $"/v1/models?provider={Wire(provider.Value)}";
+        var url = provider is null ? "/v1/models" : $"/v1/models?provider={Providers.Wire(provider.Value)}";
         IReadOnlyList<ModelDto>? models;
         try
         {
@@ -104,9 +104,9 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         return (models ?? []).Select(m => new RuntimeModelInfo(ParseProvider(m.Provider), m.Model, m.Reachable, m.Detail ?? "")).ToList();
     }
 
-    private static string Wire(Provider p) => p.ToString().ToLowerInvariant();
-
-    private static Provider ParseProvider(string s) => Enum.Parse<Provider>(s, ignoreCase: true);
+    /// <summary>Runtime'in dondugu ad; bos donmez, bilinmeyen ad sozlesme hatasidir (500).</summary>
+    private static Provider ParseProvider(string s)
+        => Providers.Parse(s) ?? throw new InvalidOperationException("runtime bos provider dondu.");
 
     private static string Clip(string s) => s.Length <= 300 ? s : s[..300];
 }
