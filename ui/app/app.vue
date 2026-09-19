@@ -16,51 +16,40 @@
           @hud="hud = $event"
           @status="status = $event"
           @agents="agents = $event"
-          @select="selected = $event"
+          @select="selectAgent"
           @board="openBoard"
         />
 
-        <!-- Buyuk pano: sahnedeki Kanban'a tiklaninca. Tum is akisi sutunlari, gorev adlari. -->
-        <div v-if="board" class="board-wrap" @click.self="board = null">
-          <section class="board">
-            <header>
-              <h2>Sprint panosu</h2>
-              <button class="x" @click="board = null" aria-label="Kapat">×</button>
-            </header>
-            <div class="cols">
-              <div v-for="c in board.columns" :key="c.id" class="col">
-                <div class="col-h" :style="{ background: c.hex }">{{ c.title }}</div>
-                <div
-                  v-for="t in board.tasks.filter(t => t.column === c.id)"
-                  :key="t.id"
-                  class="card"
-                  :class="t.state"
-                  :style="{ borderColor: c.hex }"
-                >
-                  <span class="id">{{ t.id }}</span>
-                  <span class="title">{{ t.title }}</span>
-                  <span class="st">{{ TASK_LABEL[t.state] }}</span>
-                </div>
-              </div>
-            </div>
-            <p class="hint">Sütunlar <code>config/workflow.json</code> adımları; sahnedeki küçük pano bunları dört Kanban şeridine katlar. <kbd>Esc</kbd> kapatır.</p>
-          </section>
-        </div>
+        <!-- Buyuk pano: sahnedeki Kanban'a tiklaninca ya da B. Ajan paneliyle ayni anda acilmaz. -->
+        <KanbanPanel v-if="board" :board="board" @close="board = null" />
+
+        <AgentPanel
+          v-if="selected"
+          ref="agentPanel"
+          :agent-key="selected"
+          :scene-name="sceneNameOf(selected)"
+          :agents="team"
+          @close="closeAgent"
+          @saved="onSaved"
+        />
       </main>
 
       <aside class="side">
         <h2>Ekip</h2>
         <ul class="agents">
-          <li v-for="a in agents" :key="a.key" :class="{ on: a.key === selected }" @click="selected = a.key">
+          <li v-for="a in agents" :key="a.key" :class="{ on: a.key === selected }" @click="selectAgent(a.key)">
             <span class="dot" :style="{ background: ROLE_HEX[a.key] }" />
             <span class="name">{{ a.name }}</span>
             <span class="state" :style="{ color: STATE_HEX[a.state as AgentState] }">{{ STATE_LABEL[a.state as AgentState] }}</span>
             <span v-if="a.note" class="note">{{ a.note }}</span>
+            <span v-if="teamMeta(a.key)" class="meta" :title="teamSummary(a.key)">{{ teamMeta(a.key) }}</span>
           </li>
         </ul>
+        <p v-if="teamState === 'missing'" class="hint warn">Api'de ajan uçları henüz hazır değil; model ataması Api açılınca yapılır.</p>
+        <p v-else-if="teamState === 'error'" class="hint warn">Ekip listesi alınamadı: {{ teamError }}</p>
         <p class="hint">
           Sahne <code>config/scene.json</code>'dan gelir; olaylar <code>/api/v1/scene/events</code> ile akar.
-          Api yoksa sahte yönetmen çalışır.
+          Api yoksa sahte yönetmen çalışır. Bir ajana tıklayınca model ataması açılır.
         </p>
       </aside>
     </div>
@@ -69,10 +58,14 @@
 
 <script setup lang="ts">
 import OfficeScene from '~/components/OfficeScene.vue'
-import type { Hud, World } from '~/scene/world'
-import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus, type TaskState } from '~/scene/contract'
-
-type BoardSnapshot = ReturnType<World['board']['snapshot']>
+import KanbanPanel, { type BoardSnapshot } from '~/components/KanbanPanel.vue'
+import AgentPanel from '~/components/AgentPanel.vue'
+import type { Hud } from '~/scene/world'
+import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
+import type { AgentDetail, AgentListItem } from '~/api/types'
+import { isApiError, useApiClient } from '~/api/client'
+import { errorText } from '~/api/errors'
+import { providerLabel } from '~/api/labels'
 
 useHead({ title: 'MrHobist.AITeam — Üretim Ofisi', htmlAttrs: { lang: 'tr' } })
 
@@ -82,21 +75,92 @@ const agents = ref<Array<{ key: string; name: string; state: string; note: strin
 const selected = ref<string | null>(null)
 const board = ref<BoardSnapshot | null>(null)
 const scene = useTemplateRef<InstanceType<typeof OfficeScene>>('scene')
+const agentPanel = useTemplateRef<InstanceType<typeof AgentPanel>>('agentPanel')
 
-const TASK_LABEL: Record<TaskState, string> = { queued: 'sırada', active: 'çalışılıyor', blocked: 'takıldı', done: 'bitti' }
+// ------------------------------------------------------------------ ekip (GET /agents)
 
-function openBoard(s: BoardSnapshot) { board.value = s }
+const api = useApiClient()
+const team = ref<AgentListItem[] | null>(null)
+const teamState = ref<'loading' | 'ready' | 'missing' | 'error'>('loading')
+const teamError = ref('')
+
+async function loadTeam() {
+  try {
+    team.value = await api.get<AgentListItem[]>('/api/v1/agents')
+    teamState.value = 'ready'
+  } catch (e) {
+    team.value = null
+    teamState.value = isApiError(e) && e.endpointMissing ? 'missing' : 'error'
+    teamError.value = errorText(e)
+  }
+}
+
+/** Api acilista kapaliysa SSE canliya donunce liste yeniden denenir. */
+watch(status, (s) => { if (s === 'live' && teamState.value !== 'ready') void loadTeam() })
+
+function teamItem(key: string): AgentListItem | undefined {
+  return team.value?.find(a => a.key === key)
+}
+
+/** Ekip satirinin alt bilgisi: saglayici · model; sahnede olup is akisinda olmayanlar icin not. */
+function teamMeta(key: string): string | null {
+  if (!team.value) return null
+  const a = teamItem(key)
+  if (!a) return 'iş akışında rolü yok'
+  return `${providerLabel(a.provider)} · ${a.model ?? 'varsayılan model'}`
+}
+
+function teamSummary(key: string): string | undefined {
+  return teamItem(key)?.summary
+}
+
+function sceneNameOf(key: string): string {
+  return agents.value.find(a => a.key === key)?.name ?? key
+}
+
+function onSaved(d: AgentDetail) {
+  if (team.value) team.value = team.value.map(a => (a.key === d.key ? d : a))
+}
+
+// ------------------------------------------------------------------ paneller
+
+function leaveAgent(): boolean {
+  return agentPanel.value?.canLeave() ?? true
+}
+
+function selectAgent(key: string | null) {
+  if (key === selected.value || !leaveAgent()) return
+  selected.value = key
+  if (key) board.value = null
+}
+
+function closeAgent() {
+  if (leaveAgent()) selected.value = null
+}
+
+function openBoard(s: BoardSnapshot) {
+  if (selected.value && !leaveAgent()) return
+  selected.value = null
+  board.value = s
+}
 
 let boardTimer: ReturnType<typeof setInterval> | undefined
 function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
   if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
-  if (e.key === 'Escape') board.value = null
-  if (e.key === 'b' || e.key === 'B') { if (board.value) board.value = null; else scene.value?.publishBoard() }
+  if (e.key === 'Escape') {
+    if (board.value) board.value = null
+    else if (selected.value) closeAgent()
+  }
+  if (e.key === 'b' || e.key === 'B') {
+    if (board.value) board.value = null
+    else scene.value?.publishBoard()
+  }
 }
 onMounted(() => {
   window.addEventListener('keydown', onKey)
   boardTimer = setInterval(() => { if (board.value) scene.value?.publishBoard() }, 1500)
+  void loadTeam()
 })
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearInterval(boardTimer) })
 
@@ -132,36 +196,8 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .main { flex: 1; min-height: 0; display: flex; }
 .stage { flex: 1; min-width: 0; position: relative; }
 
-.board-wrap {
-  position: absolute; inset: 0; background: rgba(10, 12, 18, 0.55);
-  display: flex; align-items: center; justify-content: center; padding: 24px;
-}
-.board {
-  background: #ede9dc; color: #23283a; border-radius: 10px; border: 6px solid #6b4a2b;
-  width: min(1100px, 100%); max-height: 100%; overflow: auto; padding: 16px 18px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-}
-.board header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.board h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; }
-.board .x { background: none; border: none; font-size: 22px; cursor: pointer; color: #23283a; line-height: 1; }
-.cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 1fr); gap: 10px; }
-.col { background: rgba(0,0,0,0.04); border-radius: 6px; padding: 6px; min-height: 160px; }
-.col-h { font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 5px 8px; border-radius: 4px; color: #1f2430; margin-bottom: 8px; }
-.card {
-  background: #fff; border-left: 4px solid; border-radius: 4px; padding: 6px 8px; margin-bottom: 6px;
-  display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.12);
-}
-.card .id { font-weight: 700; color: #4a5068; }
-.card .title { color: #23283a; }
-.card .st { grid-column: 1 / span 2; font-size: 10px; color: #6b7285; }
-.card.queued { opacity: 0.6; }
-.card.blocked { outline: 2px solid #d23b3b; }
-.card.done .title { text-decoration: line-through; color: #6b7285; }
-.board .hint { margin: 12px 0 0; font-size: 11px; color: #6b7285; }
-.board code, .board kbd { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
-
 .side {
-  width: 240px; flex: none; border-left: 1px solid var(--rule); background: var(--surface);
+  width: 260px; flex: none; border-left: 1px solid var(--rule); background: var(--surface);
   padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow: auto;
 }
 .side h2 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); }
@@ -176,6 +212,9 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .name { font-size: 13px; color: var(--ink); }
 .state { font-size: 11px; }
 .note { grid-column: 2 / span 2; font-size: 11px; color: var(--ink-3); }
+.meta { grid-column: 2 / span 2; font-size: 10px; color: var(--ink-3); opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hint { margin: auto 0 0; font-size: 11px; color: var(--ink-3); line-height: 1.5; }
+.hint + .hint { margin-top: 8px; }
+.hint.warn { color: #f0c26a; }
 .hint code { font-size: 10px; color: var(--ink-2); }
 </style>
