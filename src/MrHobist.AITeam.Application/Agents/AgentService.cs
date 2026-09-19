@@ -43,6 +43,18 @@ public sealed record UpdateAgentRequest(
     string? CanAsk,
     string Prompt);
 
+/// <summary>POST govdesi: <see cref="UpdateAgentRequest"/> + anahtar.</summary>
+public sealed record CreateAgentRequest(
+    string Key,
+    string Name,
+    string Summary,
+    IReadOnlyList<string> OfficeRoles,
+    string? Provider,
+    string? Model,
+    IReadOnlyList<string> Includes,
+    string? CanAsk,
+    string Prompt);
+
 public sealed record KnowledgeItem(string Key, string Title, string Body);
 
 public interface IAgentService
@@ -51,8 +63,14 @@ public interface IAgentService
 
     Task<AgentDetail> GetAsync(string key, CancellationToken ct);
 
+    /// <summary>Var olan anahtar <c>agent.exists</c>. Ekip butunu dogrulanir, sonra atomik yazilir.</summary>
+    Task<AgentDetail> CreateAsync(CreateAgentRequest request, CancellationToken ct);
+
     /// <summary>Ekibi butun olarak dogrular (eksik include, gecersiz can_ask), sonra atomik yazar.</summary>
     Task<AgentDetail> UpdateAsync(string key, UpdateAgentRequest request, CancellationToken ct);
+
+    /// <summary>Bir akista (role/handoffRole) ya da bir can_ask'ta geciyorsa <c>agent.in_use</c>; once oradan cikarilir.</summary>
+    Task DeleteAsync(string key, CancellationToken ct);
 
     Task<IReadOnlyList<KnowledgeItem>> ListKnowledgeAsync(CancellationToken ct);
 
@@ -60,7 +78,7 @@ public interface IAgentService
     Task<string> ComposePromptAsync(string key, CancellationToken ct);
 }
 
-public sealed class AgentService(IAgentStore store) : IAgentService
+public sealed class AgentService(IAgentStore store, IWorkflowStore workflows) : IAgentService
 {
     public async Task<IReadOnlyList<AgentListItem>> ListAsync(CancellationToken ct)
     {
@@ -74,31 +92,51 @@ public sealed class AgentService(IAgentStore store) : IAgentService
         return ToDetail(Find(team, key), team);
     }
 
+    public async Task<AgentDetail> CreateAsync(CreateAgentRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var key = Identifiers.Require(request.Key, ErrorCodes.AgentInvalidKey, "ajan");
+        var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
+        if (team.Agents.ContainsKey(key))
+        {
+            throw new DomainException(ErrorCodes.AgentExists, $"'{key}' anahtarli ajan zaten var.");
+        }
+
+        var agent = Compose(
+            new Agent(key, key, "", [], null, null, [], null, ""),
+            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt));
+        return await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
+    }
+
     public async Task<AgentDetail> UpdateAsync(string key, UpdateAgentRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
-        var current = Find(team, key);
+        return await SaveValidatedAsync(team, Compose(Find(team, key), request), ct).ConfigureAwait(false);
+    }
 
-        var updated = current with
+    public async Task DeleteAsync(string key, CancellationToken ct)
+    {
+        var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
+        var agent = Find(team, key);
+
+        var usedBy = new List<string>();
+        foreach (var wfKey in await workflows.ListKeysAsync(ct).ConfigureAwait(false))
         {
-            Name = string.IsNullOrWhiteSpace(request.Name) ? current.Name : request.Name.Trim(),
-            Summary = request.Summary.Trim(),
-            OfficeRoles = request.OfficeRoles,
-            Provider = Providers.Parse(request.Provider),
-            Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model.Trim(),
-            Includes = request.Includes,
-            CanAsk = string.IsNullOrWhiteSpace(request.CanAsk) ? null : request.CanAsk.Trim(),
-            Prompt = request.Prompt,
-        };
+            var wf = await workflows.LoadAsync(wfKey, ct).ConfigureAwait(false);
+            if (wf.Roles.Contains(agent.Key, StringComparer.Ordinal))
+            {
+                usedBy.Add($"akis '{wfKey}'");
+            }
+        }
 
-        // Once ekip butunu dogrulanir: yazilan dosya bir sonraki yuklemede patlamamali.
-        var agents = new Dictionary<string, Agent>(team.Agents, StringComparer.Ordinal) { [key] = updated };
-        var next = team with { Agents = agents };
-        next.Validate();
+        usedBy.AddRange(team.AskersOf(agent.Key).Select(a => $"'{a}' ajaninin can_ask'i"));
+        if (usedBy.Count > 0)
+        {
+            throw new DomainException(ErrorCodes.AgentInUse, $"'{agent.Key}' kullanimda: {string.Join(", ", usedBy)}. Once oradan cikarin.");
+        }
 
-        await store.SaveAgentAsync(updated, ct).ConfigureAwait(false);
-        return ToDetail(updated, next);
+        await store.DeleteAgentAsync(agent.Key, ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<KnowledgeItem>> ListKnowledgeAsync(CancellationToken ct)
@@ -111,6 +149,30 @@ public sealed class AgentService(IAgentStore store) : IAgentService
     {
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
         return Find(team, key).ComposePrompt(team.Knowledge);
+    }
+
+    /// <summary>Istekten ajan kaydi: metinler kirpilir, bos model/can_ask null olur.</summary>
+    private static Agent Compose(Agent current, UpdateAgentRequest request) => current with
+    {
+        Name = string.IsNullOrWhiteSpace(request.Name) ? current.Key : request.Name.Trim(),
+        Summary = request.Summary.Trim(),
+        OfficeRoles = request.OfficeRoles,
+        Provider = Providers.Parse(request.Provider),
+        Model = string.IsNullOrWhiteSpace(request.Model) ? null : request.Model.Trim(),
+        Includes = request.Includes,
+        CanAsk = string.IsNullOrWhiteSpace(request.CanAsk) ? null : request.CanAsk.Trim(),
+        Prompt = request.Prompt,
+    };
+
+    /// <summary>Once ekip butunu dogrulanir: yazilan dosya bir sonraki yuklemede patlamamali.</summary>
+    private async Task<AgentDetail> SaveValidatedAsync(Team team, Agent agent, CancellationToken ct)
+    {
+        var agents = new Dictionary<string, Agent>(team.Agents, StringComparer.Ordinal) { [agent.Key] = agent };
+        var next = team with { Agents = agents };
+        next.Validate();
+
+        await store.SaveAgentAsync(agent, ct).ConfigureAwait(false);
+        return ToDetail(agent, next);
     }
 
     private static Agent Find(Team team, string key)

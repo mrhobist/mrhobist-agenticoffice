@@ -2,7 +2,7 @@ namespace MrHobist.AITeam.Infrastructure.Storage;
 
 /// <summary>
 /// Dosya deposunun iki koku: <c>config/</c> (md + json, git'te) ve <c>runs/</c> (JSONL, gitignore'da).
-/// Ayar verilmezse icerik kokunden yukari dogru <c>config/workflow.json</c> aranir; bin/Debug icinden de bulur.
+/// Ayar verilmezse icerik kokunden yukari dogru <c>config/workflows/</c> aranir; bin/Debug icinden de bulur.
 /// </summary>
 public sealed record StoragePaths(string ConfigRoot, string RunsRoot)
 {
@@ -10,7 +10,9 @@ public sealed record StoragePaths(string ConfigRoot, string RunsRoot)
 
     public string KnowledgeDir => Path.Combine(ConfigRoot, "knowledge");
 
-    public string WorkflowFile => Path.Combine(ConfigRoot, "workflow.json");
+    public string WorkflowsDir => Path.Combine(ConfigRoot, "workflows");
+
+    public string WorkflowFile(string key) => Path.Combine(WorkflowsDir, key + ".json");
 
     public string ConfigFile(string fileName) => Path.Combine(ConfigRoot, fileName);
 
@@ -29,7 +31,7 @@ public sealed record StoragePaths(string ConfigRoot, string RunsRoot)
         while (dir is not null)
         {
             var candidate = Path.Combine(dir.FullName, "config");
-            if (File.Exists(Path.Combine(candidate, "workflow.json")))
+            if (Directory.Exists(Path.Combine(candidate, "workflows")))
             {
                 return candidate;
             }

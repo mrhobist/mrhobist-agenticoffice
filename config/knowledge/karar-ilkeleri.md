@@ -14,6 +14,15 @@ Manager bu ilkelere göre karar verir.
 - Aynı soru ikinci kez geliyorsa sorun karar değil, talimattır: ilgili ajanın
   md dosyasında nelerin netleşmesi gerektiğini söyle.
 
-> Buraya "6'lı konsey" karar mantığı eklenecek: bir kararı altı farklı
-> bakış açısından (kullanıcı, maliyet, risk, bakım, hız, kapsam) tartıp
-> sonuca varma yöntemi.
+## Altı şapka (karar adımı)
+
+Son onay altı bakış açısından geçer; hepsi yazılır, hüküm sonra gelir:
+beyaz (veri/kanıt), kırmızı (his), siyah (risk), sarı (değer), yeşil (alternatif),
+mavi (süreç dersi). Bir şapkada söyleyecek şey yoksa "—" yazılır, şapka atlanmaz.
+
+- Siyah şapka tek başına RED gerektirmez; risk geri alınabilirse ve kabul ölçütleri
+  karşılanmışsa ONAY verilir, risk mavi şapkada ders olarak kaydedilir.
+- Beyaz şapkada karşılanmamış bir kabul ölçütü varsa hüküm RED'dir; başka şapka bunu
+  telafi etmez.
+- RED gerekçesi developer'ın uygulayabileceği somut maddelerdir; her madde bir dosya
+  ya da davranışa işaret eder.

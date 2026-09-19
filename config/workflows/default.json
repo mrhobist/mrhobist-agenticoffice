@@ -1,0 +1,12 @@
+{
+  "_comment": "Varsayılan akış. Bir çalışma akış seçmezse bunu kullanır; silinemez. kind: analyze (bir kez, görev grafiğini üretir) | design (rehberlik üretir, kod yazmaz) | implement (kod yazar) | review (denetler, reddederse önceki implement adımına döner) | handoff (devir notu, bloklamaz). handoffRole: her adım geçişinde devir notu üreten ajan (organizatör); null = devir notu yok. role: config/agents/ altındaki bir ajan anahtarı.",
+  "title": "Varsayılan",
+  "maxReviewRounds": 3,
+  "handoffRole": "organizer",
+  "stages": [
+    { "id": "analiz",      "title": "Analiz",     "kind": "analyze",   "role": "analyst",   "officeRole": "pm",   "description": "Brief çözümlenir, kurallar ve görev grafiği çıkarılır." },
+    { "id": "gelistirme",  "title": "Geliştirme", "kind": "implement", "role": "developer", "officeRole": "dev",  "description": "Görev kodlanır, dosyalar çalışma dizinine yazılır." },
+    { "id": "test",        "title": "Test",       "kind": "review",    "role": "tester",    "officeRole": "qa",   "description": "Kurallar denetlenir, testler fiilen çalıştırılır; red → geliştirmeye döner." },
+    { "id": "karar",       "title": "Karar",      "kind": "review",    "role": "manager",   "officeRole": "gate", "description": "Altı şapka ile son onay: kabul ölçütleri, risk, maliyet, bakım, hız, kapsam." }
+  ]
+}

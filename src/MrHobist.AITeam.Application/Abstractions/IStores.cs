@@ -9,16 +9,25 @@ public interface IAgentStore
 {
     Task<Team> LoadTeamAsync(CancellationToken ct);
 
-    /// <summary>Atomik yazar; cagiran once <see cref="Team.Validate"/> ile dogrulamis olmali.</summary>
+    /// <summary>Olusturur ya da uzerine yazar; atomik. Cagiran once <see cref="Team.Validate"/> ile dogrulamis olmali.</summary>
     Task SaveAgentAsync(Agent agent, CancellationToken ct);
+
+    /// <summary>Md dosyasini siler. Referans denetimi (akislar, can_ask) cagiranin isidir.</summary>
+    Task DeleteAgentAsync(string key, CancellationToken ct);
 }
 
-/// <summary><c>config/workflow.json</c>.</summary>
+/// <summary><c>config/workflows/{key}.json</c>; <c>default</c> her zaman vardir.</summary>
 public interface IWorkflowStore
 {
-    Task<Workflow> LoadAsync(CancellationToken ct);
+    /// <summary>Dosya adlarindan anahtarlar, sirali. Gecersiz adli dosyalar yok sayilir.</summary>
+    Task<IReadOnlyList<string>> ListKeysAsync(CancellationToken ct);
+
+    /// <summary>Yoksa <c>workflow.not_found</c>.</summary>
+    Task<Workflow> LoadAsync(string key, CancellationToken ct);
 
     Task SaveAsync(Workflow workflow, CancellationToken ct);
+
+    Task DeleteAsync(string key, CancellationToken ct);
 }
 
 /// <summary>

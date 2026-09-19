@@ -12,11 +12,16 @@ public sealed class AgentStoreTests : IDisposable
 
     public void Dispose() => _fx.Dispose();
 
+    private static readonly string[] ShippedRoles = ["analyst", "designer", "developer", "tester", "manager", "organizer"];
+
+    private AgentService Service() => new(new MarkdownAgentStore(_fx.Paths), new JsonWorkflowStore(_fx.Paths));
+
     [Fact]
-    public async Task Gercek_config_yuklenir_ve_alti_rol_vardir()
+    public async Task Gercek_config_yuklenir()
     {
         var team = await new MarkdownAgentStore(_fx.Paths).LoadTeamAsync(CancellationToken.None);
-        Assert.All(Team.KnownRoles, r => Assert.Contains(r, team.Agents.Keys));
+        Assert.All(ShippedRoles, r => Assert.Contains(r, team.Agents.Keys));
+        Assert.DoesNotContain("intern", team.Agents.Keys);
         Assert.Equal("Analist", team.Agents["analyst"].Name);
         Assert.Equal(["pm", "arch", "res"], team.Agents["analyst"].OfficeRoles);
         Assert.Equal("manager", team.Agents["developer"].CanAsk);
@@ -59,7 +64,7 @@ public sealed class AgentStoreTests : IDisposable
     [Fact]
     public async Task Servis_eksik_alt_md_ile_kaydetmez()
     {
-        var service = new AgentService(new MarkdownAgentStore(_fx.Paths));
+        var service = Service();
         var before = await File.ReadAllTextAsync(Path.Combine(_fx.Paths.AgentsDir, "tester.md"));
         var req = new UpdateAgentRequest("Testçi", "", ["qa"], null, null, ["yok-boyle"], null, "Sen testçisin.");
         var ex = await Assert.ThrowsAsync<DomainException>(() => service.UpdateAsync("tester", req, CancellationToken.None));
@@ -70,15 +75,59 @@ public sealed class AgentStoreTests : IDisposable
     [Fact]
     public async Task Servis_bilinmeyen_ajan_404()
     {
-        var service = new AgentService(new MarkdownAgentStore(_fx.Paths));
+        var service = Service();
         var ex = await Assert.ThrowsAsync<NotFoundException>(() => service.GetAsync("ceo", CancellationToken.None));
         Assert.Equal(ErrorCodes.AgentNotFound, ex.ErrorCode);
     }
 
     [Fact]
+    public async Task Ajan_eklenir_listelenir_silinir()
+    {
+        var service = Service();
+        var req = new CreateAgentRequest("publisher", "Yayıncı", "Ortam ve yayın işleri", ["ops"], "ollama", null, ["mimari-kurallar"], "manager", "Sen PUBLISHER'sın.");
+        var created = await service.CreateAsync(req, CancellationToken.None);
+        Assert.Equal("publisher", created.Key);
+        Assert.Equal(Provider.Ollama, created.Provider);
+        Assert.Contains("# Mimari Kurallar", created.ComposedPrompt, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(_fx.Paths.AgentsDir, "publisher.md")));
+        Assert.Contains(await service.ListAsync(CancellationToken.None), a => a.Key == "publisher");
+
+        var dup = await Assert.ThrowsAsync<DomainException>(() => service.CreateAsync(req, CancellationToken.None));
+        Assert.Equal(ErrorCodes.AgentExists, dup.ErrorCode);
+
+        await service.DeleteAsync("publisher", CancellationToken.None);
+        Assert.False(File.Exists(Path.Combine(_fx.Paths.AgentsDir, "publisher.md")));
+    }
+
+    [Fact]
+    public async Task Akista_gecen_ajan_silinemez()
+    {
+        var service = Service();
+        var ex = await Assert.ThrowsAsync<DomainException>(() => service.DeleteAsync("developer", CancellationToken.None));
+        Assert.Equal(ErrorCodes.AgentInUse, ex.ErrorCode);
+        Assert.Contains("default", ex.Message, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(_fx.Paths.AgentsDir, "developer.md")));
+    }
+
+    [Fact]
+    public async Task Can_ask_hedefi_silinemez()
+    {
+        // designer yalniz 'tasarimli' akisinda; once o akisi kaldir, sonra can_ask kalir mi bak.
+        var service = Service();
+        File.Delete(_fx.Paths.WorkflowFile("tasarimli"));
+        var ex = await Assert.ThrowsAsync<DomainException>(() => service.DeleteAsync("manager", CancellationToken.None));
+        Assert.Equal(ErrorCodes.AgentInUse, ex.ErrorCode);
+        Assert.Contains("can_ask", ex.Message, StringComparison.Ordinal);
+
+        // designer artik hic bir yerde gecmiyor: silinebilir.
+        await service.DeleteAsync("designer", CancellationToken.None);
+        Assert.False(File.Exists(Path.Combine(_fx.Paths.AgentsDir, "designer.md")));
+    }
+
+    [Fact]
     public async Task Bilesik_prompt_alt_mdleri_icerir()
     {
-        var service = new AgentService(new MarkdownAgentStore(_fx.Paths));
+        var service = Service();
         var detail = await service.GetAsync("developer", CancellationToken.None);
         Assert.StartsWith(detail.Prompt, detail.ComposedPrompt, StringComparison.Ordinal);
         Assert.Contains("# Mimari Kurallar", detail.ComposedPrompt, StringComparison.Ordinal);

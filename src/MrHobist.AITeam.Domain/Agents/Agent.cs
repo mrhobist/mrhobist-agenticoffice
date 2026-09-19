@@ -64,20 +64,18 @@ public sealed record Agent(
 /// <summary>Alt md: birden cok ajanin paylastigi bilgi dosyasi (<c>config/knowledge/{Key}.md</c>).</summary>
 public sealed record Knowledge(string Key, string Title, string Body);
 
-/// <summary>Butun ekip: ajanlar + bilgi dosyalari. Capraz referanslar burada dogrulanir.</summary>
+/// <summary>
+/// Butun ekip: ajanlar + bilgi dosyalari. Ekip ACIKTIR: zorunlu rol yoktur, hangi ajanlarin calisacagini
+/// is akisi belirler (<see cref="Workflows.Workflow.ValidateAgainst"/>). Capraz referanslar burada dogrulanir.
+/// </summary>
 public sealed record Team(IReadOnlyDictionary<string, Agent> Agents, IReadOnlyDictionary<string, Knowledge> Knowledge)
 {
-    /// <summary>Boru hattinin tanidigi roller; hepsi tanimli olmali.</summary>
-    public static readonly IReadOnlyList<string> KnownRoles =
-        ["analyst", "designer", "developer", "tester", "manager", "organizer"];
-
     /// <summary>Eksik include ya da gecersiz can_ask calisma aninda degil, yuklenirken yakalanir.</summary>
     public void Validate()
     {
-        var missing = KnownRoles.Where(r => !Agents.ContainsKey(r)).ToList();
-        if (missing.Count > 0)
+        foreach (var k in Knowledge.Keys)
         {
-            throw new DomainException(ErrorCodes.TeamMissingRole, $"Eksik ajan tanimi: {string.Join(", ", missing)}.");
+            Identifiers.Require(k, ErrorCodes.KnowledgeInvalidKey, "bilgi dosyasi");
         }
 
         foreach (var agent in Agents.Values)
@@ -90,4 +88,8 @@ public sealed record Team(IReadOnlyDictionary<string, Agent> Agents, IReadOnlyDi
             }
         }
     }
+
+    /// <summary>Bu ajani <c>can_ask</c> ile gosteren diger ajanlar (silme oncesi denetim).</summary>
+    public IReadOnlyList<string> AskersOf(string key)
+        => Agents.Values.Where(a => a.CanAsk == key && a.Key != key).Select(a => a.Key).Order(StringComparer.Ordinal).ToList();
 }

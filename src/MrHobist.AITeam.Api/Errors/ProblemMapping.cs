@@ -34,15 +34,16 @@ public sealed class ProblemMapping : IExceptionHandler
 
     private static int StatusCode(string errorCode) => errorCode switch
     {
-        ErrorCodes.TeamMissingRole or ErrorCodes.ConfigFileInvalid => StatusCodes.Status500InternalServerError,
-        ErrorCodes.ConfigFileMissing => StatusCodes.Status404NotFound,
+        ErrorCodes.ConfigFileInvalid or ErrorCodes.KnowledgeInvalidKey => StatusCodes.Status500InternalServerError,
+        ErrorCodes.ConfigFileMissing or ErrorCodes.WorkflowNotFound => StatusCodes.Status404NotFound,
+        ErrorCodes.AgentExists or ErrorCodes.AgentInUse or ErrorCodes.WorkflowDefaultProtected => StatusCodes.Status409Conflict,
         _ => StatusCodes.Status400BadRequest,
     };
 
     private static Microsoft.AspNetCore.Mvc.ProblemDetails Problem(int status, string code, string detail, HttpContext ctx) => new()
     {
         Status = status,
-        Title = status switch { 400 => "Bad Request", 404 => "Not Found", 503 => "Service Unavailable", _ => "Error" },
+        Title = status switch { 400 => "Bad Request", 404 => "Not Found", 409 => "Conflict", 503 => "Service Unavailable", _ => "Error" },
         Detail = detail,
         Extensions = { ["errorCode"] = code, ["traceId"] = ctx.TraceIdentifier },
     };

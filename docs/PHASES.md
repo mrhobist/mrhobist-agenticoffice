@@ -146,6 +146,15 @@ Sözleşme `docs/API.md` (Ekibe ajan ekleme, İş akışları), kodlar `docs/err
 UI: İş Akışı paneli (akış seç/kopyala/sil, adım ekle/sil/sırala, adım → ajan, `handoffRole`),
 Ekip'te "ajan ekle / sil". Kanban sütunları seçili akıştan.
 
+**2026-09-19 backend bitti:** `Workflow(Key, Title, MaxReviewRounds, HandoffRole, Stages)` +
+`ValidateAgainst(Team)`; `Team` açık (`KnownRoles` yok), bilgi dosya adı doğrulanır; `Team.AskersOf`.
+`JsonWorkflowStore` dosya başına (`config/workflows/`), `IWorkflowStore` list/load/save/delete;
+`WorkflowService` list/get/upsert/delete; `AgentService` create/delete (akış + `can_ask` referans
+denetimi); uçlar `POST/DELETE /agents`, `GET/PUT/DELETE /workflows[/{key}]`; 409 eşlemeleri.
+`config/workflows/default.json` (analiz → geliştirme → test → karar, devir: organizer) ve
+`tasarimli.json`; `manager.md` altı şapka. Smoke: tüm uçlar sözleşmedeki kodları döndü;
+kapı 32 + 22 test ile yeşil. UI paneli ayrı ajanda (Faz 6).
+
 ## Faz 6 — UI (canlı sahne) 🔶 sahne kuruldu
 
 Nuxt 4 + TypeScript + **Canvas 2D** (Three.js bırakıldı, bkz. `docs/SCENE.md`). Sprite'lar

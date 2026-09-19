@@ -8,9 +8,11 @@ public sealed class AgentTests
     private static Agent A(string key, string prompt = "Sen bir roldsun.", string[]? includes = null, string? canAsk = null)
         => new(key, key, "", ["dev"], null, null, includes ?? [], canAsk, prompt);
 
+    private static readonly string[] BaseRoles = ["analyst", "developer", "tester", "manager", "organizer"];
+
     private static Team TeamOf(params Agent[] agents)
     {
-        var all = Team.KnownRoles.ToDictionary(r => r, r => A(r), StringComparer.Ordinal);
+        var all = BaseRoles.ToDictionary(r => r, r => A(r), StringComparer.Ordinal);
         foreach (var a in agents)
         {
             all[a.Key] = a;
@@ -54,13 +56,31 @@ public sealed class AgentTests
     }
 
     [Fact]
-    public void Eksik_rol_yakalanir()
+    public void Ekip_aciktir_eksik_rol_hata_degildir()
     {
         var team = TeamOf();
         var agents = team.Agents.Where(kv => kv.Key != "manager").ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
-        var ex = Assert.Throws<DomainException>(() => new Team(agents, team.Knowledge).Validate());
-        Assert.Equal(ErrorCodes.TeamMissingRole, ex.ErrorCode);
-        Assert.Contains("manager", ex.Message, StringComparison.Ordinal);
+        new Team(agents, team.Knowledge).Validate();
+    }
+
+    [Fact]
+    public void Gecersiz_bilgi_anahtari_yakalanir()
+    {
+        var team = TeamOf();
+        var knowledge = new Dictionary<string, Knowledge>(team.Knowledge, StringComparer.Ordinal)
+        {
+            ["Mimari Kurallar"] = new("Mimari Kurallar", "x", "y"),
+        };
+        var ex = Assert.Throws<DomainException>(() => new Team(team.Agents, knowledge).Validate());
+        Assert.Equal(ErrorCodes.KnowledgeInvalidKey, ex.ErrorCode);
+    }
+
+    [Fact]
+    public void Soranlar_bulunur()
+    {
+        var team = TeamOf(A("developer", canAsk: "manager"), A("tester", canAsk: "manager"));
+        Assert.Equal(["developer", "tester"], team.AskersOf("manager"));
+        Assert.Empty(team.AskersOf("developer"));
     }
 
     [Theory]

@@ -1,4 +1,5 @@
 using MrHobist.AITeam.Application.Abstractions;
+using MrHobist.AITeam.Application.Common;
 using MrHobist.AITeam.Domain;
 using MrHobist.AITeam.Domain.Agents;
 
@@ -58,6 +59,18 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
         };
         var target = Path.Combine(paths.AgentsDir, agent.Key + ".md");
         return AtomicFile.WriteAsync(target, Frontmatter.Render(meta, agent.Prompt), ct);
+    }
+
+    public Task DeleteAgentAsync(string key, CancellationToken ct)
+    {
+        var target = Path.Combine(paths.AgentsDir, Identifiers.Require(key, ErrorCodes.AgentInvalidKey, "ajan") + ".md");
+        if (!File.Exists(target))
+        {
+            throw new NotFoundException(ErrorCodes.AgentNotFound, $"Ajan yok: '{key}'.");
+        }
+
+        File.Delete(target);
+        return Task.CompletedTask;
     }
 
     internal static Agent ParseAgent(string key, string text)

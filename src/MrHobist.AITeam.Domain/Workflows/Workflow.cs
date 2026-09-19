@@ -1,3 +1,5 @@
+using MrHobist.AITeam.Domain.Agents;
+
 namespace MrHobist.AITeam.Domain.Workflows;
 
 /// <summary>Adim turu. JSON'da adiyla tasinir; yeni uye sona eklenir.</summary>
@@ -15,25 +17,49 @@ public enum StageKind
     Handoff,
 }
 
-/// <summary>Is akisinin bir adimi. <see cref="Role"/> bir ajan anahtaridir, <see cref="OfficeRole"/> sahnedeki karakter.</summary>
+/// <summary>Is akisinin bir adimi. <see cref="Role"/> bir ajan anahtaridir, <see cref="OfficeRole"/> sahnedeki karakter tipi.</summary>
 public sealed record Stage(string Id, string Title, StageKind Kind, string Role, string OfficeRole, string Description);
 
 /// <summary>
-/// <c>config/workflow.json</c>: scrum board'un koddaki karsiligi. Adim eklemek/silmek kod degisikligi gerektirmez;
-/// bozuk bir board calisma ortasinda degil, yuklenirken patlar.
+/// <c>config/workflows/{Key}.json</c>: ekipten kurulan bir akis. <c>default</c> her zaman vardir ve silinemez;
+/// calisma baslatilirken akis secilir. Adim eklemek/silmek kod degisikligi gerektirmez; bozuk bir akis
+/// calisma ortasinda degil, kaydedilirken/yuklenirken patlar. <see cref="HandoffRole"/> verilmisse o ajan
+/// her adim gecisinde devir notu uretir (organizator).
 /// </summary>
-public sealed record Workflow(int MaxReviewRounds, IReadOnlyList<Stage> Stages)
+public sealed record Workflow(string Key, string Title, int MaxReviewRounds, string? HandoffRole, IReadOnlyList<Stage> Stages)
 {
+    public const string DefaultKey = "default";
+
     public static readonly IReadOnlySet<string> ValidOfficeRoles =
         new HashSet<string>(StringComparer.Ordinal) { "pm", "arch", "dev", "qa", "ops", "res", "gate", "designer" };
 
-    public Stage AnalyzeStage => Stages.First(s => s.Kind == StageKind.Analyze);
+    public bool IsDefault => Key == DefaultKey;
+
+    /// <summary>Akista gecen ajanlar: adim rolleri + devir rolu, sirali ve tekil.</summary>
+    public IReadOnlyList<string> Roles
+        => Stages.Select(s => s.Role).Concat(HandoffRole is null ? [] : [HandoffRole]).Distinct(StringComparer.Ordinal).ToList();
 
     /// <summary>Her gorev icin sirayla calisan adimlar (analiz haric).</summary>
     public IReadOnlyList<Stage> TaskStages => Stages.Where(s => s.Kind != StageKind.Analyze).ToList();
 
+    /// <summary>Kendi basina tutarli mi: anahtar, baslik, adim degismezleri. Ekibe bakmaz (<see cref="ValidateAgainst"/>).</summary>
     public void Validate()
     {
+        if (!Identifiers.IsValidKey(Key))
+        {
+            throw new DomainException(ErrorCodes.WorkflowInvalidStage, $"Gecersiz akis anahtari: '{Key}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(Title))
+        {
+            throw new DomainException(ErrorCodes.WorkflowInvalidStage, $"{Key}: 'title' bos.");
+        }
+
+        if (HandoffRole is not null && !Identifiers.IsValidKey(HandoffRole))
+        {
+            throw new DomainException(ErrorCodes.WorkflowInvalidStage, $"{Key}: gecersiz handoffRole '{HandoffRole}'.");
+        }
+
         if (Stages.Count == 0)
         {
             throw new DomainException(ErrorCodes.WorkflowInvalidStage, "'stages' bos olamaz.");
@@ -62,9 +88,9 @@ public sealed record Workflow(int MaxReviewRounds, IReadOnlyList<Stage> Stages)
                 throw new DomainException(ErrorCodes.WorkflowInvalidStage, $"{s.Id}: gecersiz officeRole '{s.OfficeRole}'.");
             }
 
-            if (string.IsNullOrWhiteSpace(s.Role))
+            if (!Identifiers.IsValidKey(s.Role))
             {
-                throw new DomainException(ErrorCodes.WorkflowInvalidStage, $"{s.Id}: 'role' bos.");
+                throw new DomainException(ErrorCodes.WorkflowInvalidStage, $"{s.Id}: 'role' bos ya da gecersiz.");
             }
         }
 
@@ -103,6 +129,17 @@ public sealed record Workflow(int MaxReviewRounds, IReadOnlyList<Stage> Stages)
         if (MaxReviewRounds < 1)
         {
             throw new DomainException(ErrorCodes.WorkflowRoundsMin, "maxReviewRounds en az 1 olmali.");
+        }
+    }
+
+    /// <summary>Akista gecen her rol ekipte tanimli bir ajan olmali; degilse <c>workflow.unknown_role</c>.</summary>
+    public void ValidateAgainst(Team team)
+    {
+        ArgumentNullException.ThrowIfNull(team);
+        var missing = Roles.Where(r => !team.Agents.ContainsKey(r)).ToList();
+        if (missing.Count > 0)
+        {
+            throw new DomainException(ErrorCodes.WorkflowUnknownRole, $"{Key}: ekipte olmayan ajan(lar): {string.Join(", ", missing)}.");
         }
     }
 
