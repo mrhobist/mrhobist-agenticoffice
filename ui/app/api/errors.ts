@@ -37,6 +37,14 @@ const MESSAGES: Record<string, string> = {
   'run.note_empty': 'Revize notu boş olamaz.',
   'run.not_awaiting_approval': 'Çalışma onay beklemiyor; bu işlem yalnız plan onay aşamasında yapılabilir.',
   'run.plan_invalid': 'Analistin planı şemaya uymadı; çalışma durdu.',
+  'run.project_required': 'İş bir projenin içinde başlar; önce proje seç.',
+
+  'project.invalid_key': 'Proje anahtarı geçersiz: yalnız küçük harf, rakam, tire ve alt çizgi.',
+  'project.not_found': 'Proje bulunamadı.',
+  'project.exists': 'Bu anahtarla bir proje zaten var.',
+  'project.in_use': 'Projede çalışmalar var; geçmiş silinmez.',
+  'project.title_empty': 'Proje başlığı boş olamaz.',
+  'project.target_dir_invalid': 'Hedef dizin depo içinde göreli bir yol olmalı.',
   'run.not_retryable': 'Çalışma yeniden denenemez; bu yalnız başarısız, yarıda kalmış, bütçesi aşılmış ya da iptal edilmiş çalışmalarda yapılabilir.',
   'run.not_cancellable': 'Çalışma iptal edilemez; yalnız çalışan, onay bekleyen ya da duraklamış çalışmalar iptal edilir.',
 

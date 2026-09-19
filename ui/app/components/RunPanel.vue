@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AgentListItem, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
+import type { AgentListItem, ProjectCard, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { RUN_CANCELLABLE, RUN_RETRYABLE, RUN_STATUS_LABEL } from '~/api/labels'
@@ -14,6 +14,8 @@ const props = defineProps<{
   runId: string | null
   /** GET /agents listesi (kabuk yukler); ajan anahtarini ada cevirmek icin. null = alinamadi. */
   agents: AgentListItem[] | null
+  /** Yeni is formu icin proje anahtari: is yalniz bir projenin icinde baslar (docs/DOMAIN.md → Projeler). */
+  project: string | null
 }>()
 const emit = defineEmits<{ close: []; open: [id: string]; jobs: [] }>()
 
@@ -30,18 +32,30 @@ const starting = ref(false)
 const startError = ref<string | null>(null)
 const recent = ref<RunSummary[]>([])
 
+const projectCard = ref<ProjectCard | null>(null)
 async function loadForm() {
   try { workflows.value = await api.get<WorkflowListItem[]>('/api/v1/workflows') } catch { workflows.value = [] }
-  try { recent.value = await api.get<RunSummary[]>('/api/v1/runs?limit=8') } catch { recent.value = [] }
+  if (props.project) {
+    try {
+      projectCard.value = await api.get<ProjectCard>(`/api/v1/projects/${encodeURIComponent(props.project)}`)
+      workflowKey.value = projectCard.value.workflow
+      recent.value = await api.get<RunSummary[]>(`/api/v1/projects/${encodeURIComponent(props.project)}/runs?limit=8`)
+    } catch { recent.value = [] }
+  } else {
+    projectCard.value = null
+    recent.value = []
+  }
 }
 
 async function start() {
   if (starting.value || !brief.value.trim()) return
   starting.value = true
   startError.value = null
+  if (!props.project) { startError.value = 'İş bir projenin içinde başlar; önce proje seç.'; return }
   try {
     const budget = Number.parseFloat(maxCost.value.replace(',', '.'))
     const body: RunRequest = {
+      project: props.project,
       brief: brief.value.trim(),
       workflow: workflowKey.value || null,
       label: label.value.trim() || null,
@@ -241,14 +255,18 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
   <div class="wrap" @click.self="emit('close')">
     <section class="panel" role="dialog" aria-labelledby="run-title">
       <header>
-        <h2 id="run-title">{{ runId ? `Çalışma · ${run?.label ?? '…'}` : 'Yeni çalışma' }}</h2>
+        <h2 id="run-title">{{ runId ? `Çalışma · ${run?.label ?? '…'}` : `Yeni iş · ${projectCard?.title ?? project ?? 'proje seç'}` }}</h2>
         <code v-if="runId" class="key">{{ runId }}</code>
         <button v-if="runId" type="button" class="ghost small" @click="emit('open', '')">← yeni</button>
         <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
       </header>
 
       <!-- ---------------------------------------------------------------- yeni calisma -->
-      <form v-if="!runId" class="form" @submit.prevent="start">
+      <div v-if="!runId && !project" class="msg empty">
+        <strong>İş bir projenin içinde başlar.</strong>
+        <span>Soldaki raydan bir proje kartı aç ve "Yeni iş" de; ya da "+" ile proje oluştur.</span>
+      </div>
+      <form v-else-if="!runId" class="form" @submit.prevent="start">
         <div class="field">
           <label class="lbl" for="run-brief">Brief</label>
           <textarea id="run-brief" v-model="brief" class="brief" placeholder="Ne yapılacak? Analist bunu plana çevirir; plan senin onayına gelir." required />
@@ -272,7 +290,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <input id="run-budget" v-model="maxCost" type="text" inputmode="decimal" placeholder="örn. 2.00 — aşılınca çalışma durur">
           </div>
         </div>
-        <p class="sub">Hassasiyet: <strong>anthropic</strong> — içerik yalnız Anthropic'e çıkar. Plan onaylanmadan hiçbir ajan iş almaz.</p>
+        <p class="sub">Proje: <strong>{{ projectCard?.title ?? project }}</strong><template v-if="projectCard"> · hedef <code>{{ projectCard.targetDir }}</code></template>. Hassasiyet: <strong>anthropic</strong>. Plan onaylanmadan hiçbir ajan iş almaz.</p>
         <div class="actions">
           <button class="primary" type="submit" :disabled="starting || !brief.trim()">{{ starting ? 'Başlatılıyor…' : 'Analize gönder' }}</button>
           <span v-if="startError" class="err" role="alert">{{ startError }}</span>

@@ -9,7 +9,7 @@ organizatör) bir brief'i alıp kod üretir; akış 2B piksel bir ofiste canlı 
 | [`runtime/`](runtime/) | Python FastAPI — **yalnız LLM çağrısı** | 5090 |
 | [`ui/`](ui/) | Nuxt 4 + TypeScript + Canvas 2D — sprite tabanlı canlı piksel ofis | 3000 |
 | [`assets/`](assets/) | Ham sprite sayfaları (`raw/`) ve plan panoları (`reference/`) | — |
-| [`config/`](config/) | Ajan md'leri, alt md'ler, iş akışı — **tek doğru kaynak** | — |
+| [`config/`](config/) | Ajan md'leri, alt md'ler, iş akışları, **projeler** — **tek doğru kaynak** | — |
 | [`runs/`](runs/) | Çalışma geçmişi (JSONL), gitignore'da | — |
 
 **Bu dosya her oturumda okunur → KISA TUT (≤200 satır).** Mimari sözleşme
@@ -50,7 +50,7 @@ Veritabanı **yoktur**. İki ayrı sorumluluk, iki ayrı biçim:
 
 | Ne | Nerede | Neden |
 |---|---|---|
-| Ajan md'leri, alt md'ler, iş akışı | `config/` — md + json | Git'te versiyonlanır, diff okunur, uygulama kapalıyken düzenlenir |
+| Ajan md'leri, alt md'ler, iş akışları, projeler | `config/` — md + json | Git'te versiyonlanır, diff okunur, uygulama kapalıyken düzenlenir |
 | Çalışma, görev, faz, tur, mesaj | `runs/<id>/` — JSONL | Append-only, çökme kayıtları bozmaz, UI sonunu okuyup canlı akar |
 
 - Yazma **atomiktir**: geçici dosya + `File.Move(overwrite)`. Yarım dosya okunmaz.

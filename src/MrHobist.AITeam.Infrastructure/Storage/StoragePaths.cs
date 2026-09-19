@@ -14,6 +14,10 @@ public sealed record StoragePaths(string ConfigRoot, string RunsRoot)
 
     public string WorkflowFile(string key) => Path.Combine(WorkflowsDir, key + ".json");
 
+    public string ProjectsDir => Path.Combine(ConfigRoot, "projects");
+
+    public string ProjectFile(string key) => Path.Combine(ProjectsDir, key + ".json");
+
     public string ConfigFile(string fileName) => Path.Combine(ConfigRoot, fileName);
 
     public static StoragePaths Discover(string start, string? configRoot = null, string? runsRoot = null)

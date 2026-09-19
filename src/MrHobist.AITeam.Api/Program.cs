@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using MrHobist.AITeam.Api.Config;
 using MrHobist.AITeam.Api.Errors;
 using MrHobist.AITeam.Api.Jobs;
+using MrHobist.AITeam.Api.Projects;
 using MrHobist.AITeam.Api.Runs;
 using MrHobist.AITeam.Api.Scene;
 using MrHobist.AITeam.Application.Abstractions;
@@ -71,6 +72,7 @@ app.MapOpenApi();
 app.MapConfig();
 app.MapScene();
 app.MapRuns();
+app.MapProjects();
 app.MapGet("/api/v1/jobs/health", (JobChannel q) => Results.Ok(new { status = "ok", pending = q.Pending }));
 
 // Surec yeniden basladi: yarim kalan Running calismalar Interrupted (docs/DOMAIN.md). Isci henuz baslamadi, tek yazici biziz.

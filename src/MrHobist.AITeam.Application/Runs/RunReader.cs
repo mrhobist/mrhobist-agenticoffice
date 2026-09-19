@@ -9,7 +9,8 @@ namespace MrHobist.AITeam.Application.Runs;
 /// <summary>Salt okuma: Api bunu kullanir, dosyaya dokunmaz (CLAUDE.md §2).</summary>
 public interface IRunReader
 {
-    Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct);
+    /// <summary>Yeni → eski; <paramref name="project"/> verilirse yalniz o proje.</summary>
+    Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct, string? project = null);
 
     Task<Run> GetAsync(string runId, CancellationToken ct);
 
@@ -28,7 +29,8 @@ public interface IRunReader
 /// <summary>runs/ altindaki kayitlari <see cref="RunDetail"/> olarak toplar. Yazmaz, LLM cagirmaz, sahneye dokunmaz.</summary>
 public sealed class RunReader(IRunStore runs) : IRunReader
 {
-    public Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct) => runs.ListAsync(Math.Clamp(limit, 1, 200), ct);
+    public Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct, string? project = null)
+        => runs.ListAsync(Math.Clamp(limit, 1, 200), ct, string.IsNullOrWhiteSpace(project) ? null : project.Trim());
 
     public async Task<Run> GetAsync(string runId, CancellationToken ct)
         => await runs.GetAsync(runId, ct).ConfigureAwait(false)
@@ -49,7 +51,7 @@ public sealed class RunReader(IRunStore runs) : IRunReader
         var order = spec is null ? [] : TaskGraph.Order(spec.Tasks).Select(t => t.Id).ToList();
         return new RunDetail(
             run.Id, run.Label, run.Brief, run.Sensitivity, run.Workflow, run.Status, run.StartedAt, run.FinishedAt,
-            run.TotalCostUsd, run.Detail, run.MaxCostUsd, run.Retries, wf is null ? null : WorkflowMapping.ToDetail(wf), spec, order, tasks, messages);
+            run.TotalCostUsd, run.Detail, run.MaxCostUsd, run.Retries, run.Project, run.OwnerId, wf is null ? null : WorkflowMapping.ToDetail(wf), spec, order, tasks, messages);
     }
 
     public async Task<IReadOnlyList<AgentRunWork>> GetAgentWorkAsync(string agentKey, int runLimit, CancellationToken ct)

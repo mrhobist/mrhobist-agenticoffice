@@ -233,6 +233,15 @@ belirteci), `AgentCaller` ajan kilidi + `RetryPolicy`, dağıtımda çalışmala
 sekmeleri (`GET /agents/{key}/work`), brief formunda bütçe alanı, üst barda tüm kota pencereleri (pasifler soluk).
 Runtime `/v1/limits` ölçüldü: 200, oturum/hafta/modele özel pencereler geliyor. `.venv` `SemihAI` için yeniden kuruldu.
 
+**2026-09-19 gece — Projeler ve ofis odaklı kabuk (kullanıcı kararları):** Tasarım artboard'ları
+(https://claude.ai/artifact/TXLNsdkM6YQim5NQkYRjLv): ofis tam boy ortada, projeler sol ahşap rayda kağıt kart,
+kart açılınca kağıt pano (İşler / Ayarlar), "Yeni iş" yalnız orada. Kod: `Project` (başlık, açıklama, varsayılan akış,
+hedef dizin, `ownerId=local`; bütçe yok), `config/projects/{key}.json`, `IProjectStore`/`ProjectService`/`ProjectCard`,
+`/api/v1/projects` uçları, `POST /runs` için `project` zorunlu (`run.project_required`), `Run.Project/OwnerId`,
+`GET /runs?project=`. Eski projesiz çalışmalar silindi. UI: `ProjectPanel.vue`, ray kartları projeler, üst bardan
+"Yeni çalışma" kalktı, `RunPanel` projeye bağlı. Ölçüm: UI'dan "Hello World Console" projesi oluşturuldu, rayda kart
+belirdi, panel açıldı. Testler 37 servis + 32 birim + 21 runtime yeşil.
+
 **Ortam notu (2026-09-19, `SemihAI2` kullanıcısı):** `semih` ve `SemihAI` kullanıcılarının bıraktığı Api (5080, 5082),
 UI (3000, 3005) ve runtime (5090) süreçleri bu kullanıcıdan durdurulamıyor (`Erişim engellendi`) ve Api'nin hem
 `bin/Debug` hem `bin/Release` çıktısını kilitliyor. Çözüm: Api `-p:OutputPath=<scratch>/bin/Debug/net10.0/` ile

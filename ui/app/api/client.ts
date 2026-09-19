@@ -29,6 +29,7 @@ export interface ApiClient {
   put<T>(path: string, body: unknown): Promise<T>
   /** Govdesiz POST icin body verilmez. */
   post<T>(path: string, body?: unknown): Promise<T>
+  del(path: string): Promise<void>
 }
 
 /** Setup icinde cagrilir (useRuntimeConfig). Donen nesne sonradan her yerde kullanilir. */
@@ -46,6 +47,7 @@ export function useApiClient(): ApiClient {
       headers: body === undefined ? {} : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
+    del: path => request<void>(base, path, { method: 'DELETE' }),
   }
 }
 

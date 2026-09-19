@@ -36,7 +36,15 @@ public static class ErrorCodes
     public const string RunNoteEmpty = "run.note_empty";
     public const string RunNotAwaitingApproval = "run.not_awaiting_approval";
     public const string RunPlanInvalid = "run.plan_invalid";
+    public const string RunProjectRequired = "run.project_required";
     public const string RunNotRetryable = "run.not_retryable";
+
+    public const string ProjectInvalidKey = "project.invalid_key";
+    public const string ProjectNotFound = "project.not_found";
+    public const string ProjectExists = "project.exists";
+    public const string ProjectInUse = "project.in_use";
+    public const string ProjectTitleEmpty = "project.title_empty";
+    public const string ProjectTargetDirInvalid = "project.target_dir_invalid";
     public const string RunNotCancellable = "run.not_cancellable";
     public const string RunBudgetInvalid = "run.budget_invalid";
 

@@ -92,7 +92,7 @@ public sealed class JsonlRunStore(StoragePaths paths) : IRunStore
     public Task<Run?> GetAsync(string runId, CancellationToken ct)
         => ReadJsonAsync<Run>(Path.Combine(RunDir(runId), "run.json"), ct);
 
-    public async Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct)
+    public async Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct, string? project = null)
     {
         if (!Directory.Exists(paths.RunsRoot))
         {
@@ -101,15 +101,18 @@ public sealed class JsonlRunStore(StoragePaths paths) : IRunStore
 
         var dirs = Directory.EnumerateDirectories(paths.RunsRoot)
             .Where(d => File.Exists(Path.Combine(d, "run.json")))
-            .OrderByDescending(Path.GetFileName, StringComparer.Ordinal)
-            .Take(limit);
+            .OrderByDescending(Path.GetFileName, StringComparer.Ordinal);
         var runs = new List<Run>();
         foreach (var d in dirs)
         {
             var run = await ReadJsonAsync<Run>(Path.Combine(d, "run.json"), ct).ConfigureAwait(false);
-            if (run is not null)
+            if (run is not null && (project is null || run.Project == project))
             {
                 runs.Add(run);
+                if (runs.Count >= limit)
+                {
+                    break;
+                }
             }
         }
 

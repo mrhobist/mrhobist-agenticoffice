@@ -83,7 +83,9 @@ public sealed record Run(
     string Workflow = "default",
     string? Detail = null,
     decimal? MaxCostUsd = null,
-    int Retries = 0)
+    int Retries = 0,
+    string Project = "",
+    string OwnerId = "local")
 {
     /// <summary>
     /// Kullanicinin durdurabilecegi ya da "kapat" diyebilecegi durumlar. Dusen calismalar (Failed/Interrupted/BudgetExceeded)

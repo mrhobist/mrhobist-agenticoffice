@@ -35,6 +35,13 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `run.not_retryable` | 409 | `retry` yalnız `Failed / Interrupted / BudgetExceeded / Cancelled` durumunda geçerli |
 | `run.not_cancellable` | 409 | `cancel` yalnız `Running / AwaitingApproval / Paused / Failed / Interrupted / BudgetExceeded` durumunda geçerli (Completed, Cancelled, PolicyRejected kapatılamaz) |
 | `run.plan_invalid` | — | Analist çıktısı şemaya uymadı ya da görevsiz (çalışma `Failed`, `detail` söyler) |
+| `run.project_required` | 400 | `POST /runs`: `project` boş; iş yalnız bir projenin içinde başlar |
+| `project.invalid_key` | 400 | Proje anahtarı `[a-z0-9][a-z0-9_-]*` değil |
+| `project.not_found` | 404 | Böyle bir proje yok |
+| `project.exists` | 409 | `POST /projects`: bu anahtarla proje var |
+| `project.in_use` | 409 | `DELETE /projects`: içinde çalışma var; geçmiş silinmez |
+| `project.title_empty` | 400 | Proje başlığı boş |
+| `project.target_dir_invalid` | 400 | Hedef dizin depo içinde göreli bir yol değil (`..`, `/`, sürücü harfi) |
 | `config.file_missing` | 404/500 | Yapılandırma dosyası yok |
 | `config.file_invalid` | 500 | Yapılandırma dosyası geçersiz JSON |
 | `runtime.unavailable` | 503 | Python runtime'a ulaşılamıyor |

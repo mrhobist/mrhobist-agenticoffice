@@ -17,6 +17,21 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 | `manager` | `ask` hedefi ve son karar kapısı (altı şapka) | prompt |
 | `organizer` | **Dağıtıcı.** Bekleyen iş var mı, boş ajan var mı bakar, işi verir. Bu mantık **koddadır** (`Dispatcher`), sıfır token. LLM'e yalnız **devir notu** için gider | kod + prompt |
 
+## Projeler (2026-09-19, kullanıcı kararı)
+
+> Her işin bir projesi vardır; proje bağımsız iş başlatılamaz (`run.project_required`).
+
+- Proje `config/projects/{key}.json`: **başlık, açıklama, varsayılan iş akışı, hedef dizin** (`projects/{key}`
+  varsayılan; depo içinde göreli, `..` yok). **Bütçe projede yoktur**, iş başınadır (kullanıcı kararı).
+- İş projenin akışını devralır; formda değiştirilebilir. Hedef dizin, geliştirme yürütücüsü gelince developer'ın
+  dosya yazacağı yerdir.
+- Ekip ve bilgi dosyaları çalışma alanı düzeyinde ortaktır; proje yalnız bir akış seçer.
+- Kart özeti (`ProjectCard`): iş sayıları duruma göre, toplam maliyet, son hareket. UI'da ray kartları bunu gösterir.
+- Silme: içinde çalışma varsa **409 `project.in_use`**; geçmiş silinmez.
+- **Giriş hazırlığı:** proje ve çalışmada `ownerId`; bugün sabit `local`. JWT gelince claim'den dolar; giriş
+  ekranı tek kullanıcıda atlanır (tasarım: Login artboard'u).
+- Geçiş: 2026-09-19'a kadarki projesiz çalışmalar **silindi** (kullanıcı kararı; hepsi deneme kaydıydı).
+
 ## Çalışma yaşam döngüsü
 
 ```

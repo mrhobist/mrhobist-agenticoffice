@@ -111,6 +111,19 @@ Değişmezler (400): tam 1 `analyze` ve ilk sırada (`workflow.analyze_count`, `
 | `GET /api/v1/limits?refresh=` | `ProviderLimits[]` `{ provider, available, detail, subscription, fetchedAt, limits: [{ kind, group, percent, severity, resetsAt, scope, isActive }] }` | **Kalan kullanım** (üst bar): sağlayıcının kota pencereleri; `percent` kullanılan yüzde. Anthropic: Claude Code'un `/usage` ekranının okuduğu uç, CLI'nin makinede sakladığı oturumla; belirteç hiçbir yanıta yazılmaz. Runtime 90 s önbellekler. Sağlayıcı vermiyorsa ya da yanıt ayrıştırılamıyorsa `available=false` + neden (runtime **500 dönmez**). Runtime'ın kendisi 5xx dönerse Api **502** `runtime.error` (kapalı değil, uç bozuk); ulaşılamıyorsa 503 `runtime.unavailable` |
 | `GET /api/v1/usage?runs=200` | `UsageItem[]` `{ provider, model, turns, runs, inputTokens, outputTokens, costUsd, lastAt }` | Son N çalışmanın `conversations/*.jsonl` turlarından toplanır. **Abonelik limiti / kalan kota değil**: sağlayıcı bunu CLI'a açmıyor; UI bunu söyler |
 
+## Projeler — `config/projects/{key}.json`
+
+İş yalnız bir projenin içinde başlar (`docs/DOMAIN.md` → Projeler).
+
+| Uç | Dönen | Not |
+|---|---|---|
+| `GET /api/v1/projects` | `ProjectCard[]` `{ key, title, description, workflow, targetDir, ownerId, createdAt, runs, running, awaitingApproval, paused, failed, completed, totalCostUsd, lastActivityAt }` | oluşturma sırasına göre |
+| `POST /api/v1/projects` `{ key, title, description?, workflow?, targetDir? }` | **201** `ProjectCard` | `workflow` boş → `default`; `targetDir` boş → `projects/{key}`; 409 `project.exists` |
+| `GET /api/v1/projects/{key}` | `ProjectCard` | 404 `project.not_found` |
+| `PUT /api/v1/projects/{key}` `{ title, description?, workflow?, targetDir? }` | `ProjectCard` | tüm alanlar taşınır |
+| `DELETE /api/v1/projects/{key}` | **204** | içinde çalışma varsa 409 `project.in_use` |
+| `GET /api/v1/projects/{key}/runs?limit=50` | `RunSummary[]` | `GET /runs?project={key}` ile aynı |
+
 ## Çalışmalar — `runs/<id>/`
 
 Davranış `docs/DOMAIN.md` (yaşam döngüsü, plan onayı, dağıtım). Yazma uçları hızlı doğrular (400/409 hemen),
@@ -118,8 +131,8 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 
 | Uç | Dönen | Not |
 |---|---|---|
-| `POST /api/v1/runs` `{ brief, workflow?, sensitivity?, label? }` | **202** `RunSummary` | `workflow` yoksa `default` (yoksa 404 `workflow.not_found`); `sensitivity` yoksa `anthropic`; boş `brief` 400 `run.brief_empty` |
-| `GET /api/v1/runs?limit=20` | `RunSummary[]` | yeni → eski |
+| `POST /api/v1/runs` `{ project, brief, workflow?, sensitivity?, label?, maxCostUsd? }` | **202** `RunSummary` | `project` zorunlu (400 `run.project_required`, 404 `project.not_found`); `workflow` yoksa projenin varsayılanı; `sensitivity` yoksa `anthropic`; boş `brief` 400 `run.brief_empty` |
+| `GET /api/v1/runs?limit=20&project=` | `RunSummary[]` | yeni → eski; `project` ile süzülür |
 | `GET /api/v1/runs/{id}` | `RunDetail` | 404 `run.not_found` |
 | `GET /api/v1/runs/{id}/turns?agent=` | `Turn[]` | Tüm ajanların LLM turları, **tam prompt ve çıktı** ile, zamana göre (`conversations/*.jsonl`). Günlük ekranı |
 | `POST /api/v1/runs/{id}/approve` | **202** `RunSummary` | yalnız `AwaitingApproval`; değilse 409 `run.not_awaiting_approval` |

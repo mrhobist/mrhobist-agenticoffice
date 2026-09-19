@@ -700,6 +700,7 @@ export interface paths {
             parameters: {
                 query?: {
                     limit?: number | string;
+                    project?: string;
                 };
                 header?: never;
                 path?: never;
@@ -1004,6 +1005,182 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectCard"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateProjectRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectCard"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProjectModel"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectCard"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number | string;
+                };
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Run"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1049,6 +1226,13 @@ export interface components {
             canAsk: null | string;
             prompt: string;
             effort?: null | string;
+        };
+        CreateProjectRequest: {
+            key: string;
+            title: string;
+            description: null | string;
+            workflow: null | string;
+            targetDir: null | string;
         };
         /** @enum {unknown} */
         Destination: "local" | "anthropic" | "nvidia";
@@ -1106,6 +1290,38 @@ export interface components {
         };
         /** @enum {unknown} */
         PhaseStatus: "started" | "done" | "rejected" | "failed" | "skipped";
+        ProjectCard: {
+            key: string;
+            title: string;
+            description: string;
+            workflow: string;
+            targetDir: string;
+            ownerId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int32 */
+            runs: number | string;
+            /** Format: int32 */
+            running: number | string;
+            /** Format: int32 */
+            awaitingApproval: number | string;
+            /** Format: int32 */
+            paused: number | string;
+            /** Format: int32 */
+            failed: number | string;
+            /** Format: int32 */
+            completed: number | string;
+            /** Format: double */
+            totalCostUsd: number | string;
+            /** Format: date-time */
+            lastActivityAt: null | string;
+        };
+        ProjectModel: {
+            title: string;
+            description: null | string;
+            workflow: null | string;
+            targetDir: null | string;
+        };
         /** @enum {unknown} */
         Provider: "anthropic" | "nvidia" | "ollama" | null;
         ProviderStatus: {
@@ -1143,6 +1359,10 @@ export interface components {
              * @default 0
              */
             retries: number | string;
+            /** @default  */
+            project: string;
+            /** @default local */
+            ownerId: string;
             isCancellable?: boolean;
             isRetryable?: boolean;
         };
@@ -1164,6 +1384,8 @@ export interface components {
             maxCostUsd: null | number | string;
             /** Format: int32 */
             retries: number | string;
+            project: string;
+            ownerId: string;
             workflowDef: null | components["schemas"]["WorkflowDetail"];
             spec: null | components["schemas"]["Spec"];
             order: string[];
@@ -1177,6 +1399,7 @@ export interface components {
             label?: null | string;
             /** Format: double */
             maxCostUsd?: null | number | string;
+            project?: null | string;
         };
         /** @enum {unknown} */
         RunStatus: "running" | "completed" | "failed" | "interrupted" | "budgetExceeded" | "policyRejected" | "awaitingApproval" | "paused" | "cancelled";

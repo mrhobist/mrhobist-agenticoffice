@@ -147,8 +147,45 @@ export type RunStatus = Schemas['RunStatus']
 export type PhaseStatus = Schemas['PhaseStatus']
 export type MessageKind = Schemas['MessageKind']
 
-/** POST /api/v1/runs govdesi. */
+/** GET /api/v1/projects — proje karti: tanim + islerin ozeti. */
+export interface ProjectCard {
+  key: string
+  title: string
+  description: string
+  workflow: string
+  targetDir: string
+  ownerId: string
+  createdAt: string
+  runs: number
+  running: number
+  awaitingApproval: number
+  paused: number
+  failed: number
+  completed: number
+  totalCostUsd: number
+  lastActivityAt: string | null
+}
+
+/** POST /api/v1/projects govdesi. */
+export interface CreateProjectRequest {
+  key: string
+  title: string
+  description?: string | null
+  workflow?: string | null
+  targetDir?: string | null
+}
+
+/** PUT /api/v1/projects/{key} govdesi. */
+export interface ProjectModel {
+  title: string
+  description?: string | null
+  workflow?: string | null
+  targetDir?: string | null
+}
+
+/** POST /api/v1/runs govdesi. Is yalniz bir projenin icinde baslar. */
 export interface RunRequest {
+  project: string
   brief: string
   workflow?: string | null
   sensitivity?: Sensitivity | null
@@ -173,6 +210,9 @@ export interface RunSummary {
   maxCostUsd: number | null
   /** "Yeniden dene" sayisi. */
   retries: number
+  /** Ait oldugu proje anahtari; is yalniz bir projenin icinde baslar. */
+  project: string
+  ownerId: string
 }
 
 /** Gelen kutusu satirinin turu: soru (plan onayi), karar (durdu: yeniden dene / iptal), soru (ajan ask). */

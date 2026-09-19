@@ -1,4 +1,5 @@
 using MrHobist.AITeam.Domain.Agents;
+using MrHobist.AITeam.Domain.Projects;
 using MrHobist.AITeam.Domain.Runs;
 using MrHobist.AITeam.Domain.Workflows;
 
@@ -14,6 +15,19 @@ public interface IAgentStore
 
     /// <summary>Md dosyasini siler. Referans denetimi (akislar, can_ask) cagiranin isidir.</summary>
     Task DeleteAgentAsync(string key, CancellationToken ct);
+}
+
+/// <summary><c>config/projects/{key}.json</c>; is yalniz bir projenin icinde baslar (docs/DOMAIN.md → Projeler).</summary>
+public interface IProjectStore
+{
+    Task<IReadOnlyList<Project>> ListAsync(CancellationToken ct);
+
+    /// <summary>Yoksa <c>project.not_found</c>.</summary>
+    Task<Project> LoadAsync(string key, CancellationToken ct);
+
+    Task SaveAsync(Project project, CancellationToken ct);
+
+    Task DeleteAsync(string key, CancellationToken ct);
 }
 
 /// <summary><c>config/workflows/{key}.json</c>; <c>default</c> her zaman vardir.</summary>
@@ -55,7 +69,8 @@ public interface IRunStore
 
     Task<Run?> GetAsync(string runId, CancellationToken ct);
 
-    Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct);
+    /// <summary>Yeni → eski. <paramref name="project"/> verilirse yalniz o projenin calismalari.</summary>
+    Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct, string? project = null);
 
     Task<Spec?> ReadSpecAsync(string runId, CancellationToken ct);
 

@@ -13,7 +13,7 @@ public static class RunEndpoints
     {
         var g = app.MapGroup("/api/v1/runs");
 
-        g.MapGet("", (int? limit, IRunReader reader, CancellationToken ct) => reader.ListAsync(limit ?? 20, ct));
+        g.MapGet("", (int? limit, string? project, IRunReader reader, CancellationToken ct) => reader.ListAsync(limit ?? 20, ct, project));
         // Sabit yol {id}'den once eslesir: "overview" diye bir calisma kimligi olamaz (kimlikler tarih-saat-hex).
         g.MapGet("/overview", (IRunReader reader, CancellationToken ct) => reader.GetOverviewAsync(ct));
         g.MapGet("/{id}", (string id, IRunReader reader, CancellationToken ct) => reader.GetDetailAsync(id, ct));

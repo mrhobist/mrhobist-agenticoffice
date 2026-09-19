@@ -45,9 +45,10 @@ public sealed partial class ProblemMapping(ILogger<ProblemMapping> logger) : IEx
     private static int StatusCode(string errorCode) => errorCode switch
     {
         ErrorCodes.ConfigFileInvalid or ErrorCodes.KnowledgeInvalidKey => StatusCodes.Status500InternalServerError,
-        ErrorCodes.ConfigFileMissing or ErrorCodes.WorkflowNotFound => StatusCodes.Status404NotFound,
+        ErrorCodes.ConfigFileMissing or ErrorCodes.WorkflowNotFound or ErrorCodes.ProjectNotFound => StatusCodes.Status404NotFound,
         ErrorCodes.AgentExists or ErrorCodes.AgentInUse or ErrorCodes.WorkflowDefaultProtected
-            or ErrorCodes.RunNotAwaitingApproval or ErrorCodes.RunNotRetryable or ErrorCodes.RunNotCancellable => StatusCodes.Status409Conflict,
+            or ErrorCodes.RunNotAwaitingApproval or ErrorCodes.RunNotRetryable or ErrorCodes.RunNotCancellable
+            or ErrorCodes.ProjectExists or ErrorCodes.ProjectInUse => StatusCodes.Status409Conflict,
         _ => StatusCodes.Status400BadRequest,
     };
 

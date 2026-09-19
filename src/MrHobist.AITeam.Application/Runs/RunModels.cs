@@ -7,7 +7,7 @@ namespace MrHobist.AITeam.Application.Runs;
 /// <c>POST /runs</c> govdesi. <see cref="Workflow"/> yoksa <c>default</c>, <see cref="Sensitivity"/> yoksa <c>anthropic</c>,
 /// <see cref="MaxCostUsd"/> yoksa butce siniri yok.
 /// </summary>
-public sealed record RunRequest(string Brief, string? Workflow = null, Sensitivity? Sensitivity = null, string? Label = null, decimal? MaxCostUsd = null);
+public sealed record RunRequest(string Brief, string? Workflow = null, Sensitivity? Sensitivity = null, string? Label = null, decimal? MaxCostUsd = null, string? Project = null);
 
 /// <summary><c>POST /runs/{id}/revise</c> govdesi.</summary>
 public sealed record ReviseRequest(string Note);
@@ -41,6 +41,8 @@ public sealed record RunDetail(
     string? Detail,
     decimal? MaxCostUsd,
     int Retries,
+    string Project,
+    string OwnerId,
     WorkflowDetail? WorkflowDef,
     Spec? Spec,
     IReadOnlyList<string> Order,

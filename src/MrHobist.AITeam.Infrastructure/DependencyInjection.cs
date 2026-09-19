@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Agents;
+using MrHobist.AITeam.Application.Projects;
 using MrHobist.AITeam.Application.Runs;
 using MrHobist.AITeam.Application.Workflows;
 using MrHobist.AITeam.Infrastructure.Runtime;
@@ -17,6 +18,8 @@ public static class DependencyInjection
         services.AddSingleton(paths);
         services.AddSingleton<IAgentStore, MarkdownAgentStore>();
         services.AddSingleton<IWorkflowStore, JsonWorkflowStore>();
+        services.AddSingleton<IProjectStore, JsonProjectStore>();
+        services.AddSingleton<IProjectService, ProjectService>();
         services.AddSingleton<IRunStore, JsonlRunStore>();
         services.AddSingleton<IAgentService, AgentService>();
         services.AddSingleton<IWorkflowService, WorkflowService>();

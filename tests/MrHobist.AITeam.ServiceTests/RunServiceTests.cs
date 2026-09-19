@@ -1,8 +1,10 @@
 using System.Text.Json;
 using MrHobist.AITeam.Application.Abstractions;
+using MrHobist.AITeam.Application.Common;
 using MrHobist.AITeam.Application.Runs;
 using MrHobist.AITeam.Domain;
 using MrHobist.AITeam.Domain.Agents;
+using MrHobist.AITeam.Domain.Projects;
 using MrHobist.AITeam.Domain.Runs;
 using MrHobist.AITeam.Infrastructure.Storage;
 
@@ -19,6 +21,7 @@ public sealed class RunServiceTests : IDisposable
     private readonly FakeScene _scene = new();
     private readonly JsonlRunStore _store;
     private readonly RunReader _reader;
+    private readonly JsonProjectStore _projects;
     private readonly RunService _svc;
 
     public RunServiceTests()
@@ -27,7 +30,9 @@ public sealed class RunServiceTests : IDisposable
         var agents = new MarkdownAgentStore(_fx.Paths);
         var workflows = new JsonWorkflowStore(_fx.Paths);
         _reader = new RunReader(_store);
-        _svc = new RunService(_store, workflows, agents, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene);
+        _projects = new JsonProjectStore(_fx.Paths);
+        _projects.SaveAsync(new Project("test", "Test", "", "default", "projects/test", Project.LocalOwner, DateTimeOffset.UtcNow), Ct).GetAwaiter().GetResult();
+        _svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene);
     }
 
     public void Dispose() => _fx.Dispose();
@@ -37,7 +42,7 @@ public sealed class RunServiceTests : IDisposable
     [Fact]
     public async Task Analiz_plani_uretir_ve_onay_bekler()
     {
-        var run = await _svc.CreateAsync(new RunRequest("Türkçe slugify fonksiyonu yaz"), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "Türkçe slugify fonksiyonu yaz"), Ct);
         Assert.Equal(RunStatus.Running, run.Status);
         Assert.Equal("default", run.Workflow);
         Assert.True(File.Exists(Path.Combine(_fx.Paths.RunsRoot, run.Id, "workflow.json")));
@@ -65,7 +70,7 @@ public sealed class RunServiceTests : IDisposable
     [Fact]
     public async Task Revize_notu_gecmisle_analiste_gider_ve_plan_degisir()
     {
-        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
         await _svc.AnalyzeAsync(run.Id, Ct);
 
         run = await _svc.BeginReviseAsync(run.Id, "t3 olarak dokümantasyon görevi ekle", Ct);
@@ -90,7 +95,7 @@ public sealed class RunServiceTests : IDisposable
     [Fact]
     public async Task Onay_sonrasi_organizator_ilk_gorevi_developera_verir_ve_calisma_duraklar()
     {
-        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
         await _svc.AnalyzeAsync(run.Id, Ct);
         run = await _svc.BeginApproveAsync(run.Id, Ct);
         Assert.Equal(RunStatus.Running, run.Status);
@@ -129,7 +134,7 @@ public sealed class RunServiceTests : IDisposable
     [Fact]
     public async Task Onay_ve_revize_yalniz_bekleyen_calismada()
     {
-        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
         var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.BeginApproveAsync(run.Id, Ct));
         Assert.Equal(ErrorCodes.RunNotAwaitingApproval, ex.ErrorCode);
         ex = await Assert.ThrowsAsync<DomainException>(() => _svc.BeginReviseAsync(run.Id, "not", Ct));
@@ -141,18 +146,33 @@ public sealed class RunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Is_projesiz_baslamaz_ve_projenin_akisini_devralir()
+    {
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief"), Ct));
+        Assert.Equal(ErrorCodes.RunProjectRequired, ex.ErrorCode);
+        var nf = await Assert.ThrowsAsync<NotFoundException>(() => _svc.CreateAsync(new RunRequest(Project: "yok", Brief: "brief"), Ct));
+        Assert.Equal(ErrorCodes.ProjectNotFound, nf.ErrorCode);
+
+        await _projects.SaveAsync(new Project("tasarim-projesi", "T", "", "tasarimli", "projects/t", Project.LocalOwner, DateTimeOffset.UtcNow), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "tasarim-projesi", Brief: "brief"), Ct);
+        Assert.Equal(("tasarimli", "tasarim-projesi", Project.LocalOwner), (run.Workflow, run.Project, run.OwnerId));
+        var explicitWf = await _svc.CreateAsync(new RunRequest(Project: "tasarim-projesi", Brief: "brief", Workflow: "default"), Ct);
+        Assert.Equal("default", explicitWf.Workflow);
+    }
+
+    [Fact]
     public async Task Bos_brief_ve_bilinmeyen_akis_reddedilir()
     {
-        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("  "), Ct));
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest(Project: "test", Brief: "  "), Ct));
         Assert.Equal(ErrorCodes.RunBriefEmpty, ex.ErrorCode);
-        ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief", Workflow: "yok"), Ct));
+        ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief", Workflow: "yok"), Ct));
         Assert.Equal(ErrorCodes.WorkflowNotFound, ex.ErrorCode);
     }
 
     [Fact]
     public async Task Hassasiyet_local_iken_anthropic_ajanlar_calismayi_baslatmaz()
     {
-        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief", Sensitivity: Sensitivity.Local), Ct));
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief", Sensitivity: Sensitivity.Local), Ct));
         Assert.Equal(ErrorCodes.RunPolicyViolation, ex.ErrorCode);
         var run = Assert.Single(await _store.ListAsync(10, Ct));
         Assert.Equal(RunStatus.PolicyRejected, run.Status);
@@ -163,7 +183,7 @@ public sealed class RunServiceTests : IDisposable
     public async Task Analist_gecersiz_plan_donerse_calisma_failed()
     {
         _runtime.SpecJson = "{\"summary\":\"x\",\"architecture\":\"y\",\"rules\":[],\"tasks\":[]}";
-        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
         run = await _svc.AnalyzeAsync(run.Id, Ct);
         Assert.Equal(RunStatus.Failed, run.Status);
         Assert.Contains("gorev yok", run.Detail, StringComparison.Ordinal);
@@ -173,14 +193,14 @@ public sealed class RunServiceTests : IDisposable
     public async Task Butce_asilinca_calisma_durur_ve_tekrar_ile_surer()
     {
         // Sahte analiz turu $0.02: tavan $0.01 → analiz biter ama BudgetExceeded; plan yine de yazilmistir.
-        var run = await _svc.CreateAsync(new RunRequest("brief", MaxCostUsd: 0.01m), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief", MaxCostUsd: 0.01m), Ct);
         run = await _svc.AnalyzeAsync(run.Id, Ct);
         Assert.Equal(RunStatus.BudgetExceeded, run.Status);
         Assert.Contains("bütçe", run.Detail, StringComparison.Ordinal);
         Assert.NotNull(await _store.ReadSpecAsync(run.Id, Ct));
         Assert.Contains(await _store.ReadMessagesAsync(run.Id, Ct), m => m.Subject == "error");
 
-        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief", MaxCostUsd: 0m), Ct));
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief", MaxCostUsd: 0m), Ct));
         Assert.Equal(ErrorCodes.RunBudgetInvalid, ex.ErrorCode);
     }
 
@@ -190,10 +210,10 @@ public sealed class RunServiceTests : IDisposable
         var agents = new MarkdownAgentStore(_fx.Paths);
         var workflows = new JsonWorkflowStore(_fx.Paths);
         var caller = new AgentCaller(agents, _runtime, _store, _scene, new RetryPolicy(3, TimeSpan.Zero));
-        var svc = new RunService(_store, workflows, agents, _reader, caller, _scene);
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene);
 
         _runtime.FailTransientTimes = 2; // ilk iki deneme 503, ucuncu gecer
-        var run = await svc.CreateAsync(new RunRequest("brief"), Ct);
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
         run = await svc.AnalyzeAsync(run.Id, Ct);
 
         Assert.Equal(RunStatus.AwaitingApproval, run.Status);
@@ -202,7 +222,7 @@ public sealed class RunServiceTests : IDisposable
 
         // Denemeler bitince kalici hata: Failed + error notu.
         _runtime.FailTransientTimes = 5;
-        var run2 = await svc.CreateAsync(new RunRequest("brief 2"), Ct);
+        var run2 = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief 2"), Ct);
         run2 = await svc.AnalyzeAsync(run2.Id, Ct);
         Assert.Equal(RunStatus.Failed, run2.Status);
         Assert.Contains(await _store.ReadMessagesAsync(run2.Id, Ct), m => m.Subject == "error");
@@ -212,7 +232,7 @@ public sealed class RunServiceTests : IDisposable
     [Fact]
     public async Task Yeniden_baslatmada_running_calismalar_interrupted()
     {
-        var run = await _svc.CreateAsync(new RunRequest("brief"), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
         Assert.Equal(1, await _svc.MarkInterruptedAsync(Ct));
         Assert.Equal(RunStatus.Interrupted, (await _reader.GetAsync(run.Id, Ct)).Status);
         Assert.Equal(0, await _svc.MarkInterruptedAsync(Ct));
@@ -221,7 +241,7 @@ public sealed class RunServiceTests : IDisposable
     [Fact]
     public async Task Detay_akis_kopyasini_plani_ve_sirayi_verir()
     {
-        var run = await _svc.CreateAsync(new RunRequest("brief", Label: "etiket"), Ct);
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief", Label: "etiket"), Ct);
         await _svc.AnalyzeAsync(run.Id, Ct);
         var detail = await _reader.GetDetailAsync(run.Id, Ct);
         Assert.Equal("etiket", detail.Label);
@@ -234,11 +254,11 @@ public sealed class RunServiceTests : IDisposable
     [Fact]
     public async Task Gelen_kutusu_onay_bekleyeni_ve_duseni_sayar_iptal_ve_yeniden_dene_calisir()
     {
-        var a = await _svc.CreateAsync(new RunRequest("brief a", Label: "a"), Ct);
+        var a = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief a", Label: "a"), Ct);
         await _svc.AnalyzeAsync(a.Id, Ct); // AwaitingApproval → soru
 
         _runtime.SpecJson = "{\"summary\":\"x\",\"architecture\":\"y\",\"rules\":[],\"tasks\":[]}";
-        var b = await _svc.CreateAsync(new RunRequest("brief b", Label: "b"), Ct);
+        var b = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief b", Label: "b"), Ct);
         await _svc.AnalyzeAsync(b.Id, Ct); // Failed → karar
         _runtime.SpecJson = null;
 
@@ -252,7 +272,7 @@ public sealed class RunServiceTests : IDisposable
         Assert.Contains("gorev yok", decision.Detail, StringComparison.Ordinal);
 
         // Iptal: hic baslamamis (PolicyRejected) ya da zaten iptal edilmis calisma iptal edilemez; onay bekleyen edilir.
-        await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest("brief c", Sensitivity: Sensitivity.Local), Ct));
+        await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief c", Sensitivity: Sensitivity.Local), Ct));
         var c = (await _store.ListAsync(10, Ct)).Single(r => r.Status == RunStatus.PolicyRejected);
         var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CancelAsync(c.Id, Ct));
         Assert.Equal(ErrorCodes.RunNotCancellable, ex.ErrorCode);
@@ -262,7 +282,7 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal(ErrorCodes.RunNotCancellable, ex.ErrorCode);
 
         // Dusen calisma "kapat" anlaminda iptal edilir ve gelen kutusundan duser; PolicyRejected zaten kutuda degildir.
-        var d = await _svc.CreateAsync(new RunRequest("brief d", Label: "d"), Ct);
+        var d = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief d", Label: "d"), Ct);
         _runtime.SpecJson = "{\"summary\":\"x\",\"architecture\":\"y\",\"rules\":[],\"tasks\":[]}";
         await _svc.AnalyzeAsync(d.Id, Ct);
         _runtime.SpecJson = null;

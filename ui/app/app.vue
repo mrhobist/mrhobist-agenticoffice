@@ -13,7 +13,6 @@
           İşler <b v-if="overview" class="n">{{ overview.total }}</b>
           <span v-if="inboxCount" class="badge" :aria-label="`${inboxCount} iş senden cevap bekliyor`">{{ inboxCount }}</span>
         </button>
-        <button type="button" class="chip action" :class="{ on: runPanel }" @click="toggleRun">{{ runPanel ? 'Çalışmayı kapat' : 'Yeni çalışma' }}</button>
         <button type="button" class="chip action" :class="{ on: settings }" aria-label="Ayarlar" title="Ayarlar (S)" @click="toggleSettings">⚙ Ayarlar</button>
       </span>
     </header>
@@ -28,29 +27,31 @@
     </div>
 
     <div class="main">
-      <!-- Sol ray: ahsap; calismalar kagit kart (proje varligi gelince kartlar proje olur, isler icine girer). -->
-      <aside class="rail" aria-label="Çalışmalar">
+      <!-- Sol ray: ahsap; projeler igneli kagit kart (docs/DOMAIN.md → Projeler). Kart acilinca proje paneli; is yalniz orada baslar. -->
+      <aside class="rail" :class="{ narrow: projectPanel }" aria-label="Projeler">
         <div class="rail-head">
-          <span class="rail-title">Çalışmalar</span>
-          <span class="rail-count">{{ railRuns.length }}</span>
-          <button type="button" class="rail-add" aria-label="Yeni çalışma" title="Yeni çalışma (N)" @click="openRun('')">+</button>
+          <span class="rail-title">Projeler</span>
+          <span class="rail-count">{{ projects.length }}</span>
+          <button type="button" class="rail-add" aria-label="Yeni proje" title="Yeni proje (N)" @click="openProject('')">+</button>
         </div>
         <button
-          v-for="(r, i) in railRuns"
-          :key="r.id"
+          v-for="(p, i) in projects"
+          :key="p.key"
           type="button"
           class="card"
-          :class="[r.status, { on: runPanel && runId === r.id }]"
-          :style="{ transform: `rotate(${(i % 3) - 1 * 0.6}deg)` }"
-          @click="openRun(r.id)"
+          :class="{ on: projectPanel && projectKey === p.key, quiet: !p.running && !p.awaitingApproval && !p.paused }"
+          :style="{ transform: `rotate(${((i % 3) - 1) * 0.6}deg)` }"
+          :title="p.title"
+          @click="openProject(p.key)"
         >
-          <span class="pin" :class="r.status" aria-hidden="true" />
-          <strong class="card-title">{{ r.label }}</strong>
-          <span class="card-meta">{{ RUN_STATUS_LABEL[r.status] }} · {{ fmtCost(r.totalCostUsd) }}</span>
-          <span v-if="pendingOf(r.id)" class="card-ask"><span aria-hidden="true">🔔</span> {{ INBOX_KIND_LABEL[pendingOf(r.id)!.kind] }}: {{ pendingOf(r.id)!.title }}</span>
-          <span v-else-if="r.detail" class="card-detail">{{ r.detail }}</span>
+          <span class="pin" :class="pinOf(p)" aria-hidden="true" />
+          <span class="card-avatar">{{ initials(p.title) }}</span>
+          <strong class="card-title">{{ p.title }}</strong>
+          <span class="card-meta">{{ p.runs }} iş<template v-if="p.running"> · <b class="run-n">{{ p.running }} çalışıyor</b></template><template v-if="p.paused"> · {{ p.paused }} durakladı</template> · {{ fmtCost(p.totalCostUsd) }}</span>
+          <span v-if="inboxOfProject(p.key)" class="card-ask"><span aria-hidden="true">🔔</span> {{ inboxOfProject(p.key) }} senden bekliyor</span>
+          <span v-else-if="p.lastActivityAt" class="card-detail">son hareket {{ fmtAgo(p.lastActivityAt) }}</span>
         </button>
-        <p v-if="!railRuns.length" class="rail-empty">Aktif çalışma yok. Brief ver, analist planı çıkarsın.</p>
+        <p v-if="!projects.length" class="rail-empty">Henüz proje yok. "+" ile ilk projeyi aç; işler onun içinde başlar.</p>
         <button type="button" class="rail-all" @click="toggleJobs">Tüm işler <b v-if="overview">{{ overview.total }}</b></button>
       </aside>
 
@@ -88,8 +89,20 @@
         <!-- Isler: sayaclar, gelen kutusu, tum calismalar. -->
         <JobsPanel v-if="jobs" :overview="overview" @close="jobs = false" @open="openRun" @new="openRun('')" />
 
-        <!-- Calisma paneli: yeni brief, plan onayi, devir notlari. Diger panellerle ayni anda acilmaz. -->
-        <RunPanel v-if="runPanel" :run-id="runId" :agents="team" @close="runPanel = false" @open="openRun" @jobs="toggleJobs" />
+        <!-- Proje paneli: kagit pano, Isler / Ayarlar; "Yeni is" yalniz burada. -->
+        <ProjectPanel
+          v-if="projectPanel"
+          :project-key="projectKey"
+          :inbox="overview?.inbox ?? []"
+          @close="projectPanel = false"
+          @open-run="openRun"
+          @new-run="openNewRun"
+          @created="onProjectCreated"
+          @changed="loadProjects"
+        />
+
+        <!-- Calisma paneli: yeni brief (projeye bagli), plan onayi, devir notlari. Diger panellerle ayni anda acilmaz. -->
+        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" @close="closeRun" @open="openRun" @jobs="toggleJobs" />
 
         <!-- Ayarlar: LLM baglantilari (tek tikla giris) ve kullanim. -->
         <SettingsPanel v-if="settings" @close="settings = false" @changed="loadProviders(); limitsBar?.reload()" />
@@ -116,9 +129,10 @@ import RunPanel from '~/components/RunPanel.vue'
 import SettingsPanel from '~/components/SettingsPanel.vue'
 import LimitsBar from '~/components/LimitsBar.vue'
 import JobsPanel from '~/components/JobsPanel.vue'
+import ProjectPanel from '~/components/ProjectPanel.vue'
 import type { Hud } from '~/scene/world'
 import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
-import type { AgentDetail, AgentListItem, InboxItem, ProviderStatus, RunStatus, RunSummary, RunsOverview } from '~/api/types'
+import type { AgentDetail, AgentListItem, InboxItem, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel } from '~/api/labels'
@@ -164,21 +178,36 @@ function teamSummary(key: string): string | undefined {
   return `${a.summary} — ${providerLabel(a.provider)} · ${a.model ?? 'varsayılan model'}`
 }
 
-// ------------------------------------------------------------------ sol ray: aktif calismalar (GET /runs, 5 s)
+// ------------------------------------------------------------------ sol ray: projeler (GET /projects, 5 s)
 
-const RAIL_ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'awaitingApproval', 'paused'])
+const projects = ref<ProjectCard[]>([])
 const runsList = ref<RunSummary[]>([])
-/** Aktif olanlar + senden bir sey bekleyen dusmus calismalar; en fazla 8 kart, kalani "Tum isler". */
-const railRuns = computed(() => {
-  const inboxIds = new Set((overview.value?.inbox ?? []).map(i => i.runId))
-  return runsList.value.filter(r => RAIL_ACTIVE.has(r.status) || inboxIds.has(r.id)).slice(0, 8)
-})
-function pendingOf(id: string): InboxItem | undefined {
-  return overview.value?.inbox.find(i => i.runId === id)
+async function loadProjects() {
+  try { projects.value = await api.get<ProjectCard[]>('/api/v1/projects') } catch { /* ray eski kalir */ }
 }
-function fmtCost(v: number): string { return v ? `$${v.toFixed(2)}` : '$0' }
 async function loadRuns() {
-  try { runsList.value = await api.get<RunSummary[]>('/api/v1/runs?limit=50') } catch { /* ray eski kalir */ }
+  try { runsList.value = await api.get<RunSummary[]>('/api/v1/runs?limit=100') } catch { /* eski kalir */ }
+}
+/** Projenin gelen kutusundaki is sayisi (run → project eslesmesi runs listesinden). */
+function inboxOfProject(key: string): number {
+  const ids = new Set(runsList.value.filter(r => r.project === key).map(r => r.id))
+  return (overview.value?.inbox ?? []).filter(i => ids.has(i.runId)).length
+}
+function pinOf(p: ProjectCard): string {
+  if (inboxOfProject(p.key)) return 'ask'
+  if (p.running) return 'running'
+  if (p.paused) return 'paused'
+  return 'quiet'
+}
+function initials(t: string): string { return t.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('') || '?' }
+function fmtCost(v: number): string { return v ? `$${v.toFixed(2)}` : '$0' }
+function fmtAgo(s: string): string {
+  const m = Math.max(0, Math.round((Date.now() - new Date(s).getTime()) / 60_000))
+  if (m < 1) return 'az önce'
+  if (m < 60) return `${m} dk önce`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} sa önce`
+  return `${Math.floor(h / 24)} g önce`
 }
 
 function sceneNameOf(key: string): string {
@@ -251,8 +280,44 @@ async function loadProviders(refresh = false) {
 
 const runPanel = ref(false)
 const runId = ref<string | null>(null)
+/** Yeni is formunun projesi; is yalniz bir projenin icinde baslar. */
+const runProject = ref<string | null>(null)
 const settings = ref(false)
 const jobs = ref(false)
+const projectPanel = ref(false)
+const projectKey = ref<string | null>(null) // null = yeni proje formu
+
+function closeOthers() {
+  selected.value = null
+  board.value = null
+  settings.value = false
+  jobs.value = false
+}
+
+/** Proje kartini ac ('' → yeni proje formu). Calisma paneli kapanir; ray daralir. */
+function openProject(key: string) {
+  if (selected.value && !leaveAgent()) return
+  closeOthers()
+  runPanel.value = false
+  projectKey.value = key || null
+  projectPanel.value = true
+}
+
+/** Proje panelinden "Yeni is": form o projeye bagli acilir, proje paneli acik kalir. */
+function openNewRun(project: string) {
+  runProject.value = project
+  runId.value = null
+  runPanel.value = true
+}
+
+function onProjectCreated(key: string) {
+  void loadProjects()
+  openProject(key)
+}
+
+function closeRun() {
+  runPanel.value = false
+}
 
 function toggleSettings() {
   if (settings.value) { settings.value = false; return }
@@ -298,24 +363,19 @@ function openBoard(s: BoardSnapshot) {
   board.value = s
 }
 
-function toggleRun() {
-  if (runPanel.value) { runPanel.value = false; return }
-  if (selected.value && !leaveAgent()) return
-  selected.value = null
-  board.value = null
-  settings.value = false
-  jobs.value = false
-  runPanel.value = true
-}
 
-/** Panel, gelen kutusu ya da pano icinden: '' → yeni calisma formu, id → o calisma. Diger paneller kapanir. */
+/** Gelen kutusu, pano ya da proje panelinden: id → o calisma; '' → yeni is (acik projenin icinde, yoksa uyari). Proje paneli acik kalir. */
 function openRun(id: string) {
   if (selected.value && !leaveAgent()) return
-  selected.value = null
-  board.value = null
-  settings.value = false
-  jobs.value = false
-  runId.value = id || null
+  closeOthers()
+  if (id) {
+    runId.value = id
+    const r = runsList.value.find(x => x.id === id)
+    if (r?.project) runProject.value = r.project
+  } else {
+    runId.value = null
+    runProject.value = projectPanel.value ? projectKey.value : null
+  }
   runPanel.value = true
 }
 
@@ -327,6 +387,7 @@ function onKey(e: KeyboardEvent) {
     if (settings.value) settings.value = false
     else if (jobs.value) jobs.value = false
     else if (runPanel.value) runPanel.value = false
+    else if (projectPanel.value) projectPanel.value = false
     else if (board.value) board.value = null
     else if (selected.value) closeAgent()
   }
@@ -334,7 +395,7 @@ function onKey(e: KeyboardEvent) {
     if (board.value) board.value = null
     else scene.value?.publishBoard()
   }
-  if (e.key === 'n' || e.key === 'N') toggleRun()
+  if (e.key === 'n' || e.key === 'N') openProject('')
   if (e.key === 's' || e.key === 'S') toggleSettings()
   if (e.key === 'i' || e.key === 'I') toggleJobs()
 }
@@ -345,7 +406,8 @@ onMounted(() => {
   void loadProviders()
   void loadOverview()
   void loadRuns()
-  overviewTimer = setInterval(() => { void loadOverview(); void loadRuns() }, 5000)
+  void loadProjects()
+  overviewTimer = setInterval(() => { void loadOverview(); void loadRuns(); void loadProjects() }, 5000)
 })
 onBeforeUnmount(() => { window.removeEventListener('keydown', onKey); clearInterval(boardTimer); clearInterval(overviewTimer) })
 
@@ -434,7 +496,13 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 }
 .card:hover { background: #f3efe3; }
 .card.on { outline: 3px solid #f6e2a0; }
-.card.completed, .card.cancelled { opacity: 0.8; }
+.card.quiet { opacity: 0.85; }
+.card-avatar { position: absolute; right: 10px; top: 10px; width: 24px; height: 24px; border-radius: 6px; background: #3d5a80; color: #fff; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.card .card-title { padding-right: 30px; }
+.run-n { color: #1f5f93; font-weight: 700; }
+.pin.ask { background: #d23b3b; border-color: #7a1f1f; }
+.pin.quiet { background: #9aa1b3; border-color: #5c6373; }
+.rail.narrow { width: 232px; }
 .pin { position: absolute; left: 50%; top: -6px; width: 12px; height: 12px; border-radius: 50%; transform: translateX(-50%); background: #7b87a0; border: 2px solid #4a5068; }
 .pin.running { background: #4fa3e0; border-color: #1f5f93; }
 .pin.awaitingApproval { background: #f3c34a; border-color: #8a6d2a; }

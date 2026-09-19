@@ -46,6 +46,7 @@ public sealed class RunService(
     IRunStore runs,
     IWorkflowStore workflows,
     IAgentStore agents,
+    IProjectStore projects,
     IRunReader reader,
     AgentCaller caller,
     ISceneEventPublisher scene) : IRunService
@@ -67,7 +68,14 @@ public sealed class RunService(
             throw new DomainException(ErrorCodes.RunBudgetInvalid, "maxCostUsd sifirdan buyuk olmali ya da bos.");
         }
 
-        var wfKey = string.IsNullOrWhiteSpace(request.Workflow) ? Workflow.DefaultKey : request.Workflow.Trim();
+        // Is yalniz bir projenin icinde baslar (kullanici karari, docs/DOMAIN.md → Projeler). Akis bos → projenin varsayilani.
+        if (string.IsNullOrWhiteSpace(request.Project))
+        {
+            throw new DomainException(ErrorCodes.RunProjectRequired, "project bos; is bir projenin icinde baslar.");
+        }
+
+        var project = await projects.LoadAsync(request.Project.Trim(), ct).ConfigureAwait(false);
+        var wfKey = string.IsNullOrWhiteSpace(request.Workflow) ? project.Workflow : request.Workflow.Trim();
         var wf = await workflows.LoadAsync(wfKey, ct).ConfigureAwait(false);
         var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
         wf.ValidateAgainst(team);
@@ -75,7 +83,7 @@ public sealed class RunService(
         var sensitivity = request.Sensitivity ?? RunDefaults.Sensitivity;
         var brief = request.Brief.Trim();
         var label = string.IsNullOrWhiteSpace(request.Label) ? Ellipsis(brief, 48) : request.Label.Trim();
-        var run = new Run(NewId(), label, brief, sensitivity, DateTimeOffset.UtcNow, RunStatus.Running, Workflow: wfKey, Detail: "analiz", MaxCostUsd: request.MaxCostUsd);
+        var run = new Run(NewId(), label, brief, sensitivity, DateTimeOffset.UtcNow, RunStatus.Running, Workflow: wfKey, Detail: "analiz", MaxCostUsd: request.MaxCostUsd, Project: project.Key, OwnerId: project.OwnerId);
 
         // Politika calisma baslamadan: tek aykiri rol varsa hic baslamaz (v1 dersi, CLAUDE.md §4).
         var violations = wf.Roles
