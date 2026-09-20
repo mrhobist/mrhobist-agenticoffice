@@ -5,6 +5,8 @@ import { Agent, Cat, Door, drawDrink, type Action, type Drink } from './entities
 import { Board } from './board'
 import { drawSky } from './sky'
 import { authHeaders } from '~/composables/useAuth'
+import { deriveCards, HIDDEN_RUN_STATUS } from '~/api/board'
+import type { RunDetail, RunSummary } from '~/api/types'
 
 export interface Hud {
   stage: string
@@ -40,6 +42,10 @@ export class World {
   clockHour: number | null = null
   /** cafe.special ile sabitlenen yazi; null = liste sirayla doner. */
   specialOverride: string | null = null
+
+  /** Sunucudan pano esitlemesi: son istek zamani ve bitmis calismalarin detay onbellegi. */
+  private boardSyncAt = 0
+  private readonly runDetails = new Map<string, RunDetail>()
 
   private bg: HTMLCanvasElement | null = null
   private bgKey = ''
@@ -137,10 +143,10 @@ export class World {
         this.meet(e.data.from, e.data.to, e.data.kind, e.data.ms ?? 4500, now)
         break
       case 'board.set':
-        this.board.set(e.data.tasks)
+        this.board.set(e.data.tasks, e.data.run)
         break
       case 'board.move':
-        this.board.move(e.data.task, e.data.stage, e.data.state)
+        this.board.move(e.data.task, e.data.stage, e.data.state, e.data.run)
         break
       case 'run.stage':
         this.hud = { stage: e.data.stage, task: e.data.task, round: e.data.round }
@@ -351,6 +357,9 @@ export class World {
     this.board.update(dt)
     this.ambient(now)
     this.returns(now)
+    // Pano sunucudan da beslenir (kullanici istegi 2026-09-20: "bitmis isi Bitti'de gormuyorum"):
+    // SSE yalniz bu oturumda olani tasir, bitmis isler ve yenilenen sayfa buradan gelir.
+    if (now - this.boardSyncAt > 6000) { this.boardSyncAt = now; void this.syncBoard() }
     // Kupa icildi sayilir: sure dolunca masadan (ya da elden) kalkar.
     for (const a of this.agents.values()) {
       if (a.mugUntil && now > a.mugUntil) { a.mugUntil = 0; a.mugSeat = null; a.carrying = null }
@@ -514,6 +523,28 @@ export class World {
     }
     if (!a.offstage && (state === 'idle' || state === 'done')) {
       a.command([{ t: 'wait', ms: 3000 }, ...this.leaveActions(a, 60_000 + Math.random() * 90_000)], now, { ambient: true })
+    }
+  }
+
+  /**
+   * Panoyu sunucudan esitle: son calismalar + detaylari, kart kurali `~/api/board` (buyuk gorunumle ayni).
+   * Bitmis calismanin detayi degismez, bir kez cekilir. Hata sessizce yutulur: pano kozmetiktir.
+   */
+  private async syncBoard(): Promise<void> {
+    try {
+      const res = await fetch(`${this.apiBase}/api/v1/runs?limit=20`, { headers: authHeaders() })
+      if (!res.ok) return
+      const runs = ((await res.json()) as RunSummary[]).filter(r => !HIDDEN_RUN_STATUS.has(r.status)).slice(0, 8)
+      const settled = new Set(['completed', 'failed', 'interrupted', 'budgetExceeded'])
+      await Promise.all(runs.map(async (r) => {
+        if (this.runDetails.has(r.id) && settled.has(r.status)) return
+        const d = await fetch(`${this.apiBase}/api/v1/runs/${encodeURIComponent(r.id)}`, { headers: authHeaders() })
+        if (d.ok) this.runDetails.set(r.id, (await d.json()) as RunDetail)
+      }))
+      const cards = runs.flatMap(r => { const d = this.runDetails.get(r.id); return d ? deriveCards(r, d) : [] })
+      if (cards.length) this.board.sync(cards)
+    } catch (err) {
+      console.warn('pano esitlenemedi', err)
     }
   }
 

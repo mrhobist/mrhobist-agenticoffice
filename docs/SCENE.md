@@ -123,7 +123,7 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `agent.say` | `agent, kind: talk/ask/alert, text?, ms?` | balon |
 | `agent.goto` / `agent.home` | `agent, spot` / `agent` | yürür |
 | `meet` | `from, to, kind: handoff/ask/reject, ms?` | `from` gider, karşılıklı balon, döner; oturan `to` arkasına döner |
-| `board.set` / `board.move` | `tasks[]` / `task, stage, state` | not eklenir, sütun değişimi zıplayarak animasyonlanır |
+| `board.set` / `board.move` | `tasks[]`, `run?` / `task, stage, state, run?` | not eklenir, sütun değişimi zıplayarak animasyonlanır. Görev kimliği **çalışmayla** anahtarlanır (`run:task`): iki çalışmanın aynı görev kimliği çarpışmaz |
 | `run.stage` | `stage, task, round` | üst şerit |
 | `cat` | `action: sleep/wander/sit, spot?` | kedi |
 | `door` | `state` | kapı; 6 s sonra kapanır |
@@ -144,6 +144,12 @@ sorgulamak için açıktır.
 (2026-09-20): tek büyük engel dikdörtgeni yerine **koltuk gövdesi** ve **sehpa** ayrı ayrı
 engellendi; arada kalan minder şeridi yürünebilir. Yatak orada olduğu için kedi artık ışınlanmaz
 (`snapTo` gerekmez), yürüyerek mindere çıkar; koltuğa gelen ajan da minderin önünde durur.
+
+**Küçük pano iki kaynaktan beslenir.** SSE (`board.set`/`board.move`) yalnız bu oturumda olan biteni
+taşır; sahne ayrıca 6 saniyede bir `GET /runs` + `GET /runs/{id}` ile panoyu **sunucudan eşitler**
+(`World.syncBoard` → `Board.sync`). Kart kuralı tek yerdedir: `ui/app/api/board.ts` → `deriveCards`,
+büyük görünüm (KanbanPanel) de aynı işlevi çağırır ve sunucudaki `BoardTarget` ile aynı kuraldır.
+Böylece **bitmiş işler Bitti şeridinde görünür** ve sayfa yenilenince pano boş kalmaz.
 
 **Sahnede tıklanabilir ne varsa** (kullanıcı isteği 2026-09-20) `OfficeScene.vue` tek bir sırayla
 dener: ajan → kedi → ışık → pano. İmleç hepsinin üstünde `pointer` olur.

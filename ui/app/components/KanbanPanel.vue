@@ -10,6 +10,7 @@ import type { TaskState } from '~/scene/contract'
 import type { InboxItem, ProjectCard, RunDetail, RunStatus, RunSummary } from '~/api/types'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL } from '~/api/labels'
 import { useApiClient } from '~/api/client'
+import { deriveCards, HIDDEN_RUN_STATUS, type DerivedCard } from '~/api/board'
 
 /**
  * Sprint panosu (kullanici karari 2026-09-20): sekmeler **Tümü | proje | proje …** (proje sirasi ve rengiyle; "Sahne" yok).
@@ -24,8 +25,6 @@ const api = useApiClient()
 
 // ------------------------------------------------------------------ veri: projeler, calismalar, detaylar
 
-/** Panoda gorunmeyen durumlar: gorevleri hic baslamamis ya da vazgecilmis. */
-const HIDDEN: ReadonlySet<RunStatus> = new Set<RunStatus>(['cancelled', 'policyRejected'])
 /** Grup sirasi: senden cevap bekleyen → calisan → onay bekleyen → limit → dusen → bitmis (yeni → eski). */
 const RANK: Record<RunStatus, number> = { awaitingInput: 0, running: 1, awaitingApproval: 2, paused: 3, failed: 4, interrupted: 4, budgetExceeded: 4, completed: 5, cancelled: 6, policyRejected: 7 }
 
@@ -41,7 +40,7 @@ async function loadRuns() {
   try {
     const [all, ps] = await Promise.all([api.get<RunSummary[]>('/api/v1/runs?limit=60'), api.get<ProjectCard[]>('/api/v1/projects').catch(() => projects.value)])
     projects.value = ps
-    runs.value = all.filter(r => !HIDDEN.has(r.status)).sort((a, b) => (RANK[a.status] - RANK[b.status]) || b.startedAt.localeCompare(a.startedAt))
+    runs.value = all.filter(r => !HIDDEN_RUN_STATUS.has(r.status)).sort((a, b) => (RANK[a.status] - RANK[b.status]) || b.startedAt.localeCompare(a.startedAt))
     if (tab.value && !projects.value.some(p => p.key === tab.value)) tab.value = null
     void loadDetails()
   } catch { /* eski liste kalir */ }
@@ -91,41 +90,13 @@ const LANES: ReadonlyArray<{ id: Lane; title: string; hex: string }> = [
   { id: 'done', title: 'Bitti', hex: '#7cc46b' },
 ]
 
-interface Card { id: string; task: string; title: string; state: TaskState; lane: Lane; stage: string; run: RunSummary; color: string }
+type Card = DerivedCard & { color: string }
 interface Group { key: string; title: string; color: string; status?: RunStatus; cards: Card[] }
 
-/**
- * Bir calisma detayindan kartlar (sunucu BoardTarget ile ayni kural): Started → o adimda calisiliyor · Done/Skipped → SONRAKI
- * adimda sirada, son adimsa Bitti · Rejected → onceki implement adiminda takildi · Failed → ayni adimda takildi · faz yok → ilk adimda sirada.
- * Serit: Bitti → done; calisiliyor → doing; inceleme adimi ya da takildi → review; kalan → todo.
- */
-function deriveCards(r: RunSummary, d: RunDetail): Card[] {
-  const stages = d.workflowDef?.stages.filter(s => s.kind !== 'analyze' && s.kind !== 'handoff') ?? []
-  const color = projectColor(r.project)
-  return (d.spec?.tasks ?? []).map((t) => {
-    const phases = d.tasks.find(x => x.id === t.id)?.phases ?? []
-    const last = phases[phases.length - 1]
-    let state: TaskState = 'queued'
-    let stage = stages[0]?.id ?? '__done'
-    if (last) {
-      const i = stages.findIndex(s => s.id === last.stage)
-      stage = last.stage
-      if (last.status === 'started') state = 'active'
-      else if (last.status === 'done' || last.status === 'skipped') {
-        if (i >= 0 && i + 1 < stages.length) { stage = stages[i + 1]!.id; state = 'queued' }
-        else { stage = '__done'; state = 'done' }
-      } else if (last.status === 'rejected') {
-        state = 'blocked'
-        for (let k = i - 1; k >= 0; k--) if (stages[k]!.kind === 'implement') { stage = stages[k]!.id; break }
-      } else state = 'blocked'
-    }
-    const kind = stages.find(s => s.id === stage)?.kind
-    const lane: Lane = stage === '__done' ? 'done' : state === 'active' ? 'doing' : (kind === 'review' || state === 'blocked') ? 'review' : 'todo'
-    return { id: `${r.id}:${t.id}`, task: t.id, title: t.title, state, lane, stage, run: r, color }
-  })
-}
-
-const cards = computed<Card[]>(() => visibleRuns.value.flatMap(r => (details.value[r.id] ? deriveCards(r, details.value[r.id]!) : [])))
+const cards = computed<Card[]>(() => visibleRuns.value.flatMap((r) => {
+  const d = details.value[r.id]
+  return d ? deriveCards(r, d).map(c => ({ ...c, color: projectColor(r.project) })) : []
+}))
 
 type Filter = 'all' | 'active' | 'blocked' | 'done'
 const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [

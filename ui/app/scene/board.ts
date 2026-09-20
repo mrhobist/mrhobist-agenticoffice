@@ -1,4 +1,5 @@
 import type { BoardTask, StageKind, TaskState, WorkflowConfig } from './contract'
+import type { BoardLane, DerivedCard } from '~/api/board'
 
 interface Column { id: string; title: string; hex: string; kind?: StageKind }
 
@@ -32,9 +33,12 @@ const DONE_HEX = '#7cc46b'
  * "Ileriyi yansitma": aktif gorevin bir sonraki sutununda kesikli hayalet not durur,
  * boylece pano yalniz simdiyi degil, isin nereye akacagini da gosterir.
  */
+/** Panodaki gorev. `lane` verilirse serit hesaplanmaz (sunucudan turetilen kart kendi seridini bilir). */
+type Task = BoardTask & { lane?: Lane }
+
 export class Board {
   columns: Column[] = []
-  tasks: BoardTask[] = []
+  tasks: Task[] = []
   /** Gorev -> hareket animasyonu (0..1). */
   private anim = new Map<string, { fromCol: number; fromRow: number; t: number }>()
   private lastCol = new Map<string, number>()
@@ -49,20 +53,47 @@ export class Board {
     this.columns.push({ id: '__done', title: 'Bitti', hex: DONE_HEX })
   }
 
-  set(tasks: BoardTask[]): void {
-    this.tasks = tasks.map(t => ({ ...t }))
+  /** Gorev kimligi calismayla birlikte anahtarlanir: iki calismanin ayni gorev kimligi carpismasin. */
+  private static key(id: string, run?: string): string {
+    return run ? `${run}:${id}` : id
+  }
+
+  set(tasks: BoardTask[], run?: string): void {
+    this.tasks = tasks.map(t => ({ ...t, id: Board.key(t.id, run) }))
     this.anim.clear()
     this.lastCol.clear()
   }
 
-  move(id: string, stage: string, state: TaskState): void {
-    const t = this.tasks.find(x => x.id === id)
-    if (!t) { this.tasks.push({ id, title: id, stage, state }); return }
+  move(id: string, stage: string, state: TaskState, run?: string): void {
+    const key = Board.key(id, run)
+    const t = this.tasks.find(x => x.id === key)
+    if (!t) { this.tasks.push({ id: key, title: id, stage, state }); return }
+    this.shift(t, () => { t.stage = stage; t.state = state; t.lane = undefined })
+  }
+
+  /**
+   * Sunucudan turetilen kartlarla esitle (KanbanPanel ile ayni kural, `~/api/board`).
+   * SSE yalniz bu oturumda olan biteni tasir; bitmis isler ve sayfa yenilendikten sonraki
+   * durum buradan gelir. Eksik kart eklenir, degisen serit animasyonla tasinir, kalkan silinir.
+   */
+  sync(cards: DerivedCard[]): void {
+    const seen = new Set<string>()
+    for (const c of cards) {
+      seen.add(c.id)
+      const t = this.tasks.find(x => x.id === c.id)
+      if (!t) { this.tasks.push({ id: c.id, title: c.title, stage: c.stage, state: c.state, lane: c.lane as Lane }); continue }
+      if (t.stage === c.stage && t.state === c.state && t.title === c.title && t.lane === c.lane) continue
+      this.shift(t, () => { t.stage = c.stage; t.state = c.state; t.title = c.title; t.lane = c.lane as Lane })
+    }
+    if (this.tasks.some(t => !seen.has(t.id))) this.tasks = this.tasks.filter(t => seen.has(t.id))
+  }
+
+  /** Gorevi degistir; serit degistiyse ziplama animasyonunu kur. */
+  private shift(t: Task, apply: () => void): void {
     const fromLane = LANES.findIndex(l => l.id === this.laneOf(t))
     const fromRow = this.tasks.filter(x => this.laneOf(x) === this.laneOf(t)).indexOf(t)
-    t.stage = stage
-    t.state = state
-    if (LANES.findIndex(l => l.id === this.laneOf(t)) !== fromLane) this.anim.set(id, { fromCol: fromLane, fromRow, t: 0 })
+    apply()
+    if (LANES.findIndex(l => l.id === this.laneOf(t)) !== fromLane) this.anim.set(t.id, { fromCol: fromLane, fromRow, t: 0 })
   }
 
   update(dt: number): void {
@@ -85,8 +116,9 @@ export class Board {
     return real[real.length - 1]?.id === stage
   }
 
-  /** Kanban seridi: ilk asamada sirada -> Yapilacak; review asamasi -> Inceleme; son asamada bitti -> Bitti; kalan -> Yapiliyor. */
-  laneOf(t: BoardTask): Lane {
+  /** Kanban seridi: sunucudan turetilen kart kendi seridini tasir; olay geleni sutundan hesaplanir. */
+  laneOf(t: Task): Lane {
+    if (t.lane) return t.lane
     const col = this.colIndex(t)
     if (col === this.columns.length - 1) return 'done'
     const c = this.columns[col]

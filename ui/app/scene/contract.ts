@@ -132,8 +132,8 @@ export type SceneEvent =
   | { type: 'agent.goto'; data: { agent: string; spot: string } }
   | { type: 'agent.home'; data: { agent: string } }
   | { type: 'meet'; data: { from: string; to: string; kind: MeetKind; ms?: number } }
-  | { type: 'board.set'; data: { tasks: BoardTask[] } }
-  | { type: 'board.move'; data: { task: string; stage: string; state: TaskState } }
+  | { type: 'board.set'; data: { tasks: BoardTask[]; run?: string } }
+  | { type: 'board.move'; data: { task: string; stage: string; state: TaskState; run?: string } }
   | { type: 'run.stage'; data: { stage: string; task: string; round: number } }
   | { type: 'cat'; data: { action: CatAction; spot?: number } }
   | { type: 'door'; data: { state: DoorState } }
