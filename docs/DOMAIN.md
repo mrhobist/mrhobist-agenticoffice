@@ -32,6 +32,15 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
   doldurulması sonraki adım (bkz. Giriş).
 - Geçiş: 2026-09-19'a kadarki projesiz çalışmalar **silindi** (kullanıcı kararı; hepsi deneme kaydıydı).
 
+### Projeyi başlatma (2026-09-20, kullanıcı isteği)
+
+Proje panelindeki **▶ Projeyi başlat** düğmesi, proje kökündeki **`run.cmd`** dosyasını yeni bir konsol penceresinde
+açar (`POST /projects/{key}/launch`, `cmd /c start … cmd /k run.cmd`). Sözleşme tek dosyadır: ne başlatılacağını
+**developer** yazar; `implement` prompt'u bunu ister (ASCII, `cd /d "%~dp0"`, konsol uygulamasında `pause`, web'de
+sunucu + `start http://127.0.0.1:PORT`, kurulum gerekiyorsa o da içinde). Dosya yoksa düğme pasif (`launchable=false`)
+ve 404 `project.launch_missing`. Süreç Api'ye bağlanmaz; çıktı pencerede, kapatmak kullanıcıda. İlk `run.cmd`
+`hello-world-console` için elle yazıldı (varsayımla ilerlenir: Windows tek platform; Linux/mac gelirse `run.sh`).
+
 ## Çalışma yaşam döngüsü
 
 ```

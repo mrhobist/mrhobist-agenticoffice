@@ -86,6 +86,8 @@ public static class Prompts
             ? $"Bu görevin {round}. turu: yukarıdaki geri bildirimi (red/hata notu) MADDE MADDE gider, sonra kabul ölçütlerini yeniden doğrula."
             : "Görevi uygula: dosyaları Write/Edit ile yaz, gerekiyorsa Bash ile build/test kos ve çıktısını kontrol et.");
         sb.AppendLine("Önce dizine bak (Glob/Read); var olan dosyayı ezmeden değiştir. Kabul ölçütlerindeki komutları FİİLEN çalıştır ve geçtiğini gör.");
+        sb.AppendLine("Ofisteki \"Projeyi başlat\" düğmesi proje kökündeki `run.cmd` dosyasını YENİ BİR KONSOL PENCERESİNDE çalıştırır: uygulama çalıştırılabilir hâle gelince bu dosyayı yaz ya da güncelle (yoksa kullanıcı projeyi açamaz). "
+            + "İçeriği ASCII olsun; `@echo off`, `cd /d \"%~dp0\"`, sonra uygulamayı başlatan komut (konsol uygulaması: `dotnet run --project ...` ve bitince `pause`; web: sunucuyu başlat ve `start http://127.0.0.1:PORT`; masaüstü/oyun: exe). Kurulum gereken projede (npm install, restore) bunu da run.cmd yapsın.");
         sb.AppendLine("Kural çelişkisi ya da eksik bilgi varsa TAHMİN ETME: blocked=true ve question ile sor; işi yarım bırak.");
         sb.AppendLine("Bitince verilen JSON şemasına uyan raporu ver: summary, filesChanged (göreli yollar), commandsRun, blocked, question.");
         return sb.ToString();

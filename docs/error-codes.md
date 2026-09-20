@@ -48,6 +48,8 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `project.in_use` | 409 | `DELETE /projects`: içinde çalışma var; geçmiş silinmez |
 | `project.title_empty` | 400 | Proje başlığı boş |
 | `project.target_dir_invalid` | 400 | Hedef dizin depo içinde göreli bir yol değil (`..`, `/`, sürücü harfi) |
+| `project.launch_missing` | 404 | `launch`: proje kökünde `run.cmd` yok |
+| `project.launch_failed` | 400 | `launch`: başlatıcı süreç açılamadı |
 | `config.file_missing` | 404/500 | Yapılandırma dosyası yok |
 | `config.file_invalid` | 500 | Yapılandırma dosyası geçersiz JSON |
 | `runtime.unavailable` | 503 | Python runtime'a ulaşılamıyor |

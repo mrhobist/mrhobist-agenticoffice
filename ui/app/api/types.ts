@@ -170,7 +170,12 @@ export interface ProjectCard {
   completed: number
   totalCostUsd: number
   lastActivityAt: string | null
+  /** Kokte run.cmd var: "Projeyi baslat" dugmesi acik. */
+  launchable?: boolean
 }
+
+/** POST /api/v1/projects/{key}/launch yaniti. */
+export interface LaunchResult { key: string; processId: number; launcher: string }
 
 /** POST /api/v1/projects govdesi. */
 export interface CreateProjectRequest {

@@ -27,7 +27,12 @@ public sealed record ProjectCard(
     int Failed,
     int Completed,
     decimal TotalCostUsd,
-    DateTimeOffset? LastActivityAt);
+    DateTimeOffset? LastActivityAt,
+    /// <summary>Kokte <c>run.cmd</c> var: "Projeyi baslat" dugmesi acik. Sona eklendi (CLAUDE.md §5).</summary>
+    bool Launchable = false);
+
+/// <summary><c>POST /projects/{key}/launch</c> yaniti.</summary>
+public sealed record LaunchResult(string Key, int ProcessId, string Launcher);
 
 public interface IProjectService
 {
@@ -42,10 +47,22 @@ public interface IProjectService
 
     /// <summary>Icinde calisma varsa <c>project.in_use</c>: gecmis silinmez, proje kapatilmaz.</summary>
     Task DeleteAsync(string key, CancellationToken ct);
+
+    /// <summary>Proje kokundeki <c>run.cmd</c>'yi yeni konsolda baslatir (docs/DOMAIN.md → Projeyi baslatma).</summary>
+    Task<LaunchResult> LaunchAsync(string key, CancellationToken ct);
 }
 
-public sealed class ProjectService(IProjectStore projects, IWorkflowStore workflows, IRunStore runs) : IProjectService
+public sealed class ProjectService(IProjectStore projects, IWorkflowStore workflows, IRunStore runs, IWorkspaceLocator workspace, IProjectLauncher launcher) : IProjectService
 {
+    public const string LauncherFile = "run.cmd";
+
+    public async Task<LaunchResult> LaunchAsync(string key, CancellationToken ct)
+    {
+        var project = await projects.LoadAsync(key, ct).ConfigureAwait(false);
+        var pid = launcher.Launch(workspace.RootOf(project));
+        return new LaunchResult(project.Key, pid, LauncherFile);
+    }
+
     public async Task<IReadOnlyList<ProjectCard>> ListAsync(CancellationToken ct)
     {
         var all = await runs.ListAsync(1000, ct).ConfigureAwait(false);
@@ -115,7 +132,7 @@ public sealed class ProjectService(IProjectStore projects, IWorkflowStore workfl
         return project;
     }
 
-    private static ProjectCard ToCard(Project p, IEnumerable<Run> runs)
+    private ProjectCard ToCard(Project p, IEnumerable<Run> runs)
     {
         var list = runs.ToList();
         return new ProjectCard(
@@ -127,6 +144,7 @@ public sealed class ProjectService(IProjectStore projects, IWorkflowStore workfl
             list.Count(r => r.Status is RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded or RunStatus.PolicyRejected),
             list.Count(r => r.Status == RunStatus.Completed),
             list.Sum(r => r.TotalCostUsd),
-            list.Count == 0 ? null : list.Max(r => r.FinishedAt ?? r.StartedAt));
+            list.Count == 0 ? null : list.Max(r => r.FinishedAt ?? r.StartedAt),
+            launcher.CanLaunch(workspace.RootOf(p)));
     }
 }

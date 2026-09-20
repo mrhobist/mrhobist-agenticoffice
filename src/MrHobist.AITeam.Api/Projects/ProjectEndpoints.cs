@@ -21,6 +21,9 @@ public static class ProjectEndpoints
             return Results.NoContent();
         });
         g.MapGet("/{key}/runs", (string key, int? limit, IRunReader reader, CancellationToken ct) => reader.ListAsync(limit ?? 50, ct, key));
+        // Projeyi baslat: kokteki run.cmd yeni konsolda (docs/DOMAIN.md → Projeyi baslatma). 202: surec basladi, sonucu kullanici pencerede gorur.
+        g.MapPost("/{key}/launch", async (string key, IProjectService s, CancellationToken ct)
+            => Results.Accepted($"/api/v1/projects/{key}", await s.LaunchAsync(key, ct).ConfigureAwait(false)));
 
         return app;
     }

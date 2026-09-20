@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CreateProjectRequest, InboxItem, ProjectCard, ProjectModel, RunSummary, WorkflowListItem } from '~/api/types'
+import type { CreateProjectRequest, InboxItem, LaunchResult, ProjectCard, ProjectModel, RunSummary, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel } from '~/api/labels'
@@ -72,6 +72,24 @@ const dirty = computed(() => !!card.value && (eTitle.value !== card.value.title 
 watch(dirty, d => { editing.value = d })
 
 // ------------------------------------------------------------------ acik proje
+
+// ------------------------------------------------------------------ projeyi baslat (POST /projects/{key}/launch)
+const launching = ref(false)
+const launchNote = ref<{ kind: 'ok' | 'err'; text: string } | null>(null)
+async function launch() {
+  if (!props.projectKey || launching.value) return
+  launching.value = true
+  launchNote.value = null
+  try {
+    const r = await api.post<LaunchResult>(`/api/v1/projects/${encodeURIComponent(props.projectKey)}/launch`)
+    launchNote.value = { kind: 'ok', text: `Yeni pencerede açıldı (${r.launcher}, pid ${r.processId}).` }
+  } catch (e) {
+    launchNote.value = { kind: 'err', text: errorText(e) }
+  } finally {
+    launching.value = false
+    setTimeout(() => { launchNote.value = null }, 6000)
+  }
+}
 
 async function load() {
   if (!props.projectKey) return
@@ -196,8 +214,17 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
             <h2 id="project-title">{{ card?.title ?? projectKey }}</h2>
             <span class="sub" v-if="card">{{ card.workflow }} akışı · <code>{{ card.targetDir }}</code> · {{ fmtCost(card.totalCostUsd) }}</span>
           </div>
+          <!-- Projeyi baslat: kokteki run.cmd yeni konsolda; developer bunu her teslimde yazar/gunceller. -->
+          <button
+            type="button"
+            class="launch"
+            :disabled="launching || !card?.launchable"
+            :title="card?.launchable ? 'Proje kökündeki run.cmd yeni pencerede çalışır' : 'run.cmd yok: developer uygulamayı çalıştırılabilir yapınca açılır'"
+            @click="launch"
+          ><span aria-hidden="true">▶</span> {{ launching ? 'Açılıyor…' : 'Projeyi başlat' }}</button>
           <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
         </header>
+        <p v-if="launchNote" class="launch-note" :class="launchNote.kind" role="status">{{ launchNote.text }}</p>
         <nav class="tabs" role="tablist">
           <button type="button" role="tab" :class="{ on: tab === 'runs' }" :aria-selected="tab === 'runs'" @click="tab = 'runs'">İşler <b v-if="runs">{{ runs.length }}</b></button>
           <button type="button" role="tab" :class="{ on: tab === 'settings' }" :aria-selected="tab === 'settings'" @click="tab = 'settings'">Ayarlar</button>
@@ -322,4 +349,10 @@ code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-r
 
 footer { margin-top: auto; padding: 10px 14px; border-top: 1px solid #cfcabb; background: #f3efe3; display: flex; align-items: center; gap: 10px; }
 .new { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 9px 14px; background: #d9a13a; color: #141413; border-color: #d9a13a; }
+.launch { font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 4px; background: #7cc46b; color: #14301a; border: 2px solid #3d6b2f; cursor: pointer; white-space: nowrap; }
+.launch:hover:not(:disabled) { background: #8fd47d; }
+.launch:disabled { background: #c9c3b3; color: #6b7285; border-color: #b9ad92; cursor: default; }
+.launch-note { margin: 0; font-size: 12px; padding: 6px 10px; border-radius: 4px; }
+.launch-note.ok { background: #e3f4dc; color: #2d5a22; }
+.launch-note.err { background: #fadada; color: #9c1f1f; }
 </style>

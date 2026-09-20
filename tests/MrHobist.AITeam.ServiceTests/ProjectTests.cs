@@ -1,3 +1,4 @@
+using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Projects;
 using MrHobist.AITeam.Domain;
 using MrHobist.AITeam.Domain.Projects;
@@ -19,7 +20,7 @@ public sealed class ProjectTests : IDisposable
     public async Task Proje_olusur_listelenir_guncellenir_silinir()
     {
         var runs = new JsonlRunStore(_fx.Paths);
-        var svc = new ProjectService(new JsonProjectStore(_fx.Paths), new JsonWorkflowStore(_fx.Paths), runs);
+        var svc = new ProjectService(new JsonProjectStore(_fx.Paths), new JsonWorkflowStore(_fx.Paths), runs, new WorkspaceLocator(_fx.Paths), new FakeLauncher());
 
         var card = await svc.CreateAsync(new CreateProjectRequest("hello-world", "Hello World Console", ".NET konsol", null, null), Ct);
         Assert.Equal(("default", "projects/hello-world", Project.LocalOwner, 0), (card.Workflow, card.TargetDir, card.OwnerId, card.Runs));
@@ -59,5 +60,13 @@ public sealed class ProjectTests : IDisposable
         Assert.Equal(["20260919-000003-c", "20260919-000001-a"], (await runs.ListAsync(10, Ct, "p1")).Select(r => r.Id));
         Assert.Equal(3, (await runs.ListAsync(10, Ct)).Count);
         Assert.Single(await runs.ListAsync(1, Ct, "p1"));
+    }
+
+    /// <summary>Baslatici yok: testler surec acmaz.</summary>
+    private sealed class FakeLauncher : IProjectLauncher
+    {
+        public bool CanLaunch(string projectRoot) => File.Exists(Path.Combine(projectRoot, "run.cmd"));
+
+        public int Launch(string projectRoot) => CanLaunch(projectRoot) ? 4242 : throw new DomainException(ErrorCodes.ProjectLaunchMissing, "run.cmd yok");
     }
 }

@@ -48,6 +48,8 @@ public static class ErrorCodes
     public const string ProjectInUse = "project.in_use";
     public const string ProjectTitleEmpty = "project.title_empty";
     public const string ProjectTargetDirInvalid = "project.target_dir_invalid";
+    public const string ProjectLaunchMissing = "project.launch_missing";
+    public const string ProjectLaunchFailed = "project.launch_failed";
     public const string RunNotCancellable = "run.not_cancellable";
     public const string RunBudgetInvalid = "run.budget_invalid";
     public const string RunNotAwaitingInput = "run.not_awaiting_input";

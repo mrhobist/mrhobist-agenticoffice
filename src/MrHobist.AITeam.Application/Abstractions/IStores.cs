@@ -102,3 +102,16 @@ public interface IWorkspaceLocator
 {
     string RootOf(Project project);
 }
+
+/// <summary>
+/// Projeyi baslatma sozlesmesi (kullanici istegi 2026-09-20): proje kokundeki <c>run.cmd</c> yeni bir konsol
+/// penceresinde kosulur; ne baslatilacagini developer o dosyaya yazar. Surec baglanmaz, cikti okunmaz: uygulama kullanicinin.
+/// </summary>
+public interface IProjectLauncher
+{
+    /// <summary>Kokte baslatici var mi (<c>run.cmd</c>).</summary>
+    bool CanLaunch(string projectRoot);
+
+    /// <summary>Baslaticiyi yeni pencerede kosar; surec kimligini doner. Yoksa <c>project.launch_missing</c>, kosamazsa <c>project.launch_failed</c>.</summary>
+    int Launch(string projectRoot);
+}
