@@ -34,7 +34,25 @@
         14
       ]
     ],
-    "_comment": "erase: [x,y,w,h,dx,dy] otelenmis kopya; [x,y,w,h,sx,sy,sw,sh] donor yamayi doseyerek doldurur (kahve barinin ahsap arka panosu duvara ve menu tahtasina hizalanir)."
+    "_comment": "erase: [x,y,w,h,dx,dy] otelenmis kopya; [x,y,w,h,sx,sy,sw,sh] donor yamayi doseyerek doldurur (kahve barinin ahsap arka panosu duvara ve menu tahtasina hizalanir).",
+    "stretch": [
+      {
+        "src": [
+          84,
+          98,
+          150,
+          77
+        ],
+        "dst": [
+          84,
+          66,
+          179,
+          109
+        ],
+        "border": 8
+      }
+    ],
+    "_stretchComment": "stretch: menu tahtasi 9-dilim buyutulur; src kaynak dikdortgen, dst hedef, border kose/cerceve kalinligi. Tahta sagindaki ve ustundeki ahsap panoyu komple kapatir."
   },
   "window": {
     "x": 610,
@@ -712,10 +730,10 @@
   },
   "cafe": {
     "board": {
-      "x": 88,
-      "y": 100,
-      "w": 144,
-      "h": 72
+      "x": 90,
+      "y": 72,
+      "w": 168,
+      "h": 97
     },
     "specials": [
       "Filtre Kahve",

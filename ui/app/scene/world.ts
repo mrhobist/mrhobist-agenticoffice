@@ -659,26 +659,36 @@ export class World {
     // Gecis: ilk 400 ms'de sonuk.
     const phase = (now % interval) / 400
     const alpha = this.specialOverride ? 1 : Math.min(1, phase)
+    // Yerlesim tahta olcusunden turetilir: pano buyurse yazi da buyur, sabit sayi kalmaz.
+    const pad = Math.round(w * 0.06)
+    const titleSize = Math.max(9, Math.round(h * 0.13))
+    const textSize = Math.max(12, Math.round(h * 0.18))
+    const ruleY = y + pad + titleSize + 5
+    const cup = Math.max(12, Math.round(h * 0.17))
     ctx.save()
     ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()
     ctx.fillStyle = '#f0c26a'
-    ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif'
+    ctx.font = `bold ${titleSize}px "Segoe UI", system-ui, sans-serif`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'alphabetic'
-    ctx.fillText('GÜNÜN ÖZELİ', x + 8, y + 15)
+    ctx.fillText('GÜNÜN ÖZELİ', x + pad, y + pad + titleSize)
     ctx.fillStyle = 'rgba(240,194,106,0.5)'
-    ctx.fillRect(x + 8, y + 19, w - 16, 1)
+    ctx.fillRect(x + pad, ruleY, w - 2 * pad, 1)
     ctx.globalAlpha = alpha
     ctx.fillStyle = '#f7f1e3'
-    ctx.font = 'bold 13px "Segoe UI", system-ui, sans-serif'
-    ctx.fillText(text, x + 8, y + 40, w - 16)
+    ctx.font = `bold ${textSize}px "Segoe UI", system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    // Cizgi ile kupa serisi arasinin ortasi: buyuk tahtada yazi tepeye yapismaz.
+    ctx.fillText(text, x + w / 2, (ruleY + y + h - cup) / 2 + textSize * 0.36, w - 2 * pad)
     // Kupa ve buhar
+    ctx.textAlign = 'left'
+    const cx = x + w - pad - cup, cy = y + h - pad - Math.round(cup * 0.75)
     ctx.fillStyle = '#f7f1e3'
-    ctx.fillRect(x + w - 30, y + h - 24, 16, 12)
-    ctx.fillRect(x + w - 14, y + h - 21, 4, 6)
+    ctx.fillRect(cx, cy, cup, Math.round(cup * 0.75))
+    ctx.fillRect(cx + cup, cy + Math.round(cup * 0.2), Math.round(cup * 0.25), Math.round(cup * 0.38))
     ctx.globalAlpha = 0.6 + 0.4 * Math.sin(now / 500)
-    ctx.fillRect(x + w - 26, y + h - 32, 2, 5)
-    ctx.fillRect(x + w - 20, y + h - 34, 2, 6)
+    ctx.fillRect(cx + Math.round(cup * 0.25), cy - Math.round(cup * 0.5), 2, Math.round(cup * 0.32))
+    ctx.fillRect(cx + Math.round(cup * 0.6), cy - Math.round(cup * 0.62), 2, Math.round(cup * 0.4))
     ctx.restore()
   }
 

@@ -492,6 +492,32 @@ def erase_regions(bg: Image.Image) -> Image.Image:
     return out
 
 
+def stretch_regions(bg: Image.Image) -> Image.Image:
+    """Buyut bir esyayi 9-dilim ile (config/scene.json background.stretch:
+    {src:[x,y,w,h], dst:[x,y,w,h], border}). Koseler aynen tasinir, kenarlar ve ic
+    alan gerilir; boylece cerceve kalinligi bozulmadan esya arkasindaki alani kaplar."""
+    cfg = json.loads((ROOT / "config" / "scene.json").read_text(encoding="utf-8"))
+    items = (cfg.get("background") or {}).get("stretch") or []
+    out = bg.convert("RGBA").copy()
+    for it in items:
+        sx, sy, sw, sh = it["src"]
+        dx, dy, dw, dh = it["dst"]
+        b = int(it.get("border", 8))
+        piece = out.crop((sx, sy, sx + sw, sy + sh))
+        grown = Image.new("RGBA", (dw, dh))
+        spans_s = [(0, b), (b, sw - b), (sw - b, sw)], [(0, b), (b, sh - b), (sh - b, sh)]
+        spans_d = [(0, b), (b, dw - b), (dw - b, dw)], [(0, b), (b, dh - b), (dh - b, dh)]
+        for (ry0, ry1), (ty0, ty1) in zip(spans_s[1], spans_d[1]):
+            for (rx0, rx1), (tx0, tx1) in zip(spans_s[0], spans_d[0]):
+                part = piece.crop((rx0, ry0, rx1, ry1))
+                tw, th = tx1 - tx0, ty1 - ty0
+                if (part.width, part.height) != (tw, th):
+                    part = part.resize((tw, th), Image.NEAREST)
+                grown.paste(part, (tx0, ty0))
+        out.paste(grown, (dx, dy))
+    return out
+
+
 def key_window_glass(bg: Image.Image) -> Image.Image:
     """Make the window glass transparent inside config/scene.json `window` so the UI can
     draw a time-of-day sky behind it. Mullions (dark) and plants (green) are untouched."""
@@ -504,7 +530,9 @@ def key_window_glass(bg: Image.Image) -> Image.Image:
     sub = a[y0:y1, x0:x1].astype(int)
     r, g, b = sub[:, :, 0], sub[:, :, 1], sub[:, :, 2]
     # Warm gray glass with reflection streaks: R > G > B, low saturation, mid-high value.
-    glass = (r - b >= 20) & (r - b <= 75) & (r >= g) & (g >= b) & (b >= 95) & (r <= 245)
+    # Upper bound 100 (was 75): the brightest streak in the 4th pane reaches R-B ~96 and
+    # stayed opaque as a tan wedge over the sky. Wood/wall inside the rect are far warmer.
+    glass = (r - b >= 20) & (r - b <= 100) & (r >= g) & (g >= b) & (b >= 95) & (r <= 245)
     sub[:, :, 3] = np.where(glass, 0, sub[:, :, 3])
     a[y0:y1, x0:x1] = sub.astype(np.uint8)
     return Image.fromarray(a, "RGBA")
@@ -539,7 +567,7 @@ def main() -> int:
 
     # Background (V2 "Ana Sahne"): opaque, copied as-is; the layout in config/scene.json
     # references it and only adds what it lacks (chairs come with the seated frames).
-    bgimg = key_window_glass(erase_regions(load("background.png")))
+    bgimg = key_window_glass(stretch_regions(erase_regions(load("background.png"))))
     bgimg.save(OUT / "background.png", optimize=True)
     atlas["background"] = {"image": "background.png", "w": bgimg.width, "h": bgimg.height}
 
