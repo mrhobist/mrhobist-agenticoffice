@@ -13,9 +13,19 @@ public sealed record Project(
     string Workflow,
     string TargetDir,
     string OwnerId,
-    DateTimeOffset CreatedAt)
+    DateTimeOffset CreatedAt,
+    /// <summary>Projenin rengi (<c>#rrggbb</c>): ray karti, Kanban "Tumu" kartlari. Bos → paletten sira ile atanir.</summary>
+    string Color = "",
+    /// <summary>Ray ve Kanban sirasi (kucuk once). Kullanici degistirir (<c>POST /projects/reorder</c>).</summary>
+    int Order = 0)
 {
     public const string LocalOwner = "local";
+
+    /// <summary>Palet: ofis kagit/ahsap tonlariyla uyumlu, birbirinden ayrisan 8 renk. Yeni proje kullanilmayan ilk rengi alir.</summary>
+    public static readonly IReadOnlyList<string> Palette =
+        ["#4fa3e0", "#7cc46b", "#e0699a", "#a889e6", "#f3c34a", "#e0995c", "#35b98a", "#d23b3b"];
+
+    public static bool IsValidColor(string? c) => string.IsNullOrEmpty(c) || System.Text.RegularExpressions.Regex.IsMatch(c, "^#[0-9a-fA-F]{6}$");
 
     /// <summary>Kendi basina tutarli mi: anahtar, baslik, akis anahtari, hedef dizin (depo icinde, ust dizine cikmaz).</summary>
     public void Validate()
@@ -27,6 +37,11 @@ public sealed record Project(
         }
 
         Identifiers.Require(Workflow, ErrorCodes.WorkflowInvalidStage, "akis");
+        if (!IsValidColor(Color))
+        {
+            throw new DomainException(ErrorCodes.ProjectInvalidColor, $"{Key}: 'color' #rrggbb olmali ('{Color}').");
+        }
+
         var dir = (TargetDir ?? "").Replace('\\', '/').Trim();
         if (dir.Length == 0 || dir.StartsWith('/') || dir.Contains("..", StringComparison.Ordinal) || dir.Contains(':', StringComparison.Ordinal))
         {

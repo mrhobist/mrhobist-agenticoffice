@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CreateProjectRequest, InboxItem, LaunchResult, ProjectCard, ProjectModel, RunSummary, WorkflowListItem } from '~/api/types'
+import type { CreateProjectRequest, InboxItem, LaunchResult, ProjectCard, ProjectModel, ReorderRequest, RunSummary, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel } from '~/api/labels'
@@ -63,12 +63,34 @@ let timer: ReturnType<typeof setInterval> | undefined
 
 // ------------------------------------------------------------------ ayarlar
 
-const eTitle = ref(''); const eDesc = ref(''); const eWorkflow = ref('default'); const eDir = ref('')
+const eTitle = ref(''); const eDesc = ref(''); const eWorkflow = ref('default'); const eDir = ref(''); const eColor = ref('#4fa3e0')
 const editing = ref(false)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
-function fillForm(c: ProjectCard) { eTitle.value = c.title; eDesc.value = c.description; eWorkflow.value = c.workflow; eDir.value = c.targetDir }
-const dirty = computed(() => !!card.value && (eTitle.value !== card.value.title || eDesc.value !== card.value.description || eWorkflow.value !== card.value.workflow || eDir.value !== card.value.targetDir))
+function fillForm(c: ProjectCard) { eTitle.value = c.title; eDesc.value = c.description; eWorkflow.value = c.workflow; eDir.value = c.targetDir; eColor.value = c.color || '#4fa3e0' }
+const dirty = computed(() => !!card.value && (eTitle.value !== card.value.title || eDesc.value !== card.value.description || eWorkflow.value !== card.value.workflow || eDir.value !== card.value.targetDir || eColor.value.toLowerCase() !== (card.value.color || '#4fa3e0').toLowerCase()))
+
+// ------------------------------------------------------------------ sira (POST /projects/reorder): ray ve Kanban bu sirayi okur
+const allProjects = ref<ProjectCard[]>([])
+async function loadAll() { try { allProjects.value = await api.get<ProjectCard[]>('/api/v1/projects') } catch { /* ok kalir */ } }
+const position = computed(() => allProjects.value.findIndex(p => p.key === props.projectKey))
+const reordering = ref(false)
+async function move(delta: -1 | 1) {
+  const i = position.value
+  const j = i + delta
+  if (i < 0 || j < 0 || j >= allProjects.value.length || reordering.value) return
+  reordering.value = true
+  try {
+    const keys = allProjects.value.map(p => p.key)
+    ;[keys[i], keys[j]] = [keys[j]!, keys[i]!]
+    allProjects.value = await api.post<ProjectCard[]>('/api/v1/projects/reorder', { keys } satisfies ReorderRequest)
+    emit('changed')
+  } catch (e) {
+    saveError.value = errorText(e)
+  } finally {
+    reordering.value = false
+  }
+}
 watch(dirty, d => { editing.value = d })
 
 // ------------------------------------------------------------------ acik proje
@@ -102,6 +124,7 @@ async function load() {
     runs.value = r
     if (!editing.value) fillForm(c)
     loadError.value = null
+    void loadAll()
   } catch (e) {
     loadError.value = errorText(e)
   }
@@ -121,7 +144,7 @@ async function save() {
   saving.value = true
   saveError.value = null
   try {
-    const body: ProjectModel = { title: eTitle.value.trim(), description: eDesc.value.trim() || null, workflow: eWorkflow.value || null, targetDir: eDir.value.trim() || null }
+    const body: ProjectModel = { title: eTitle.value.trim(), description: eDesc.value.trim() || null, workflow: eWorkflow.value || null, targetDir: eDir.value.trim() || null, color: eColor.value || null }
     card.value = await api.put<ProjectCard>(`/api/v1/projects/${encodeURIComponent(props.projectKey)}`, body)
     fillForm(card.value)
     editing.value = false
@@ -269,6 +292,20 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
               <input id="e-dir" v-model="eDir" type="text" spellcheck="false">
             </div>
           </div>
+          <div class="row">
+            <div class="field">
+              <label class="lbl" for="e-color">Renk <span class="sub">(ray kartı ve Kanban "Tümü")</span></label>
+              <span class="color-row"><input id="e-color" v-model="eColor" type="color"><code>{{ eColor }}</code></span>
+            </div>
+            <div class="field">
+              <span class="lbl">Sıra <span class="sub">(ray ve Kanban)</span></span>
+              <span class="order-row">
+                <button type="button" class="small" :disabled="reordering || position <= 0" title="Yukarı taşı" @click="move(-1)">▲</button>
+                <b>{{ position >= 0 ? position + 1 : '—' }}</b><span class="sub">/ {{ allProjects.length }}</span>
+                <button type="button" class="small" :disabled="reordering || position < 0 || position >= allProjects.length - 1" title="Aşağı taşı" @click="move(1)">▼</button>
+              </span>
+            </div>
+          </div>
           <p class="sub" v-if="card">Sahip: <code>{{ card.ownerId }}</code> · oluşturma {{ fmtWhen(card.createdAt) }}. Giriş gelince sahip kullanıcıya bağlanır.</p>
           <div class="actions">
             <button class="primary" type="submit" :disabled="saving || !dirty">{{ saving ? 'Kaydediliyor…' : 'Kaydet' }}</button>
@@ -355,4 +392,9 @@ footer { margin-top: auto; padding: 10px 14px; border-top: 1px solid #cfcabb; ba
 .launch-note { margin: 0; font-size: 12px; padding: 6px 10px; border-radius: 4px; }
 .launch-note.ok { background: #e3f4dc; color: #2d5a22; }
 .launch-note.err { background: #fadada; color: #9c1f1f; }
+.color-row { display: inline-flex; align-items: center; gap: 8px; }
+.color-row input[type="color"] { width: 40px; height: 28px; padding: 0; border: 1px solid #c9c3b3; border-radius: 4px; background: #fff; cursor: pointer; }
+.order-row { display: inline-flex; align-items: center; gap: 6px; }
+.order-row .small { font: inherit; font-size: 11px; padding: 3px 8px; border: 1px solid #c9c3b3; border-radius: 4px; background: #fff; cursor: pointer; }
+.order-row .small:disabled { opacity: 0.4; cursor: default; }
 </style>

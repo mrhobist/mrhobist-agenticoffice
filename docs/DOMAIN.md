@@ -28,6 +28,10 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 - Ekip ve bilgi dosyaları çalışma alanı düzeyinde ortaktır; proje yalnız bir akış seçer.
 - Kart özeti (`ProjectCard`): iş sayıları duruma göre, toplam maliyet, son hareket. UI'da ray kartları bunu gösterir.
 - Silme: içinde çalışma varsa **409 `project.in_use`**; geçmiş silinmez.
+- **Renk ve sıra (2026-09-20, kullanıcı isteği):** her projenin bir rengi (`color`, `#rrggbb`; boşsa paletten
+  kullanılmayan ilk renk) ve sırası (`order`) var. Ray kartı, Kanban sekme grupları ve Kanban **"Tümü"** sekmesi
+  (tüm projelerin görevleri dört Kanban şeridinde, kart rengi = proje) aynı rengi ve sırayı okur. Sıra
+  `POST /projects/reorder { keys }` ile, renk proje ayarlarından değiştirilir.
 - **Sahip:** proje ve çalışmada `ownerId`; bugün sabit `local`. Giriş JWT'sindeki `sub` claim'i ile
   doldurulması sonraki adım (bkz. Giriş).
 - Geçiş: 2026-09-19'a kadarki projesiz çalışmalar **silindi** (kullanıcı kararı; hepsi deneme kaydıydı).
@@ -88,7 +92,8 @@ kullanıcıdan bir karar istemez; proje kartında "durakladı" sayısı ve iş p
 düşmez. Developer yürütücüsü gelince bu durum zaten oluşmaz.
 UI kutuyu **işlerin dışında**, üst bardaki **bildirim zili** altında gösterir (madde + "Cevapla" → çalışma
 paneli); ayrıca İşler düğmesinde kırmızı rozet, sekme başlığında `(N)`, sahnedeki panoda rozet, proje kartında
-"senden bekliyor" ve büyük Kanban'ın üstünde "Senden bekleniyor" şeridi.
+"senden bekliyor" ve büyük Kanban'da **bağımsız "Senden bekleniyor" sütunu** (2026-09-20, kullanıcı isteği: sekmeden
+bağımsız, boşken de durur, zille aynı kaynak; tıklanınca çalışma açılır).
 **Varsayımla ilerlenir:** gelen kutusu 5 s'de bir yoklanır (SSE gelince olaya bağlanır); "okundu" kavramı yok,
 madde ancak cevap verilince düşer.
 

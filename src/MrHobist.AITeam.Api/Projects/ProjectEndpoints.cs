@@ -13,6 +13,8 @@ public static class ProjectEndpoints
         g.MapGet("", (IProjectService s, CancellationToken ct) => s.ListAsync(ct));
         g.MapPost("", async (CreateProjectRequest body, IProjectService s, CancellationToken ct)
             => Results.Created($"/api/v1/projects/{body.Key}", await s.CreateAsync(body, ct).ConfigureAwait(false)));
+        // Sabit yol {key}'den once: "reorder" diye proje olamaz mi? Olabilir; bu yuzden anahtar olarak yasaklanmaz ama rota once eslesir.
+        g.MapPost("/reorder", (ReorderRequest body, IProjectService s, CancellationToken ct) => s.ReorderAsync(body, ct));
         g.MapGet("/{key}", (string key, IProjectService s, CancellationToken ct) => s.GetAsync(key, ct));
         g.MapPut("/{key}", (string key, ProjectModel body, IProjectService s, CancellationToken ct) => s.UpdateAsync(key, body, ct));
         g.MapDelete("/{key}", async (string key, IProjectService s, CancellationToken ct) =>

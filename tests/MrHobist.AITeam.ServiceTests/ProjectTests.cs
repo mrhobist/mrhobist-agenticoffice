@@ -24,6 +24,18 @@ public sealed class ProjectTests : IDisposable
 
         var card = await svc.CreateAsync(new CreateProjectRequest("hello-world", "Hello World Console", ".NET konsol", null, null), Ct);
         Assert.Equal(("default", "projects/hello-world", Project.LocalOwner, 0), (card.Workflow, card.TargetDir, card.OwnerId, card.Runs));
+        // Renk paletten (ilk bos), sira sona; ikinci proje farkli renk alir; reorder sirayi yazar, ray/kanban bu sirayi okur.
+        Assert.Equal((Project.Palette[0], 0), (card.Color, card.Order));
+        var second = await svc.CreateAsync(new CreateProjectRequest("ikinci", "İkinci", null, null, null), Ct);
+        Assert.Equal((Project.Palette[1], 1), (second.Color, second.Order));
+        var reordered = await svc.ReorderAsync(new ReorderRequest(["ikinci", "hello-world"]), Ct);
+        Assert.Equal(["ikinci", "hello-world"], reordered.Select(p => p.Key));
+        Assert.Equal([0, 1], reordered.Select(p => p.Order));
+        var recolored = await svc.UpdateAsync("ikinci", new ProjectModel("İkinci", null, null, null, "#123456"), Ct);
+        Assert.Equal(("#123456", 0), (recolored.Color, recolored.Order));
+        var bad = await Assert.ThrowsAsync<DomainException>(() => svc.UpdateAsync("ikinci", new ProjectModel("İkinci", null, null, null, "kirmizi"), Ct));
+        Assert.Equal(ErrorCodes.ProjectInvalidColor, bad.ErrorCode);
+        await svc.DeleteAsync("ikinci", Ct);
         Assert.True(File.Exists(Path.Combine(_fx.Paths.ProjectsDir, "hello-world.json")));
 
         var ex = await Assert.ThrowsAsync<DomainException>(() => svc.CreateAsync(new CreateProjectRequest("hello-world", "x", null, null, null), Ct));

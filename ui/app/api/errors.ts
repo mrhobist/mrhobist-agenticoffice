@@ -54,6 +54,7 @@ const MESSAGES: Record<string, string> = {
   'project.target_dir_invalid': 'Hedef dizin depo içinde göreli bir yol olmalı.',
   'project.launch_missing': 'Proje kökünde run.cmd yok; developer henüz başlatıcı yazmadı.',
   'project.launch_failed': 'Başlatıcı çalıştırılamadı.',
+  'project.invalid_color': 'Renk #rrggbb biçiminde olmalı.',
   'run.not_retryable': 'Çalışma yeniden denenemez; bu yalnız başarısız, yarıda kalmış, bütçesi aşılmış ya da iptal edilmiş çalışmalarda yapılabilir.',
   'run.not_cancellable': 'Çalışma iptal edilemez; yalnız çalışan, onay bekleyen ya da duraklamış çalışmalar iptal edilir.',
 

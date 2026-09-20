@@ -179,7 +179,14 @@ export interface ProjectCard {
   lastActivityAt: string | null
   /** Kokte run.cmd var: "Projeyi baslat" dugmesi acik. */
   launchable?: boolean
+  /** Proje rengi (#rrggbb): ray karti, Kanban "Tumu". */
+  color?: string
+  /** Ray ve Kanban sirasi (kucuk once). */
+  order?: number
 }
+
+/** POST /api/v1/projects/reorder govdesi. */
+export interface ReorderRequest { keys: string[] }
 
 /** POST /api/v1/projects/{key}/launch yaniti. */
 export interface LaunchResult { key: string; processId: number; launcher: string }
@@ -191,6 +198,7 @@ export interface CreateProjectRequest {
   description?: string | null
   workflow?: string | null
   targetDir?: string | null
+  color?: string | null
 }
 
 /** PUT /api/v1/projects/{key} govdesi. */
@@ -199,6 +207,7 @@ export interface ProjectModel {
   description?: string | null
   workflow?: string | null
   targetDir?: string | null
+  color?: string | null
 }
 
 /** POST /api/v1/runs govdesi. Is yalniz bir projenin icinde baslar. */

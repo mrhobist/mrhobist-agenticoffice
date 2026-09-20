@@ -69,7 +69,8 @@
           @click="openProject(p.key)"
         >
           <span class="pin" :class="pinOf(p)" aria-hidden="true" />
-          <span class="card-avatar">{{ initials(p.title) }}</span>
+          <span class="card-color" :style="{ background: p.color || '#3d5a80' }" aria-hidden="true" />
+          <span class="card-avatar" :style="{ background: p.color || '#3d5a80' }">{{ initials(p.title) }}</span>
           <strong class="card-title">{{ p.title }}</strong>
           <span class="card-meta">{{ p.runs }} iş<template v-if="p.running"> · <b class="run-n">{{ p.running }} çalışıyor</b></template><template v-if="p.paused"> · {{ p.paused }} durakladı</template> · {{ fmtCost(p.totalCostUsd) }}</span>
           <span v-if="inboxOfProject(p.key)" class="card-ask"><span aria-hidden="true">🔔</span> {{ inboxOfProject(p.key) }} senden bekliyor</span>
@@ -534,7 +535,9 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .card:hover { background: #f3efe3; }
 .card.on { outline: 3px solid #f6e2a0; }
 .card.quiet { opacity: 0.85; }
-.card-avatar { position: absolute; right: 10px; top: 10px; width: 24px; height: 24px; border-radius: 6px; background: #3d5a80; color: #fff; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.card-avatar { position: absolute; right: 10px; top: 10px; width: 24px; height: 24px; border-radius: 6px; background: #3d5a80; color: #fff; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; text-shadow: 0 1px 1px rgba(0,0,0,0.35); }
+/* Proje rengi: kartin sol kenari (kullanici istegi 2026-09-20: her projeye bir renk; ray ve Kanban ayni rengi okur). */
+.card-color { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; border-radius: 3px 0 0 3px; }
 .card .card-title { padding-right: 30px; }
 .run-n { color: #1f5f93; font-weight: 700; }
 .pin.ask { background: #d23b3b; border-color: #7a1f1f; }

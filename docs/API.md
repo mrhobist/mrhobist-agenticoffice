@@ -133,6 +133,7 @@ Kimliksiz istek **401 `auth.required`**. SSE yalnız `scene/events?access_token=
 | `PUT /api/v1/projects/{key}` `{ title, description?, workflow?, targetDir? }` | `ProjectCard` | tüm alanlar taşınır |
 | `DELETE /api/v1/projects/{key}` | **204** | içinde çalışma varsa 409 `project.in_use` |
 | `GET /api/v1/projects/{key}/runs?limit=50` | `RunSummary[]` | `GET /runs?project={key}` ile aynı |
+| `POST /api/v1/projects/reorder` `{ keys: [] }` | `ProjectCard[]` | Verilen anahtarlar 0..n sırasını alır, kalanlar arkaya; ray ve Kanban bu sırayı okur. `ProjectCard.color` / `order` alanları sona eklendi; `POST/PUT` gövdesinde `color?` (`#rrggbb`, değilse 400 `project.invalid_color`) |
 | `POST /api/v1/projects/{key}/launch` | **202** `LaunchResult` `{ key, processId, launcher }` | Kökteki `run.cmd` yeni konsolda (docs/DOMAIN.md → Projeyi başlatma). Yoksa 404 `project.launch_missing`; koşamazsa 400 `project.launch_failed`. `ProjectCard.launchable` düğmenin durumu |
 
 ## Çalışmalar — `runs/<id>/`

@@ -10,7 +10,7 @@ namespace MrHobist.AITeam.Infrastructure.Storage;
 /// <summary><c>config/projects/{key}.json</c>, dosya basina bir proje; camelCase, atomik yazim. Depo durum tutmaz.</summary>
 public sealed class JsonProjectStore(StoragePaths paths) : IProjectStore
 {
-    private sealed record ProjectDto(string? Title, string? Description, string? Workflow, string? TargetDir, string? OwnerId, DateTimeOffset? CreatedAt);
+    private sealed record ProjectDto(string? Title, string? Description, string? Workflow, string? TargetDir, string? OwnerId, DateTimeOffset? CreatedAt, string? Color = null, int? Order = null);
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -36,7 +36,7 @@ public sealed class JsonProjectStore(StoragePaths paths) : IProjectStore
             }
         }
 
-        return list.OrderBy(p => p.CreatedAt).ToList();
+        return list.OrderBy(p => p.Order).ThenBy(p => p.CreatedAt).ToList();
     }
 
     public async Task<Project> LoadAsync(string key, CancellationToken ct)
@@ -65,7 +65,9 @@ public sealed class JsonProjectStore(StoragePaths paths) : IProjectStore
             dto.Workflow ?? Domain.Workflows.Workflow.DefaultKey,
             dto.TargetDir ?? Project.DefaultTargetDir(key),
             dto.OwnerId ?? Project.LocalOwner,
-            dto.CreatedAt ?? File.GetCreationTimeUtc(file));
+            dto.CreatedAt ?? File.GetCreationTimeUtc(file),
+            dto.Color ?? "",
+            dto.Order ?? 0);
         project.Validate();
         return project;
     }
@@ -75,7 +77,7 @@ public sealed class JsonProjectStore(StoragePaths paths) : IProjectStore
         ArgumentNullException.ThrowIfNull(project);
         project.Validate();
         Directory.CreateDirectory(paths.ProjectsDir);
-        var dto = new ProjectDto(project.Title, project.Description, project.Workflow, project.TargetDir, project.OwnerId, project.CreatedAt);
+        var dto = new ProjectDto(project.Title, project.Description, project.Workflow, project.TargetDir, project.OwnerId, project.CreatedAt, project.Color, project.Order);
         return AtomicFile.WriteAsync(paths.ProjectFile(project.Key), JsonSerializer.Serialize(dto, Json) + "\n", ct);
     }
 

@@ -1232,6 +1232,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReorderRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectCard"][];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{key}": {
         parameters: {
             query?: never;
@@ -1443,6 +1482,7 @@ export interface components {
             description: null | string;
             workflow: null | string;
             targetDir: null | string;
+            color?: null | string;
         };
         /** @enum {unknown} */
         Destination: "local" | "anthropic" | "nvidia" | "openai";
@@ -1533,12 +1573,20 @@ export interface components {
             lastActivityAt: null | string;
             /** @default false */
             launchable: boolean;
+            /** @default  */
+            color: string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            order: number | string;
         };
         ProjectModel: {
             title: string;
             description: null | string;
             workflow: null | string;
             targetDir: null | string;
+            color?: null | string;
         };
         /** @enum {unknown} */
         Provider: "anthropic" | "nvidia" | "ollama" | "openai" | null;
@@ -1561,6 +1609,9 @@ export interface components {
             detail: string;
             /** @default false */
             needsNote: boolean;
+        };
+        ReorderRequest: {
+            keys: string[];
         };
         ReviseRequest: {
             note: string;
