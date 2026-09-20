@@ -62,6 +62,15 @@ function shortLabel(l: UsageLimit): string {
   if (k.includes('week') || k.includes('seven')) return 'hafta'
   return k.slice(0, 6)
 }
+/** Kota alinamadiginda tek kelimelik neden: API anahtari · oturum yok · 429 · yok. */
+function shortReason(detail: string): string {
+  const d = detail.toLowerCase()
+  if (d.includes('api anahtar')) return 'API anahtarı · kota yok'
+  if (d.includes('oturum')) return 'giriş yok'
+  if (d.includes('429')) return 'kota ucu meşgul'
+  if (d.includes('dışa vermiyor') || d.includes('vermiyor')) return 'kota bilgisi yok'
+  return 'alınamadı'
+}
 function remaining(l: UsageLimit): number { return Math.max(0, Math.min(100, Math.round(100 - l.percent))) }
 function tone(l: UsageLimit): string {
   const r = remaining(l)
@@ -90,7 +99,7 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
     <template v-if="state === 'ready' && items">
       <!-- Minimal (kullanici istegi 2026-09-20): saglayici adi + her pencere icin yuvarlak yuzde halkasi; ayrinti ipucunda. -->
       <button v-for="p in active" :key="p.provider" type="button" class="prov" :title="p.subscription ? `${providerLabel(p.provider)} · ${p.subscription}` : providerLabel(p.provider)" @click="emit('open')">
-        <span class="name">{{ providerLabel(p.provider) }}</span>
+        <span class="name">{{ providerLabel(p.provider) }}<span v-if="p.detail.startsWith('son bilinen')" class="stale" title="Son bilinen değer; kota ucu şu an yanıt vermiyor">⏱</span></span>
         <span v-for="l in p.limits" :key="l.kind + (l.scope ?? '')" class="ring" :class="[tone(l), { dim: !l.isActive }]" :style="{ '--p': remaining(l) }" :title="title(p, l)">
           <span class="pct">{{ remaining(l) }}</span>
           <span class="tag">{{ shortLabel(l) }}</span>
@@ -99,7 +108,7 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
       </button>
       <button v-for="p in unavailable" :key="p.provider" type="button" class="prov off" :title="p.detail" @click="emit('open')">
         <span class="name">{{ providerLabel(p.provider) }}</span>
-        <span class="ring none" title="kalan hak alınamadı"><span class="pct">–</span></span>
+        <span class="sub short">{{ shortReason(p.detail) }}</span>
       </button>
     </template>
     <span v-else-if="state === 'loading'" class="sub">kalan hak…</span>
@@ -138,7 +147,7 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
 .ring.warn { --c: #d99b3a; }
 .ring.crit { --c: #e05252; }
 .ring.dim { opacity: 0.55; }
-.ring.none { background: rgba(255,255,255,0.08); }
-.ring.none .pct { color: var(--ink-3); }
+.sub.short { max-width: 140px; }
+.stale { margin-left: 4px; font-size: 10px; color: var(--ink-3); }
 .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
 </style>

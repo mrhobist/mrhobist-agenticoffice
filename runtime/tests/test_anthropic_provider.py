@@ -331,6 +331,8 @@ def test_limits_oturum_yoksa_ve_401de_kullanilamaz(tmp_path, monkeypatch):
     provider = main.PROVIDERS["anthropic"]
     _creds(tmp_path, monkeypatch, None)
     provider._limits_cache = None
+    provider._limits_last_good = None
+    provider._limits_backoff_until = 0.0
     client = TestClient(main.app)
     assert client.get("/v1/limits").json()[0]["available"] is False
 
@@ -354,12 +356,18 @@ def test_limits_epoch_resets_at_cevrilir_ve_beklenmedik_govde_500_vermez(tmp_pat
     assert [l["kind"] for l in body["limits"]] == ["session"]
     assert body["limits"][0]["percent"] == 42 and body["limits"][0]["resetsAt"].startswith("2026-")
 
-    # Govde hic beklenmedik (liste): 500 degil, available=False + neden. Ust bar nedeni gosterir.
+    # Govde hic beklenmedik (liste): 500 degil; son iyi deger notla gosterilir (bar bos kalmaz), neden detail'de.
     monkeypatch.setattr(mod.httpx, "get", lambda *a, **k: _Resp(200, []))
     provider._limits_cache = None
     r = client.get("/v1/limits", params={"refresh": "true"})
     assert r.status_code == 200
     body = r.json()[0]
+    assert body["available"] is True and body["detail"].startswith("son bilinen değer") and "AttributeError" in body["detail"]
+    assert [l["kind"] for l in body["limits"]] == ["session"]
+    # Son iyi deger yoksa: available=False + neden.
+    provider._limits_cache = None
+    provider._limits_last_good = None
+    body = client.get("/v1/limits", params={"refresh": "true"}).json()[0]
     assert body["available"] is False and "AttributeError" in body["detail"]
     provider._limits_cache = None
 

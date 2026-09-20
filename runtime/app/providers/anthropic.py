@@ -64,6 +64,14 @@ ANTHROPIC_MODELS: list[str] = [
 AUTH_CACHE_TTL_S = 60.0
 #: Kalan kullanim onbellegi (saniye): ust bar 60 s'de bir yoklar, saglayiciyi dovmesin.
 LIMITS_CACHE_TTL_S = 90.0
+#: Kota ucu 429 verdiyse bu sure yeniden sorulmaz (uc sik sorguyu cezalandiriyor); son iyi deger gosterilir.
+LIMITS_BACKOFF_429_S = 600.0
+
+
+def _limits_cache_file() -> Path:
+    """Son iyi kota degeri: yeniden baslatmada bar bos kalmasin (kullanici profili, credentials ile ayni dizin; kimlik icermez).
+    Yol her cagrida cozulur: testler AITEAM_CREDENTIALS_FILE ile gecici dizine yonlendirir."""
+    return credentials.credentials_path().with_name("limits-anthropic.json")
 #: Claude Code'un kendi /usage ekraninin okudugu uc; oturum belirteci CLI'nin dosyasindan alinir, hicbir yere yazilmaz.
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 #: API anahtari dogrulamasi icin (GET /v1/models: token harcamaz).
@@ -157,6 +165,8 @@ class AnthropicProvider:
         self._cli_path = cli_path
         self._auth_cache: tuple[float, AuthStatus] | None = None
         self._limits_cache: tuple[float, ProviderLimits] | None = None
+        self._limits_backoff_until = 0.0
+        self._limits_last_good: ProviderLimits | None = self._load_last_good()
 
     # -- yardimcilar -------------------------------------------------------
 
@@ -446,10 +456,31 @@ class AnthropicProvider:
 
     # -- kalan kullanim ------------------------------------------------------
 
+    @staticmethod
+    def _load_last_good() -> ProviderLimits | None:
+        try:
+            data = json.loads(_limits_cache_file().read_text(encoding="utf-8"))
+            item = ProviderLimits.model_validate(data)
+            return item if item.available and item.limits else None
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _save_last_good(item: ProviderLimits) -> None:
+        try:
+            f = _limits_cache_file()
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(item.model_dump_json(by_alias=True), encoding="utf-8")
+        except OSError:
+            pass  # onbellek kaybi kritik degil
+
     def limits(self, refresh: bool = False) -> ProviderLimits:
         now = time.monotonic()
         if not refresh and self._limits_cache and now - self._limits_cache[0] < LIMITS_CACHE_TTL_S:
             return self._limits_cache[1]
+        if now < self._limits_backoff_until:
+            # 429 sonrasi: uc yeniden sorulmaz, son iyi deger (varsa) notla gosterilir.
+            return self._with_last_good(ProviderLimits(provider=PROVIDER_NAME, available=False, detail="kullanım ucu sık soruldu (429); bekleniyor"), now)
         try:
             result = self._probe_limits()
         except Exception as exc:  # noqa: BLE001 — belgesiz uc; sekli degisirse ust bar 500 degil nedeni gormeli
@@ -458,10 +489,21 @@ class AnthropicProvider:
                 available=False,
                 detail=f"kota yanıtı ayrıştırılamadı: {type(exc).__name__}: {exc}"[:240],
             )
-        if not result.available and self._limits_cache and self._limits_cache[1].available:
-            # Uc gecici olarak cevap vermedi (429 vb.): son iyi degeri notla goster, bari bos kalmasin.
-            last = self._limits_cache[1]
-            result = last.model_copy(update={"detail": f"son bilinen değer ({result.detail})"})
+        if "429" in result.detail:
+            self._limits_backoff_until = now + LIMITS_BACKOFF_429_S
+        if result.available and result.limits:
+            self._limits_last_good = result
+            self._save_last_good(result)
+            self._limits_cache = (now, result)
+            return result
+        return self._with_last_good(result, now)
+
+    def _with_last_good(self, failed: ProviderLimits, now: float) -> ProviderLimits:
+        """Uc cevap vermedi (429, ag, oturum): son iyi deger notla; ilk kez ve hic yoksa oldugu gibi."""
+        result = failed
+        # API anahtari modunda kota yok: son iyi degeri gostermek yanlis olur.
+        if self._limits_last_good is not None and "API anahtarı" not in failed.detail:
+            result = self._limits_last_good.model_copy(update={"detail": f"son bilinen değer · {failed.detail}"})
         self._limits_cache = (now, result)
         return result
 
