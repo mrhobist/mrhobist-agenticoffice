@@ -349,11 +349,6 @@ CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | None]] = {
     "blue-hoodie": ("sim2.png", ((55, 115), 150)),
 }
 
-# sim3 (ponytail) katalogunun "Typing" panelinde arka kareler SANDALYESIZDIR: karakter
-# ayakta durur, masaya oturunca yanlis gorunur (kullanici 2026-09-20). Eksik sandalye,
-# ayni panelin sandalyeli oldugu bir katalogdan alinip ayni DUNYA olceginde monte edilir:
-# hedef anahtar -> bagisci anahtar. Bagiscinin karesinden yalniz sandalye ayiklanir.
-TYPE_CHAIR_DONOR: dict[str, str] = {"ponytail": "curly-yellow"}
 
 
 def checker_mask(a: np.ndarray) -> np.ndarray:
@@ -452,89 +447,8 @@ def catalog_frames(key: str) -> tuple[dict[str, list[Image.Image]], float]:
     return frames, scale
 
 
-def chair_from_back_frame(frame: Image.Image) -> tuple[Image.Image, int]:
-    """Bagiscinin arkadan yazma karesinden sandalyeyi ayikla.
-
-    Sandalye lacivert bir kutledir; karakterin ortugu sirtlik, her sutunda en ust ve en alt
-    sandalye pikseli arasi doldurularak tamamlanir (ust kenar duzlestirilir, govdenin ortugu
-    yerde tepe asagi kayar). Oturagin altinda kalan her sey (ayak yildizi, tekerlek) oldugu
-    gibi alinir: o bolgede karakterden eser yoktur.
-    """
-    a = np.asarray(frame).copy()
-    h, w = a.shape[:2]
-    op = a[:, :, 3] > 60
-    r, g, b = a[:, :, 0].astype(int), a[:, :, 1].astype(int), a[:, :, 2].astype(int)
-    navy = op & (b > r + 22) & (b >= 40) & (b <= 130) & (r < 90) & (g < 110)
-    x0, y0, x1, y1 = max(components(navy, step=1, merge_px=2), key=area)
-    core = np.zeros_like(navy)
-    core[y0:y1, x0:x1] = navy[y0:y1, x0:x1]
-
-    tops = np.full(w, -1)
-    bots = np.full(w, -1)
-    for x in range(x0, x1):
-        ys = np.where(core[:, x])[0]
-        if len(ys):
-            tops[x], bots[x] = ys[0], ys[-1]
-    cols = [x for x in range(x0, x1) if tops[x] >= 0]
-    if not cols:
-        raise ValueError("bagiscinin karesinde sandalye bulunamadi")
-    inner = [x for x in cols if x0 + 2 <= x <= x1 - 3]
-    flat_top = int(np.percentile([tops[x] for x in inner], 12)) if inner else int(tops[cols[0]])
-    vals, counts = np.unique(a[:, :, :3][core], axis=0, return_counts=True)
-    fill = vals[counts.argmax()]
-    edge = a[flat_top, cols[len(cols) // 8], :3]
-
-    out = np.zeros_like(a)
-    for x in cols:
-        top = flat_top if (x0 + 2 <= x <= x1 - 3 and tops[x] > flat_top) else tops[x]
-        out[top:bots[x] + 1, x, :3] = fill
-        out[top:bots[x] + 1, x, 3] = 255
-        if top == flat_top:
-            out[top:top + 2, x, :3] = edge
-    out[core] = a[core]
-    seat = int(max(bots[x] for x in cols))
-    below = op.copy()
-    below[:seat - 1, :] = False
-    out[below] = a[below]
-    return Image.fromarray(out, "RGBA"), seat
-
-
-def seat_back_frames(bodies: list[Image.Image], chair: Image.Image) -> list[Image.Image]:
-    """Ayakta duran arka kareleri sandalyeye oturt: govde oturagin altinda kesilir,
-    sandalye govdenin ONUNE cizilir (arkadan bakista sirtlik sirti kapatir)."""
-    prof = (np.asarray(chair)[:, :, 3] > 60).sum(axis=1)
-    ys = np.where(prof > 0)[0]
-    top, bot = int(ys[0]), int(ys[-1])
-    med = float(np.median(prof[top:top + max(1, int((bot - top) * 0.55))]))
-    seat_bottom = bot
-    for y in range(top + int((bot - top) * 0.35), bot + 1):
-        if prof[y] < med * 0.93:
-            seat_bottom = y - 1
-            break
-    out = []
-    for body in bodies:
-        h = chair.height
-        w = max(chair.width, body.width) + 4
-        canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        canvas.alpha_composite(body.crop((0, 0, body.width, min(body.height, seat_bottom))), ((w - body.width) // 2, 0))
-        canvas.alpha_composite(chair, ((w - chair.width) // 2, 0))
-        out.append(canvas)
-    return out
-
-
 def build_character_v2(key: str) -> dict:
     frames, scale = catalog_frames(key)
-    donor = TYPE_CHAIR_DONOR.get(key)
-    if donor:
-        # Sandalye bagiscinin katalog pikselinde; hedefin pikseline dunya olcegi oraniyla gecer.
-        d_frames, d_scale = catalog_frames(donor)
-        chair, _ = chair_from_back_frame(d_frames["TYPE"][3])
-        factor = d_scale / scale
-        # %5'in altindaki fark icin yeniden boyutlama yok: LANCZOS piksel sandalyenin tabanini bulaniklastirir,
-        # birkac piksellik boy farki ise oturunca gorunmez.
-        if abs(factor - 1) > 0.05:
-            chair = chair.resize((max(1, round(chair.width * factor)), max(1, round(chair.height * factor))), Image.LANCZOS)
-        frames["TYPE"] = frames["TYPE"][:3] + seat_back_frames(frames["TYPE"][3:6], chair)
 
     def pack(rows: list[list[Image.Image]], out_name: str) -> dict:
         max_w = max(f.width for r in rows for f in r)

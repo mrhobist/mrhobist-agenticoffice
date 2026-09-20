@@ -88,14 +88,14 @@
       "sit": {
         "image": "char-ponytail-sit.png",
         "frameW": 87,
-        "frameH": 143,
+        "frameH": 142,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-ponytail-type.png",
-        "frameW": 90,
-        "frameH": 159,
+        "frameW": 92,
+        "frameH": 149,
         "cols": 6,
         "rows": 1
       }
