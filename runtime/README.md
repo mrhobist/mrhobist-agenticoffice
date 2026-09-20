@@ -2,7 +2,9 @@
 
 > **Python durum tutmaz, veritabanı görmez, iş kuralı bilmez.**
 > Tek işi: `{systemPrompt, messages, provider, model, schema?}` alıp
-> `{text, structured, usage, costUsd}` döndürmek.
+> `{text, structured, usage, costUsd}` döndürmek. Faz 4d'den beri istek ajan araçlarını da
+> taşır (`tools`, `cwd`, `maxTurns`, `progressUrl`) — ama **hangi adımın hangi aracı aldığı
+> .NET'in kararıdır** (`ToolAccess.ForKind`); runtime yalnız iletir.
 
 Bu kural pazarlığa kapalıdır (`../CLAUDE.md` §1). Orkestrasyon .NET tarafındadır.
 
@@ -42,8 +44,7 @@ npm i -g @openai/codex
 codex login
 ```
 
-`codex` arama sırası: `CODEX_CLI_PATH` → `PATH` → `%APPDATA%
-pm\codex.cmd`. Tur `codex exec --json`
+`codex` arama sırası: `CODEX_CLI_PATH` → `PATH` → `%APPDATA%\npm\codex.cmd`. Tur `codex exec --json`
 ile koşar (`--ephemeral`, `-C cwd`, araçlıysa `--sandbox workspace-write`, değilse `read-only` + boş geçici
 dizin, yapısal çıktı `--output-schema`). Kayıtlı API anahtarı varsa CLI yerine Responses API kullanılır;
 o yolda araçlı istek `501 runtime.tools_unsupported` döner. Katalog `OPENAI_MODELS="a,b"` ile değişir.
@@ -81,6 +82,45 @@ Model kataloğu sabittir (`claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`
 | `POST /v1/auth/logout` | Kayıtlı anahtarı siler, yoksa CLI oturumunu kapatır |
 | `GET /v1/limits?provider=` | Kalan kullanım (kota pencereleri); vermeyen sağlayıcıda `available=false` |
 | `GET /health` | Süreç ayakta mı |
+
+### `POST /v1/turn` sözleşmesi
+
+Alan adları JSON'da camelCase (`app/contracts.py`, pydantic alias). Runtime durumsuzdur:
+iki ardışık istek birbirini bilmez, geçmiş `messages` ile gelir.
+
+**İstek (`TurnRequest`)**
+
+| Alan | Zorunlu | Ne |
+|---|---|---|
+| `systemPrompt` | ✓ | Ajanın sistem promptu (gövde + `includes`; .NET birleştirir) |
+| `messages[]` | ✓ | `{role, content}` — çalışmanın o ana kadarki geçmişi |
+| `provider` | ✓ | `anthropic` \| `openai` (`nvidia`/`ollama` → 501) |
+| `model` | ✓ | Katalogdaki model adı |
+| `schema` | — | Verilirse sağlayıcının yapısal çıktı mekanizması kullanılır |
+| `maxTokens` | — | Varsayılan 8192 |
+| `reasoningEffort` | — | `low` \| `medium` \| `high` \| `max` (varsayılan `low`; Codex'te `max` → `xhigh`) |
+| `tools[]` | — | Ajanın kullanabileceği araçlar (`Read, Glob, Grep, Write, Edit, Bash`). Boş/yok = araç yok |
+| `cwd` | — | Araçların çalışacağı dizin (projenin hedef dizini). **Runtime hiçbir yolu kendisi seçmez** |
+| `maxTurns` | — | Ajan döngüsünün tur tavanı; yoksa araçlara göre varsayılan |
+| `progressUrl` | — | Canlı araç akışı: her araç çağrısında buraya `{tool, target}` POST edilir (loopback, tek kullanımlık belirteçli adres). Cevap beklenmez, hata yutulur, tur bloklanmaz. Yoksa akış yok |
+
+**Yanıt (`TurnResponse`)**
+
+| Alan | Ne |
+|---|---|
+| `text` | Modelin düz metin çıktısı |
+| `structured` | `schema` verildiyse ayrıştırılmış JSON, yoksa `null` |
+| `provider` · `model` | Çağrının fiilen gittiği sağlayıcı ve model |
+| `destination` | Makineden çıktı mı: `local` \| `anthropic` \| `nvidia` \| `openai`. .NET `runs/`'a yazar |
+| `usage` | `{inputTokens, outputTokens}` |
+| `costUsd` | Sağlayıcının bildirdiği maliyet (abonelikte **eşdeğer**, fatura kesilmez) |
+| `durationS` · `attempts` | Süre ve deneme sayısı (geçici hatada yeniden deneme) |
+| `toolUses[]` | Ajan döngüsündeki araç çağrıları, sırayla: `{tool, target}`. Araç yoksa boş |
+| `turns` | Ajan döngüsünün tur sayısı (sağlayıcı bildirirse) |
+
+**Yazma sınırı.** Araçlı çağrıda SDK'nın `can_use_tool` geri çağrısı `Write`/`Edit` hedefini
+`cwd` içine kısar; `Bash`'te mutlak yol, `~` ve `..` reddedilir. Anthropic dışı yol için
+sandbox sağlayıcının kendi mekanizmasıdır (Codex: `--sandbox workspace-write`).
 
 Hata gövdesi `detail` içinde `{"errorCode": ..., "message": ...}` taşır:
 

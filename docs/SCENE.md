@@ -93,7 +93,7 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `monitor` → oturulunca açılan, kalkınca kapanan monitör prop'u (`props[].spriteOff`); `mug: {x,y,w}` → kahve barından dönen ajanın kupasını bıraktığı masa noktası |
 | `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB deskC deskD`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing`. `capacity` (varsayılan 1): dolu durağa gelen `queue` noktasında durağa dönük bekler, boşalınca girer; ambient turlar dolu durağı seçmez |
 | `blocked[]` | yürünemez dikdörtgenler; yol bulma bunlardan ızgara kurar |
-| `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Sahne ajanı iş akışı rolünden fazla olabilir (`intern`, `devops` yalnız sahnede yaşar; olay almazlarsa ambient davranır) |
+| `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Bugün altı ajan: `analyst · designer · developer · tester · manager · organizer` (`intern`/`devops` Faz 2b'de çıkarıldı). Ekipte olup burada yeri olmayan ajan UI'da boş masaya ve kullanılmayan sprite'a otomatik yerleşir; olay almayan ajan ambient davranır |
 | `cat` | yatak ve gezinti noktaları. Yatak **açık alandadır** (koltuğun minderi): kedi oraya yürüyerek çıkar |
 | `lights[]` | tıklanınca açılıp kapanan ışık: `hit` (tıklama dikdörtgeni), `on` (varsayılan açık) ve iki kullanımdan biri — **oda ışığı**: `room` sönünce karartılır, `glow` açıkken hale düşer (müdür odasının sarkıtı); **abajur**: yalnız `bulb`, sönünce sadece başlık koyulaşır (`multiply`), çevresi etkilenmez (kanepenin yanındaki abajur) |
 

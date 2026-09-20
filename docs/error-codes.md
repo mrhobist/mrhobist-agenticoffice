@@ -39,6 +39,7 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `run.not_retryable` | 409 | `retry` yalnız `Failed / Interrupted / BudgetExceeded / Cancelled` ve limit beklemesinde (`Paused` + `resumeAt`) geçerli |
 | `run.not_cancellable` | 409 | `cancel` yalnız `Running / AwaitingApproval / Paused / Failed / Interrupted / BudgetExceeded` durumunda geçerli (Completed, Cancelled, PolicyRejected kapatılamaz) |
 | `run.plan_invalid` | — | Analist çıktısı şemaya uymadı ya da görevsiz (çalışma `Failed`, `detail` söyler) |
+| `run.budget_invalid` | 400 | `POST /runs`: `maxCostUsd` verildiyse sıfırdan büyük olmalı |
 | `run.project_required` | 400 | `POST /runs`: `project` boş; iş yalnız bir projenin içinde başlar |
 | `run.not_awaiting_input` | 409 | `answer` yalnız `AwaitingInput` durumunda geçerli |
 | `run.invalid_choice` | 400 | `answer.choice` sorunun seçeneklerinden biri değil |

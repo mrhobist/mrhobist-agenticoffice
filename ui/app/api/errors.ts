@@ -41,6 +41,7 @@ const MESSAGES: Record<string, string> = {
   'run.note_empty': 'Revize notu boş olamaz.',
   'run.not_awaiting_approval': 'Çalışma onay beklemiyor; bu işlem yalnız plan onay aşamasında yapılabilir.',
   'run.plan_invalid': 'Analistin planı şemaya uymadı; çalışma durdu.',
+  'run.budget_invalid': 'Bütçe sıfırdan büyük olmalı ya da boş bırakılmalı.',
   'run.project_required': 'İş bir projenin içinde başlar; önce proje seç.',
 
   'run.not_awaiting_input': 'Çalışma senden cevap beklemiyor.',

@@ -202,11 +202,11 @@ yazılır; UI'da Hata kutusu + **Günlük** (LLM turları tam prompt/çıktı, d
 **Üst barda kalan kullanım** (`GET /limits`): 5 saatlik oturum, haftalık, modele özel pencereler; kaynak Claude Code'un
 `/usage` ucu (belgesiz, 429'a duyarlı → runtime 90 s önbellek + son iyi değer). Model alanı açılır menü oldu.
 
-**Ortam notu:** Bu oturum Windows'ta `SemihAI` kullanıcısıyla çalıştı; `runtime/.venv` bu kullanıcı
+**Ortam notu:** Bu oturum ikinci bir Windows kullanıcısıyla çalıştı; `runtime/.venv` o kullanıcı
 için Python 3.12 ile yeniden kuruldu (`pyproject` `>=3.12`). Agent SDK, Claude masaüstü uygulamasının
 `%APPDATA%\Claude\claude-code\<sürüm>\claude.exe` ikilisini kullanır; `claude auth status` bu
 kullanıcı için **"giriş yok"** dedi — gerçek model denemesi için `claude login` gerekir.
-`semih` kullanıcısının eski Api (5080) ve UI (3000) süreçleri durdurulamadığı için doğrulama
+Birinci kullanıcının eski Api (5080) ve UI (3000) süreçleri durdurulamadığı için doğrulama
 `AITeam:ApiUrl=http://127.0.0.1:5082` ve `NUXT_PUBLIC_API_BASE` ile ikinci kopyalar üzerinde yapıldı;
 Api CORS'u artık her loopback kökeni kabul eder. Windows Uygulama Denetimi, `bin/Debug|Release/net10.0`
 dışına derlenen Api dll'ini çalıştırmadı (`-p:OutDir` ile derlenen kopyalar); standart yol kullanılmalı.
@@ -226,12 +226,12 @@ yeniden başlatılamadı (aşağıdaki ortam notu); düzeltme runtime yeniden ba
 bilinmiyor; ilk yanıt `detail` alanında okunacak. Testler: 32 birim + 32 servis yeşil; runtime pytest'e 1 test eklendi,
 **koşturulamadı** (Python yok).
 
-**2026-09-19 gece (SemihAI, kullanıcı kararları: paralel + ajan başına tek iş · elle + otomatik tekrar · panoda çalışma
+**2026-09-19 gece (ikinci Windows kullanıcısı, kullanıcı kararları: paralel + ajan başına tek iş · elle + otomatik tekrar · panoda çalışma
 sekmeleri · iptal + bütçe):** `JobChannel` havuz oldu (`AITeam:MaxParallelJobs`=3, çalışma başına kilit, iptal
 belirteci), `AgentCaller` ajan kilidi + `RetryPolicy`, dağıtımda çalışmalar arası meşguliyet, `maxCostUsd` →
 `BudgetExceeded`, Kanban'da Sahne + çalışma sekmeleri (durumdan türetilir), ajan panelinde **Özellikler / İşler**
 sekmeleri (`GET /agents/{key}/work`), brief formunda bütçe alanı, üst barda tüm kota pencereleri (pasifler soluk).
-Runtime `/v1/limits` ölçüldü: 200, oturum/hafta/modele özel pencereler geliyor. `.venv` `SemihAI` için yeniden kuruldu.
+Runtime `/v1/limits` ölçüldü: 200, oturum/hafta/modele özel pencereler geliyor. `.venv` o kullanıcı için yeniden kuruldu.
 
 **2026-09-19 gece — Projeler ve ofis odaklı kabuk (kullanıcı kararları):** Tasarım artboard'ları
 (https://claude.ai/artifact/TXLNsdkM6YQim5NQkYRjLv): ofis tam boy ortada, projeler sol ahşap rayda kağıt kart,
@@ -242,11 +242,11 @@ hedef dizin, `ownerId=local`; bütçe yok), `config/projects/{key}.json`, `IProj
 "Yeni çalışma" kalktı, `RunPanel` projeye bağlı. Ölçüm: UI'dan "Hello World Console" projesi oluşturuldu, rayda kart
 belirdi, panel açıldı. Testler 37 servis + 32 birim + 21 runtime yeşil.
 
-**Ortam notu (2026-09-19, `SemihAI2` kullanıcısı):** `semih` ve `SemihAI` kullanıcılarının bıraktığı Api (5080, 5082),
+**Ortam notu (2026-09-19, üçüncü Windows kullanıcısı):** önceki iki kullanıcının bıraktığı Api (5080, 5082),
 UI (3000, 3005) ve runtime (5090) süreçleri bu kullanıcıdan durdurulamıyor (`Erişim engellendi`) ve Api'nin hem
 `bin/Debug` hem `bin/Release` çıktısını kilitliyor. Çözüm: Api `-p:OutputPath=<scratch>/bin/Debug/net10.0/` ile
 derlendi ve oradan 5083'te çalıştırıldı (Uygulama Denetimi bu yolu engellemedi; `launch.json` → `ui-5083`, UI 3006).
-`runtime/.venv` `SemihAI`'nin Python'unu gösteriyor; `SemihAI2` için Python yok → pytest ve yeni runtime başlatılamaz;
+`runtime/.venv` ikinci kullanıcının Python'unu gösteriyor; üçüncü kullanıcıda Python yok → pytest ve yeni runtime başlatılamaz;
 çalışan 5090 runtime'ı (kodu güncel, Anthropic girişi var) yeniden kullanıldı. Kalıcı çözüm: eski süreçleri
 kapatmak (Görev Yöneticisi, yönetici) ve bu kullanıcıya Python 3.12 kurup `.venv`'i yeniden oluşturmak.
 
@@ -268,6 +268,44 @@ maliyet **eşdeğer** (≈$), asıl koruma **limit eşiği %99** platform bazın
   `awaitingInput` sayacı ayrı · devir notu yalnız implement'te · dizin yaratma Infrastructure'da · 401 gövdesi
   `ProblemMapping`'ten · `AddAuthorization` kaldırıldı · ekip yalnız devir için yüklenir · limit beklemesinde 20 s yoklama ·
   ayarlar dosya damgasıyla önbellekte · yarım kalan `Started` faz kesinti/iptalde `Failed` (yeniden dene aynı adım).
+
+## Canlı araç akışı, UX ve sahne turları (2026-09-20) ✅
+
+Faz 4d ile kod incelemesi turu arasında kalan, o ana kadar buraya yazılmamış işler. Sözleşme
+değişiklikleri `docs/API.md`, `docs/DOMAIN.md` ve `docs/SCENE.md`'ye aynı commit'lerde işlendi.
+
+**Canlı araç akışı.** Runtime her araç çağrısında `progressUrl`'e `{tool, target}` POST eder
+(2 s zaman aşımı, hata yutulur — bildirim turu bloklamaz); Api `ProgressRegistry` ile tek
+kullanımlık belirteci çözer ve `agent.tool` yayımlar. Sahnede balon, çalışma panelinde
+**"Şu an"** şeridi. `Bash` hedefinde baştaki `cd "<kök>" &&` ön ekleri atılır ve satır sonları
+tek boşluğa iner ki asıl komut görünsün (`ProgressRegistry.Shorten`, birim testi var).
+
+**Bitmiş çalışma kutusu (UX).** Çalışma bitince üretilen dosyalar, **Projeyi başlat** düğmesi ve
+"devam brief'i" tek kutuda; adım süresi sayacı, yeni bekleyen işte toast, boş HUD gizlenir,
+kısayol yardımı.
+
+**Proje silme ve hedef dizin.** `DELETE /projects/{key}?deleteFiles=` — süren çalışma varsa
+409 `project.in_use`; bitmiş geçmiş projeyle birlikte gider, dosyalar **ayrıca** işaretlenir.
+Onay UI'da iki adımlı. Hedef dizin artık klasör seçiciyle geliyor (`GET /projects/dirs`,
+`DirPicker.vue`); serbest metin yalnız ad ve açıklamada.
+
+**Mini pano (sahnedeki Kanban).** Canlı kartlar; pano yalnız SSE'den değil sunucudan da
+eşitlenir, böylece bitmiş işler "Bitti" şeridinde görünür. Kanban hedefi türetimi
+`ui/app/api/board.ts`'e alındı — `Workflow.ImplementBefore` kuralının TS kopyası, `KanbanPanel`
+ile sahne panosu aynı kaynağı kullanır.
+
+**Sahne.** Su sebilinden su taşıma, kanepe abajuru; menü tahtası 9-dilim büyütüldü, pano yazısı
+ölçekten türetilir, cam eşiği 100.
+
+**Sprite hattı.** `sim3` kataloğu sandalyeli sürümle değişti; üretilen sandalye ara çözümü ve
+onu üreten ~90 satır `build-sprites.py`'den kalktı. Tasarımcı (ponytail) için sandalyeli oturma
+ve arka yazma kareleri katalogdan alındı (%5 altı ölçek farkında yeniden boyutlama yok, taban
+keskin kalır).
+
+**UI ikon ve düğme tutarlılığı.** Emoji/glif karışımı bitti: tek renkli SVG ikon seti
+`Ico.vue` (`bell · gear · folder · trash · refresh · clock · check · exit`). Kapat düğmeleri
+tüm panellerde aynı (28×28, ortalı, hover); "+" ortalandı; proje silmede çöp kutusu ikonu;
+halka etiketleri görünür, ikon-metin hizası düzeltildi.
 
 ## Kalan işler (2026-09-20 itibarıyla, öncelik sırasıyla)
 
