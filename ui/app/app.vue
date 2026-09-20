@@ -8,14 +8,32 @@
       <!-- Kalan kullanim: aktif saglayicilarin kota pencereleri (5 saat, hafta, modele ozel). -->
       <LimitsBar ref="limitsBar" @open="toggleSettings" />
       <span class="run">
-        <span class="chip">{{ hud.stage }}</span>
-        <span class="chip ghost">{{ hud.task }} · tur {{ hud.round }}</span>
+        <!-- Sahne HUD'u: yalniz bir adim akarken (bos "— · tur 0" cipleri kalabalik yapiyordu). -->
+        <template v-if="overview?.running">
+          <span class="chip">{{ hud.stage }}</span>
+          <span class="chip ghost">{{ hud.task }} · tur {{ hud.round }}</span>
+        </template>
         <!-- Isler: kac is var + senden bir sey bekleyen sayisi (GET /runs/overview, 5 s). -->
         <button type="button" class="chip action jobs" :class="{ on: jobs, alert: inboxCount > 0 }" :title="jobsTitle" @click="toggleJobs">
           İşler <b v-if="overview" class="n">{{ overview.total }}</b>
           <span v-if="inboxCount" class="badge" :aria-label="`${inboxCount} iş senden cevap bekliyor`">{{ inboxCount }}</span>
         </button>
         <button type="button" class="chip action" :class="{ on: teamPanel }" aria-label="Ekip yönetimi" title="Ekip yönetimi (E): ajanlar ve takımlar" @click="toggleTeam">Ekip</button>
+        <span class="help-wrap">
+          <button type="button" class="chip action help" aria-label="Kısayollar" title="Kısayollar" @click="help = !help">?</button>
+          <div v-if="help" class="help-menu" role="dialog" aria-label="Kısayollar">
+            <div class="bell-head">Kısayollar</div>
+            <dl class="keys">
+              <dt><kbd>N</kbd></dt><dd>Yeni proje</dd>
+              <dt><kbd>I</kbd></dt><dd>İşler</dd>
+              <dt><kbd>B</kbd></dt><dd>Sprint panosu (Kanban)</dd>
+              <dt><kbd>E</kbd></dt><dd>Ekip yönetimi</dd>
+              <dt><kbd>S</kbd></dt><dd>Ayarlar</dd>
+              <dt><kbd>Esc</kbd></dt><dd>Açık paneli kapat</dd>
+            </dl>
+            <p class="bell-empty">Sahnede bir ajana tıkla: durur, işini yazar. Panoya tıkla: Kanban. Proje kartına tıkla: işler ve "Yeni iş".</p>
+          </div>
+        </span>
         <button type="button" class="chip action" :class="{ on: settings }" aria-label="Ayarlar" title="Ayarlar (S)" @click="toggleSettings">⚙ Ayarlar</button>
         <!-- Bildirimler: senden cevap bekleyenler islerin DISINDA ayri bir alanda (kullanici istegi 2026-09-19). -->
         <span class="bell-wrap">
@@ -41,6 +59,15 @@
         </span>
       </span>
     </header>
+
+    <!-- Anlik uyarilar: yeni soru/karar. Tiklaninca calisma acilir; 12 s sonra kendi kapanir. -->
+    <div v-if="toasts.length" class="toasts" aria-live="polite">
+      <div v-for="t in toasts" :key="t.id" class="toast">
+        <span class="kind" :class="t.kind">{{ INBOX_KIND_LABEL[t.kind] }}</span>
+        <button type="button" class="toast-body" @click="dismissToast(t.id); openRun(t.runId)"><strong>{{ t.label }}</strong> · {{ t.title }}</button>
+        <button type="button" class="toast-x" aria-label="Kapat" @click="dismissToast(t.id)">×</button>
+      </div>
+    </div>
 
     <!-- Ilk yuklemede kimlik kontrolu (docs/DOMAIN.md → Model, efor ve kimlik). Giris yoksa is baslatilmaz, kullanici uyarilir. -->
     <div v-if="providerNotice" class="notice" :class="providerNotice.kind" role="status">
@@ -132,7 +159,7 @@
         />
 
         <!-- Calisma paneli: yeni brief (projeye bagli), plan onayi, devir notlari. Diger panellerle ayni anda acilmaz. -->
-        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" @close="closeRun" @open="openRun" @jobs="toggleJobs" />
+        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" @close="closeRun" @open="openRun" @jobs="toggleJobs" @new-run="openNewRun" />
 
         <!-- Ekip yonetimi: ajan havuzu (ekle/sil) ve takimlar = is akislari (kullanici karari 2026-09-20). -->
         <TeamPanel v-if="teamPanel" :agents="team" @close="teamPanel = false" @select="k => { teamPanel = false; selectAgent(k) }" @changed="loadTeam(); loadProjects()" />
@@ -168,7 +195,7 @@ import TeamPanel from '~/components/TeamPanel.vue'
 import { useAuth } from '~/composables/useAuth'
 import type { Hud } from '~/scene/world'
 import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
-import type { AgentDetail, AgentListItem, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
+import type { AgentDetail, AgentListItem, InboxKind, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel, fmtCost as fmtCostLabel } from '~/api/labels'
@@ -297,6 +324,25 @@ async function loadOverview() {
 
 /** Sahnedeki panoya rozet: kac is senden bir sey bekliyor. */
 watch(inboxCount, n => scene.value?.setAttention(n), { immediate: true })
+
+// Yeni bekleyen (soru/karar) gelince kisa uyari (toast): baska panelde calisan kullanici kacirmasin (kullanici istegi 2026-09-20).
+const help = ref(false)
+const toasts = ref<Array<{ id: string; runId: string; label: string; kind: InboxKind; title: string }>>([])
+const seenInbox = new Set<string>()
+let inboxPrimed = false
+watch(() => overview.value?.inbox, (list) => {
+  if (!list) return
+  const keys = list.map(i => `${i.runId}:${i.kind}:${i.ts}`)
+  if (!inboxPrimed) { keys.forEach(k => seenInbox.add(k)); inboxPrimed = true; return }
+  list.forEach((i, idx) => {
+    const k = keys[idx]!
+    if (seenInbox.has(k)) return
+    seenInbox.add(k)
+    toasts.value = [...toasts.value, { id: k, runId: i.runId, label: i.label, kind: i.kind, title: i.title }].slice(-3)
+    setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== k) }, 12_000)
+  })
+})
+function dismissToast(id: string) { toasts.value = toasts.value.filter(t => t.id !== id) }
 
 // Sekme basligi: bekleyen sayisi one gelir, "(2) MrHobist.AITeam". inboxCount tanimlandiktan SONRA (TDZ).
 useHead({ title: computed(() => (inboxCount.value ? `(${inboxCount.value}) ` : '') + 'MrHobist.AITeam — Üretim Ofisi'), htmlAttrs: { lang: 'tr' } })
@@ -452,7 +498,8 @@ function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
   if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
   if (e.key === 'Escape') {
-    if (bell.value) bell.value = false
+    if (help.value) help.value = false
+    else if (bell.value) bell.value = false
     else if (teamPanel.value) teamPanel.value = false
     else if (settings.value) settings.value = false
     else if (jobs.value) jobs.value = false
@@ -625,6 +672,19 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .profile .who { font-size: 12px; color: var(--ink); }
 .profile .out { font: inherit; font-size: 12px; background: transparent; color: var(--ink-3); border: none; cursor: pointer; padding: 0 4px; }
 .profile .out:hover { color: #f0a0a0; }
+.help-wrap { position: relative; }
+.chip.help { padding: 4px 9px; font-weight: 700; }
+.help-menu { position: absolute; right: 0; top: calc(100% + 8px); width: 300px; z-index: 20; background: #ede9dc; color: #23283a; border: 4px solid #6b4a2b; border-radius: 6px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); padding: 8px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0 6px 6px; font-size: 12px; align-items: center; }
+.keys dt kbd { font-size: 11px; background: #fff; border: 1px solid #c9c3b3; border-radius: 4px; padding: 1px 6px; }
+.keys dd { margin: 0; }
+.toasts { position: fixed; right: 16px; top: 56px; z-index: 40; display: flex; flex-direction: column; gap: 8px; width: min(420px, calc(100% - 32px)); }
+.toast { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; background: #f6e2a0; color: #23283a; border-radius: 4px; padding: 8px 10px; box-shadow: 0 3px 0 #b8964a, 0 10px 24px rgba(0,0,0,0.45); font-size: 12px; animation: slidein 0.25s ease-out; }
+.toast .kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; background: #23283a; color: #f6e2a0; }
+.toast .kind.decision { background: #9c1f1f; color: #fff; }
+.toast-body { font: inherit; text-align: left; background: transparent; border: none; color: inherit; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; }
+.toast-x { font: inherit; font-size: 16px; background: transparent; border: none; cursor: pointer; color: #4a5068; padding: 0 2px; }
+@keyframes slidein { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---- Sag alt: ekip pusulasi, yari saydam ---- */
 .compass {

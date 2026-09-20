@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AgentListItem, ProjectCard, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
+import type { AgentListItem, LaunchResult, ProjectCard, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { COST_TITLE, RUN_CANCELLABLE, RUN_RETRYABLE, RUN_STATUS_LABEL, fmtCost, subjectLabel } from '~/api/labels'
@@ -17,7 +17,7 @@ const props = defineProps<{
   /** Yeni is formu icin proje anahtari: is yalniz bir projenin icinde baslar (docs/DOMAIN.md → Projeler). */
   project: string | null
 }>()
-const emit = defineEmits<{ close: []; open: [id: string]; jobs: [] }>()
+const emit = defineEmits<{ close: []; open: [id: string]; jobs: []; newRun: [project: string] }>()
 
 const api = useApiClient()
 
@@ -244,6 +244,77 @@ async function answer(choice: string) {
 const awaiting = computed(() => run.value?.status === 'awaitingApproval')
 const asking = computed(() => run.value?.status === 'awaitingInput' && !!run.value.question)
 const busy = computed(() => run.value?.status === 'running')
+
+// ------------------------------------------------------------------ gecen sure (kullanici istegi 2026-09-20: uzun adimda bos bekleme olmasin)
+const nowTick = ref(Date.now())
+let tickTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => { tickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000) })
+onBeforeUnmount(() => clearInterval(tickTimer))
+/** Suren adimin baslangici: son Started fazi; faz yoksa (analiz) son tekrar notu ya da calismanin baslangici. */
+const stepStartedAt = computed<string | null>(() => {
+  const r = run.value
+  if (!r || r.status !== 'running') return null
+  let last: string | null = null
+  for (const t of r.tasks) for (const p of t.phases) if (p.status === 'started' && (!last || p.ts > last)) last = p.ts
+  if (last) return last
+  const retry = [...r.messages].reverse().find(m => m.subject === 'retry' || m.subject === 'plan-revision')
+  return retry?.ts ?? r.startedAt
+})
+const elapsed = computed(() => {
+  if (!stepStartedAt.value) return ''
+  const s = Math.max(0, Math.floor((nowTick.value - new Date(stepStartedAt.value).getTime()) / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+})
+/** Adim icin beklenen sure ipucu (ilk gercek kosudan): analiz ~1 dk, gelistirme 2–3 dk, inceleme ~1 dk. */
+const stepHint = computed(() => {
+  const r = run.value
+  if (!r || r.status !== 'running') return ''
+  if (!r.spec) return 'analist dizine bakıyor ve planı yazıyor; genelde 1 dk'
+  const d = r.detail ?? ''
+  if (d.startsWith('Geliştirme')) return 'developer dosyaları yazıyor, build/test koşuyor; genelde 2–3 dk'
+  if (d.startsWith('Test') || d.startsWith('Karar')) return 'inceleme: kod okunuyor, testler koşuyor; genelde 1 dk'
+  return 'devir notu yazılıyor'
+})
+
+// ------------------------------------------------------------------ bitmis calisma: degisen dosyalar, projeyi baslat, devam brief'i
+const projectOfRun = ref<ProjectCard | null>(null)
+watch(() => run.value?.project, async (p) => {
+  projectOfRun.value = null
+  if (p) { try { projectOfRun.value = await api.get<ProjectCard>(`/api/v1/projects/${encodeURIComponent(p)}`) } catch { /* dugme pasif kalir */ } }
+})
+/** Developer raporlarindan "Dosyalar: a, b" satirlari (implement-report). */
+const changedFiles = computed(() => {
+  const out = new Set<string>()
+  for (const m of run.value?.messages ?? []) {
+    if (m.subject !== 'implement-report') continue
+    const line = m.body.split('\n').find(l => l.startsWith('Dosyalar:'))
+    if (!line) continue
+    for (const f of line.slice('Dosyalar:'.length).split(',')) { const t = f.trim(); if (t && t !== '—') out.add(t) }
+  }
+  return [...out]
+})
+const launching = ref(false)
+const launchNote = ref<{ kind: 'ok' | 'err'; text: string } | null>(null)
+async function launchProject() {
+  if (!run.value || launching.value) return
+  launching.value = true
+  launchNote.value = null
+  try {
+    const r = await api.post<LaunchResult>(`/api/v1/projects/${encodeURIComponent(run.value.project)}/launch`)
+    launchNote.value = { kind: 'ok', text: `Yeni pencerede açıldı (${r.launcher}, pid ${r.processId}).` }
+  } catch (e) {
+    launchNote.value = { kind: 'err', text: errorText(e) }
+  } finally {
+    launching.value = false
+    setTimeout(() => { launchNote.value = null }, 6000)
+  }
+}
+const doneStats = computed(() => {
+  const r = run.value
+  if (!r) return null
+  const phases = r.tasks.flatMap(t => t.phases)
+  return { tasks: r.spec?.tasks.length ?? 0, rejects: phases.filter(p => p.status === 'rejected').length, minutes: r.finishedAt ? Math.max(1, Math.round((new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime()) / 60_000)) : 0 }
+})
 const canRetry = computed(() => !!run.value && (RUN_RETRYABLE.has(run.value.status) || (run.value.status === 'paused' && !!run.value.resumeAt)))
 const canCancel = computed(() => !!run.value && RUN_CANCELLABLE.has(run.value.status))
 
@@ -346,6 +417,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <span class="status" :class="run.status">{{ RUN_STATUS_LABEL[run.status] }}</span>
             <span v-if="busy" class="spin" aria-hidden="true" />
             <span class="sub">{{ run.detail }}</span>
+            <span v-if="busy && elapsed" class="elapsed" :title="stepHint">⏱ {{ elapsed }}</span>
             <span class="sub right">{{ run.workflow }} · <span :title="COST_TITLE">{{ fmtCost(run.totalCostUsd, 4) }}</span><template v-if="run.maxCostUsd"> / {{ fmtCost(run.maxCostUsd) }}</template><template v-if="run.retries"> · {{ run.retries }}× yeniden</template></span>
             <button v-if="canRetry" type="button" class="small" :disabled="acting" @click="retry">Yeniden dene</button>
             <button v-if="canCancel" type="button" class="small danger" :disabled="acting" @click="cancel">{{ canRetry ? 'Kapat (iptal)' : 'İptal et' }}</button>
@@ -434,7 +506,22 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
               </div>
             </section>
           </template>
-          <p v-else-if="busy" class="msg">Analist planı hazırlıyor…</p>
+          <p v-else-if="busy" class="msg">Analist planı hazırlıyor… <span class="sub">{{ stepHint }}</span></p>
+
+          <!-- Bitti: sonuc ozeti, degisen dosyalar, projeyi baslat, ayni projede devam (kullanici istegi 2026-09-20). -->
+          <section v-if="run.status === 'completed'" class="done-box">
+            <h3><span aria-hidden="true">✓</span> Tamamlandı<span v-if="doneStats" class="sub"> · {{ doneStats.tasks }} görev · {{ doneStats.rejects }} red · {{ doneStats.minutes }} dk · {{ fmtCost(run.totalCostUsd) }}</span></h3>
+            <div v-if="changedFiles.length" class="files">
+              <span class="lbl">Değişen dosyalar</span>
+              <code v-for="f in changedFiles" :key="f">{{ f }}</code>
+            </div>
+            <div class="actions">
+              <button type="button" class="launch" :disabled="launching || !projectOfRun?.launchable" :title="projectOfRun?.launchable ? 'Proje kökündeki run.cmd yeni pencerede çalışır' : 'run.cmd yok: developer uygulamayı çalıştırılabilir yapınca açılır'" @click="launchProject"><span aria-hidden="true">▶</span> {{ launching ? 'Açılıyor…' : 'Projeyi başlat' }}</button>
+              <button type="button" @click="emit('newRun', run.project)">Devam brief'i (aynı proje)</button>
+              <span class="sub">Kod <code>{{ projectOfRun?.targetDir ?? run.project }}</code> altında.</span>
+            </div>
+            <p v-if="launchNote" class="launch-note" :class="launchNote.kind" role="status">{{ launchNote.text }}</p>
+          </section>
 
           <section v-if="revisions.length" class="notes">
             <h3>Revize notları</h3>
@@ -547,6 +634,16 @@ button:disabled { opacity: 0.5; cursor: default; }
 .status.running { background: #4fa3e0; color: #fff; }
 .status.paused { background: #a889e6; color: #fff; }
 .status.awaitingInput { background: #d23b3b; color: #fff; }
+.elapsed { font-size: 11px; font-variant-numeric: tabular-nums; color: #4a5068; background: #fff; border: 1px solid #c9c3b3; border-radius: 999px; padding: 1px 8px; }
+.done-box { background: #e3f4dc; border: 2px solid #7cc46b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.done-box h3 { display: flex; align-items: center; gap: 8px; color: #2d5a22; font-size: 14px; text-transform: none; letter-spacing: 0; margin: 0; }
+.done-box .files { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.done-box .files .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #4a5068; margin-right: 4px; }
+.done-box .launch { font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 4px; background: #7cc46b; color: #14301a; border: 2px solid #3d6b2f; cursor: pointer; }
+.done-box .launch:disabled { background: #c9c3b3; color: #6b7285; border-color: #b9ad92; cursor: default; }
+.launch-note { margin: 0; font-size: 12px; padding: 6px 10px; border-radius: 4px; }
+.launch-note.ok { background: #fff; color: #2d5a22; }
+.launch-note.err { background: #fadada; color: #9c1f1f; }
 .ask { background: #fff8e1; border: 2px solid #d23b3b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .ask h3 { display: flex; align-items: center; gap: 8px; color: #23283a; font-size: 14px; text-transform: none; letter-spacing: 0; }
 .ask .qtext { margin: 0; font-size: 13px; line-height: 1.5; }
