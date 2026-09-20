@@ -100,7 +100,7 @@ function projectOf(r: RunSummary): string { return projectTitles.value[r.project
       <!-- Gelen kutusu: senden cevap ya da karar bekleyenler. Bos degilse sari, doluysa kirmizi sayac. -->
       <section class="inbox" :class="{ empty: !inbox.length }" aria-labelledby="inbox-title">
         <h3 id="inbox-title">
-          <span aria-hidden="true">{{ inbox.length ? '🔔' : '✓' }}</span>
+          <Ico :name="inbox.length ? 'bell' : 'check'" />
           Senden bekleniyor <b>{{ inbox.length }}</b>
         </h3>
         <p v-if="!overview" class="sub">Gelen kutusu alınıyor…</p>

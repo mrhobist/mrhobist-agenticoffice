@@ -420,7 +420,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <span class="status" :class="run.status">{{ RUN_STATUS_LABEL[run.status] }}</span>
             <span v-if="busy" class="spin" aria-hidden="true" />
             <span class="sub">{{ run.detail }}</span>
-            <span v-if="busy && elapsed" class="elapsed" :title="stepHint">⏱ {{ elapsed }}</span>
+            <span v-if="busy && elapsed" class="elapsed" :title="stepHint"><Ico name="clock" :size="12" /> {{ elapsed }}</span>
           </div>
           <!-- Canli arac akisi: developer/testci calisirken hangi dosya, hangi komut (SSE agent.tool). Tur bitince tam liste gunlukte. -->
           <div v-if="busy && props.liveTools?.length" class="livetools" aria-live="polite">
@@ -452,7 +452,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
           </section>
 
           <!-- Limit beklemesi: kendisi surer; kullanici isterse hemen dener. -->
-          <p v-if="run.status === 'paused' && run.resumeAt" class="limit">⏳ Limit doldu; <strong>{{ new Date(run.resumeAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) }}</strong>'de kendisi sürer. Eşik Ayarlar'da; "Yeniden dene" hemen dener.</p>
+          <p v-if="run.status === 'paused' && run.resumeAt" class="limit"><Ico name="clock" :size="13" /> Limit doldu; <strong>{{ new Date(run.resumeAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) }}</strong>'de kendisi sürer. Eşik Ayarlar'da; "Yeniden dene" hemen dener.</p>
 
           <details class="brief-box">
             <summary>Brief</summary>
@@ -654,7 +654,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .livetools .tool b { color: #4a5068; margin-right: 3px; }
 .livetools .tool.write, .livetools .tool.edit, .livetools .tool.multiedit { background: #dcf1d3; }
 .livetools .tool.bash { background: #d8ebfa; }
-.elapsed { font-size: 11px; font-variant-numeric: tabular-nums; color: #4a5068; background: #fff; border: 1px solid #c9c3b3; border-radius: 999px; padding: 1px 8px; }
+.elapsed { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-variant-numeric: tabular-nums; color: #4a5068; background: #fff; border: 1px solid #c9c3b3; border-radius: 999px; padding: 1px 8px; }
 .done-box { background: #e3f4dc; border: 2px solid #7cc46b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .done-box h3 { display: flex; align-items: center; gap: 8px; color: #2d5a22; font-size: 14px; text-transform: none; letter-spacing: 0; margin: 0; }
 .done-box .files { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }

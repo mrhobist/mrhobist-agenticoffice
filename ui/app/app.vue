@@ -34,11 +34,11 @@
             <p class="bell-empty">Sahnede bir ajana tıkla: durur, işini yazar. Panoya tıkla: Kanban. Proje kartına tıkla: işler ve "Yeni iş".</p>
           </div>
         </span>
-        <button type="button" class="chip action" :class="{ on: settings }" aria-label="Ayarlar" title="Ayarlar (S)" @click="toggleSettings"><span class="ico" aria-hidden="true">⚙</span> Ayarlar</button>
+        <button type="button" class="chip action" :class="{ on: settings }" aria-label="Ayarlar" title="Ayarlar (S)" @click="toggleSettings"><Ico name="gear" /> Ayarlar</button>
         <!-- Bildirimler: senden cevap bekleyenler islerin DISINDA ayri bir alanda (kullanici istegi 2026-09-19). -->
         <span class="bell-wrap">
           <button type="button" class="chip action bell-btn" :class="{ on: bell, alert: inboxCount > 0 }" :aria-label="`Bildirimler: ${inboxCount} bekleyen`" title="Senden bekleyenler" @click="toggleBell">
-            <span aria-hidden="true">🔔</span>
+            <Ico name="bell" :size="15" />
             <span v-if="inboxCount" class="badge">{{ inboxCount }}</span>
           </button>
           <div v-if="bell" class="bell-menu" role="dialog" aria-label="Senden bekleniyor">
@@ -56,10 +56,7 @@
           <span class="avatar">{{ initials(user?.name ?? '?') }}</span>
           <span class="who">{{ user?.name }}</span>
           <button type="button" class="out" title="Çıkış" aria-label="Çıkış" @click="logout">
-            <!-- Cikis: "⎋" gliflerin cogunda yok (daire-slash'e duser); kapidan cikan ok SVG olarak. -->
-            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9.5 2.5h-6v11h6" /><path d="M11 5.5 13.5 8 11 10.5" /><path d="M6.5 8h7" />
-            </svg>
+            <Ico name="exit" :size="13" />
           </button>
         </span>
       </span>
@@ -106,7 +103,7 @@
           <span class="card-avatar" :style="{ background: p.color || '#3d5a80' }">{{ initials(p.title) }}</span>
           <strong class="card-title">{{ p.title }}</strong>
           <span class="card-meta">{{ p.runs }} iş<template v-if="p.running"> · <b class="run-n">{{ p.running }} çalışıyor</b></template><template v-if="p.paused"> · {{ p.paused }} durakladı</template> · {{ fmtCost(p.totalCostUsd) }}</span>
-          <span v-if="inboxOfProject(p.key)" class="card-ask"><span aria-hidden="true">🔔</span> {{ inboxOfProject(p.key) }} senden bekliyor</span>
+          <span v-if="inboxOfProject(p.key)" class="card-ask"><Ico name="bell" :size="12" /> {{ inboxOfProject(p.key) }} senden bekliyor</span>
           <span v-else-if="p.lastActivityAt" class="card-detail">son hareket {{ fmtAgo(p.lastActivityAt) }}</span>
         </button>
         <p v-if="!projects.length" class="rail-empty">Henüz proje yok. "+" ile ilk projeyi aç; işler onun içinde başlar.</p>
@@ -133,7 +130,7 @@
             <span class="compass-title">Ekip</span>
             <span v-if="compassMin" class="compass-dots"><span v-for="a in agents" :key="a.key" class="dot" :class="{ busy: a.state !== 'idle' && a.state !== 'done' }" :style="{ background: ROLE_HEX[a.key] }" :title="`${a.name}: ${a.note || STATE_LABEL[a.state as AgentState]}`" /></span>
             <span v-if="compassMin && busyAgents" class="compass-busy">{{ busyAgents }} çalışıyor</span>
-            <span class="compass-chev" aria-hidden="true">{{ compassMin ? '▴' : '▾' }}</span>
+            <Ico class="compass-chev" :name="compassMin ? 'chevron-up' : 'chevron-down'" :size="12" />
           </button>
           <button v-if="!compassMin" type="button" class="compass-manage" title="Ajan ekle, takım kur" @click.stop="toggleTeam">Yönet →</button>
           <template v-if="!compassMin">
@@ -577,8 +574,6 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .chip.mock { border-color: #8a6d2a; color: #f0c26a; }
 .chip.reconnecting, .chip.connecting { color: var(--ink-3); }
 .chip.action { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; font: inherit; font-size: 12px; border-color: #3d5a80; color: #9cc3ef; }
-/* Dugme ikonu: metinle ayni eksende, hafif kucuk. Anlam metinde; ikon yalniz isaret. */
-.ico { font-size: 1.05em; line-height: 1; }
 .chip.action:hover, .chip.action.on { background: #3d5a80; color: #fff; }
 .chip.jobs { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .chip.jobs .n { font-weight: 700; }
@@ -654,7 +649,7 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .pin.failed, .pin.interrupted, .pin.budgetExceeded { background: #d23b3b; border-color: #7a1f1f; }
 .card-title { font-size: 13px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .card-meta { font-size: 11px; color: #4a5068; }
-.card-ask { font-size: 11px; font-weight: 700; color: #7a5a00; background: #f6e2a0; padding: 3px 8px; border-radius: 3px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-ask { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #7a5a00; background: #f6e2a0; padding: 3px 8px; border-radius: 3px; margin-top: 2px; overflow: hidden; white-space: nowrap; }
 .card-detail { font-size: 10px; color: #6b7285; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-empty { margin: 0; font-size: 11px; color: #d9b98f; line-height: 1.5; padding: 0 2px; }
 .rail-all {
@@ -722,7 +717,7 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .compass-title { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
 .compass-head { display: flex; align-items: center; gap: 8px; width: 100%; font: inherit; background: transparent; border: none; color: var(--ink-3); cursor: pointer; padding: 2px 4px 6px; text-align: left; }
 .compass-head:hover .compass-title { color: var(--ink-2); }
-.compass-chev { margin-left: auto; font-size: 11px; }
+.compass-chev { margin-left: auto; }
 .compass.min { width: auto; padding: 6px 10px; }
 .compass.min .compass-head { padding: 0; }
 .compass-dots { display: inline-flex; gap: 4px; }

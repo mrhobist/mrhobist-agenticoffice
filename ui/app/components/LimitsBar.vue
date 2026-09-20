@@ -99,7 +99,7 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
     <template v-if="state === 'ready' && items">
       <!-- Minimal (kullanici istegi 2026-09-20): saglayici adi + her pencere icin yuvarlak yuzde halkasi; ayrinti ipucunda. -->
       <button v-for="p in active" :key="p.provider" type="button" class="prov" :title="p.subscription ? `${providerLabel(p.provider)} · ${p.subscription}` : providerLabel(p.provider)" @click="emit('open')">
-        <span class="name">{{ providerLabel(p.provider) }}<span v-if="p.detail.startsWith('son bilinen')" class="stale" title="Son bilinen değer; kota ucu şu an yanıt vermiyor">⏱</span></span>
+        <span class="name">{{ providerLabel(p.provider) }}<Ico v-if="p.detail.startsWith('son bilinen')" class="stale" name="clock" :size="11" title="Son bilinen değer; kota ucu şu an yanıt vermiyor" /></span>
         <span v-for="l in p.limits" :key="l.kind + (l.scope ?? '')" class="gauge" :class="{ dim: !l.isActive }" :title="title(p, l)">
           <span class="ring" :class="tone(l)" :style="{ '--p': remaining(l) }"><span class="pct">{{ remaining(l) }}</span></span>
           <span class="tag">{{ shortLabel(l) }}</span>
@@ -150,6 +150,6 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
 .ring.warn { --c: #d99b3a; }
 .ring.crit { --c: #e05252; }
 .sub.short { max-width: 140px; }
-.stale { margin-left: 4px; font-size: 10px; color: var(--ink-3); }
+.stale { margin-left: 4px; color: var(--ink-3); }
 .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
 </style>

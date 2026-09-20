@@ -64,7 +64,7 @@ const crumbs = computed(() => {
       <code :id="id" :class="{ dim: isDefault }">{{ shown }}</code>
       <span v-if="isDefault" class="sub">varsayılan</span>
       <button type="button" class="small" @click="toggle">{{ open ? 'Kapat' : 'Klasör seç…' }}</button>
-      <button v-if="!isDefault" type="button" class="small" title="Varsayılana dön" @click="pick(defaultDir)">↺</button>
+      <button v-if="!isDefault" type="button" class="small ico-btn" title="Varsayılana dön" @click="pick(defaultDir)"><Ico name="refresh" :size="13" /></button>
     </div>
 
     <div v-if="open" class="browser" role="dialog" aria-label="Klasör seç">
@@ -81,7 +81,7 @@ const crumbs = computed(() => {
           <button type="button" class="dir up" @click="go(listing!.parent!)">‹ üst klasör</button>
         </li>
         <li v-for="d in listing?.dirs ?? []" :key="d.path">
-          <button type="button" class="dir" :title="d.path" @click="go(d.path)"><span class="ico" aria-hidden="true">📁</span> {{ d.name }}</button>
+          <button type="button" class="dir" :title="d.path" @click="go(d.path)"><Ico name="folder" :size="13" /> {{ d.name }}</button>
         </li>
         <li v-if="listing && !listing.dirs.length" class="sub empty">alt klasör yok</li>
       </ul>
@@ -111,8 +111,7 @@ const crumbs = computed(() => {
 .sep { color: #9aa0b3; }
 .list { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
 .dir { font: inherit; font-size: 13px; width: 100%; display: flex; align-items: center; gap: 6px; text-align: left; background: #fff; border: 1px solid #e3ded0; border-radius: 4px; padding: 5px 8px; color: #23283a; cursor: pointer; }
-/* Klasor isareti: adla ayni eksende, biraz sonuk. */
-.ico { font-size: 0.95em; line-height: 1; opacity: 0.8; flex: none; }
+.ico-btn { display: inline-flex; align-items: center; gap: 5px; }
 .dir:hover { border-color: #4f8ef7; }
 .dir.up { color: #6b7285; background: transparent; border-style: dashed; }
 .empty { padding: 6px 8px; }

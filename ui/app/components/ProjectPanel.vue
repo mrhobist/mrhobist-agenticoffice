@@ -285,7 +285,7 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
               <span class="status" :class="r.status">{{ RUN_STATUS_LABEL[r.status] }}</span>
               <strong>{{ r.label }}</strong>
               <span class="meta">{{ fmtWhen(r.startedAt) }} · {{ fmtCost(r.totalCostUsd) }}</span>
-              <span v-if="pendingOf(r.id)" class="pending"><span aria-hidden="true">🔔</span> {{ INBOX_KIND_LABEL[pendingOf(r.id)!.kind] }}: {{ pendingOf(r.id)!.title }}</span>
+              <span v-if="pendingOf(r.id)" class="pending"><Ico name="bell" :size="12" /> {{ INBOX_KIND_LABEL[pendingOf(r.id)!.kind] }}: {{ pendingOf(r.id)!.title }}</span>
               <span v-else-if="r.detail" class="detail">{{ r.detail }}</span>
             </button>
           </template>
@@ -331,7 +331,7 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
           <div class="actions">
             <button class="primary" type="submit" :disabled="saving || !dirty">{{ saving ? 'Kaydediliyor…' : 'Kaydet' }}</button>
             <button type="button" class="ghost" :disabled="!dirty || saving" @click="card && fillForm(card)">Geri al</button>
-            <button type="button" class="danger" :disabled="confirmingDelete || activeRuns.length > 0" :title="activeRuns.length ? 'Süren iş var; önce bitirin ya da iptal edin' : undefined" @click="askRemove"><span class="ico" aria-hidden="true">🗑</span> Projeyi sil…</button>
+            <button type="button" class="danger" :disabled="confirmingDelete || activeRuns.length > 0" :title="activeRuns.length ? 'Süren iş var; önce bitirin ya da iptal edin' : undefined" @click="askRemove"><Ico name="trash" /> Projeyi sil…</button>
             <span v-if="saveError" class="err" role="alert">{{ saveError }}</span>
           </div>
 
@@ -343,7 +343,7 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
             </label>
             <p class="sub">{{ deleteFiles ? 'Klasör ve içindeki her şey diskten silinir.' : 'Klasör diskte kalır; yalnız proje kaydı ve çalışma geçmişi gider.' }}</p>
             <div class="actions">
-              <button type="button" class="danger fill" :disabled="deleting" @click="remove"><span class="ico" aria-hidden="true">🗑</span> {{ deleting ? 'Siliniyor…' : (deleteFiles ? 'Evet, projeyi ve dosyaları sil' : 'Evet, projeyi sil (dosyalar kalsın)') }}</button>
+              <button type="button" class="danger fill" :disabled="deleting" @click="remove"><Ico name="trash" /> {{ deleting ? 'Siliniyor…' : (deleteFiles ? 'Evet, projeyi ve dosyaları sil' : 'Evet, projeyi sil (dosyalar kalsın)') }}</button>
               <button type="button" class="ghost" :disabled="deleting" @click="confirmingDelete = false">Vazgeç</button>
             </div>
           </div>
@@ -404,7 +404,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #4f8ef7; outline-
 .run strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run .meta { font-size: 11px; color: #6b7285; }
 .run .pending, .run .detail { grid-column: 1 / span 3; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.run .pending { font-weight: 700; color: #7a5a00; }
+.run .pending { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: #7a5a00; }
 .run .detail { color: #6b7285; }
 .status { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(0,0,0,0.08); text-transform: uppercase; letter-spacing: 0.04em; }
 .status.awaitingApproval { background: #f3c34a; }
@@ -420,8 +420,6 @@ button:disabled { opacity: 0.5; cursor: default; }
 .primary { background: #23283a; color: #fff; border-color: #23283a; }
 .ghost { background: transparent; }
 .danger { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: #7a1f1f; border-color: #e0a0a0; }
-/* Dugme ikonu: metinle ayni satirda, hafif kucuk ve biraz sonuk; yalniz isaret, anlam metinde. */
-.ico { font-size: 0.95em; line-height: 1; opacity: 0.85; }
 .danger.fill { margin-left: 0; background: #b3261e; color: #fff; border-color: #b3261e; font-weight: 700; }
 .confirm { border: 1px solid #e0a0a0; background: #fbecec; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .confirm p { margin: 0; font-size: 13px; line-height: 1.45; }

@@ -237,7 +237,7 @@ function fmtWhen(ts: string): string {
              Tümü'de hepsi, proje sekmesinde o projenin; bos olsa da durur; tiklaninca ilgili calisma acilir. -->
         <aside class="inbox-col" aria-label="Senden bekleniyor">
           <div class="col-h inbox-h">
-            <span><span aria-hidden="true">🔔</span> Senden bekleniyor</span>
+            <span><Ico name="bell" :size="13" /> Senden bekleniyor</span>
             <span class="count" :class="{ alert: inboxShown.length }">{{ inboxShown.length }}</span>
           </div>
           <p v-if="!inboxShown.length" class="empty">Bekleyen yok. Plan onayı, takılma sorusu ya da düşen iş buraya ve zile düşer.</p>
