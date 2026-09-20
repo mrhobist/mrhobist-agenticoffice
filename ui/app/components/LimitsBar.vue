@@ -100,8 +100,8 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
       <!-- Minimal (kullanici istegi 2026-09-20): saglayici adi + her pencere icin yuvarlak yuzde halkasi; ayrinti ipucunda. -->
       <button v-for="p in active" :key="p.provider" type="button" class="prov" :title="p.subscription ? `${providerLabel(p.provider)} · ${p.subscription}` : providerLabel(p.provider)" @click="emit('open')">
         <span class="name">{{ providerLabel(p.provider) }}<span v-if="p.detail.startsWith('son bilinen')" class="stale" title="Son bilinen değer; kota ucu şu an yanıt vermiyor">⏱</span></span>
-        <span v-for="l in p.limits" :key="l.kind + (l.scope ?? '')" class="ring" :class="[tone(l), { dim: !l.isActive }]" :style="{ '--p': remaining(l) }" :title="title(p, l)">
-          <span class="pct">{{ remaining(l) }}</span>
+        <span v-for="l in p.limits" :key="l.kind + (l.scope ?? '')" class="gauge" :class="{ dim: !l.isActive }" :title="title(p, l)">
+          <span class="ring" :class="tone(l)" :style="{ '--p': remaining(l) }"><span class="pct">{{ remaining(l) }}</span></span>
           <span class="tag">{{ shortLabel(l) }}</span>
         </span>
         <span v-if="!p.limits.length" class="sub">—</span>
@@ -128,25 +128,27 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
 .limits { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
 .prov {
   display: flex; align-items: center; gap: 9px; font: inherit; cursor: pointer; color: var(--ink-2);
-  background: var(--surface-2); border: 1px solid var(--rule); border-radius: 999px; padding: 3px 12px 3px 10px; height: 38px;
+  background: var(--surface-2); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 12px 4px 10px; min-height: 38px;
 }
 .prov:hover { border-color: #3d5a80; }
 .prov.off { color: var(--ink-3); }
 .prov.off.bad { border-color: #8a3a3a; }
 .prov.off.bad .sub { color: #f0a0a0; }
 .name { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
-/* Halka: conic-gradient ile kalan yuzde; icinde sayi, altinda kisa etiket. */
+/* Gosterge: halka + ALTINDA kisa etiket. Etiket eskiden halkaya `bottom: -9px` ile asiliydi;
+   cipin icine sigmadigi icin kirpiliyordu (kullanici 2026-09-20). Artik ikisi alt alta akiyor. */
+.gauge { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; flex: none; }
+.gauge.dim { opacity: 0.55; }
 .ring {
-  --p: 0; position: relative; width: 30px; height: 30px; border-radius: 50%; flex: none;
+  --p: 0; position: relative; width: 26px; height: 26px; border-radius: 50%; flex: none;
   background: conic-gradient(var(--c, #35b98a) calc(var(--p) * 1%), rgba(255,255,255,0.1) 0);
   display: inline-grid; place-items: center;
 }
 .ring::before { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--surface-2); }
-.ring .pct { position: relative; font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1; }
-.ring .tag { position: absolute; bottom: -9px; left: 50%; transform: translateX(-50%); font-size: 7.5px; color: var(--ink-3); white-space: nowrap; letter-spacing: 0.02em; }
+.ring .pct { position: relative; font-size: 9px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1; }
+.tag { font-size: 7.5px; line-height: 1; color: var(--ink-3); white-space: nowrap; letter-spacing: 0.02em; }
 .ring.warn { --c: #d99b3a; }
 .ring.crit { --c: #e05252; }
-.ring.dim { opacity: 0.55; }
 .sub.short { max-width: 140px; }
 .stale { margin-left: 4px; font-size: 10px; color: var(--ink-3); }
 .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }

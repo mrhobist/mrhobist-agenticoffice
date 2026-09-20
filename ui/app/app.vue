@@ -34,7 +34,7 @@
             <p class="bell-empty">Sahnede bir ajana tıkla: durur, işini yazar. Panoya tıkla: Kanban. Proje kartına tıkla: işler ve "Yeni iş".</p>
           </div>
         </span>
-        <button type="button" class="chip action" :class="{ on: settings }" aria-label="Ayarlar" title="Ayarlar (S)" @click="toggleSettings">⚙ Ayarlar</button>
+        <button type="button" class="chip action" :class="{ on: settings }" aria-label="Ayarlar" title="Ayarlar (S)" @click="toggleSettings"><span class="ico" aria-hidden="true">⚙</span> Ayarlar</button>
         <!-- Bildirimler: senden cevap bekleyenler islerin DISINDA ayri bir alanda (kullanici istegi 2026-09-19). -->
         <span class="bell-wrap">
           <button type="button" class="chip action bell-btn" :class="{ on: bell, alert: inboxCount > 0 }" :aria-label="`Bildirimler: ${inboxCount} bekleyen`" title="Senden bekleyenler" @click="toggleBell">
@@ -55,7 +55,12 @@
         <span class="profile" :title="`${user?.name} · ${user?.role}`">
           <span class="avatar">{{ initials(user?.name ?? '?') }}</span>
           <span class="who">{{ user?.name }}</span>
-          <button type="button" class="out" title="Çıkış" aria-label="Çıkış" @click="logout">⎋</button>
+          <button type="button" class="out" title="Çıkış" aria-label="Çıkış" @click="logout">
+            <!-- Cikis: "⎋" gliflerin cogunda yok (daire-slash'e duser); kapidan cikan ok SVG olarak. -->
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.5 2.5h-6v11h6" /><path d="M11 5.5 13.5 8 11 10.5" /><path d="M6.5 8h7" />
+            </svg>
+          </button>
         </span>
       </span>
     </header>
@@ -571,7 +576,9 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .chip.live { border-color: #2f8f6a; color: #7fe0b3; }
 .chip.mock { border-color: #8a6d2a; color: #f0c26a; }
 .chip.reconnecting, .chip.connecting { color: var(--ink-3); }
-.chip.action { cursor: pointer; font: inherit; font-size: 12px; border-color: #3d5a80; color: #9cc3ef; }
+.chip.action { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; font: inherit; font-size: 12px; border-color: #3d5a80; color: #9cc3ef; }
+/* Dugme ikonu: metinle ayni eksende, hafif kucuk. Anlam metinde; ikon yalniz isaret. */
+.ico { font-size: 1.05em; line-height: 1; }
 .chip.action:hover, .chip.action.on { background: #3d5a80; color: #fff; }
 .chip.jobs { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .chip.jobs .n { font-weight: 700; }
@@ -681,8 +688,13 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .profile { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 2px; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface-2); }
 .profile .avatar { width: 22px; height: 22px; border-radius: 50%; background: #d9a13a; color: #141413; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .profile .who { font-size: 12px; color: var(--ink); }
-.profile .out { font: inherit; font-size: 12px; background: transparent; color: var(--ink-3); border: none; cursor: pointer; padding: 0 4px; }
-.profile .out:hover { color: #f0a0a0; }
+/* Cikis: 24x24 tiklama alani, isaret tam ortada (once 12px'lik ciplak bir glifti). */
+.profile .out {
+  width: 24px; height: 24px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; font-size: 13px; line-height: 1; background: transparent; color: var(--ink-3);
+  border: none; border-radius: 50%; padding: 0; cursor: pointer;
+}
+.profile .out:hover { color: #f0a0a0; background: rgba(240,160,160,0.14); }
 .help-wrap { position: relative; }
 .chip.help { padding: 4px 9px; font-weight: 700; }
 .help-menu { position: absolute; right: 0; top: calc(100% + 8px); width: 300px; z-index: 20; background: #ede9dc; color: #23283a; border: 4px solid #6b4a2b; border-radius: 6px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); padding: 8px; }
@@ -694,7 +706,12 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .toast .kind { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; background: #23283a; color: #f6e2a0; }
 .toast .kind.decision { background: #9c1f1f; color: #fff; }
 .toast-body { font: inherit; text-align: left; background: transparent; border: none; color: inherit; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; }
-.toast-x { font: inherit; font-size: 16px; background: transparent; border: none; cursor: pointer; color: #4a5068; padding: 0 2px; }
+.toast-x {
+  width: 22px; height: 22px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; font-size: 15px; line-height: 1; background: transparent; color: #4a5068;
+  border: none; border-radius: 5px; padding: 0; cursor: pointer;
+}
+.toast-x:hover { background: rgba(35,40,58,0.10); }
 @keyframes slidein { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---- Sag alt: ekip pusulasi, yari saydam ---- */
