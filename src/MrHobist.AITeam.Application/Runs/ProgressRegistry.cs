@@ -53,15 +53,19 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
         return true;
     }
 
-    /// <summary>Hedef: dosya yolunun son iki parcasi ya da komutun ilk 60 karakteri.</summary>
-    private static string? Shorten(string? target)
+    /// <summary>
+    /// Hedef: dosya yolunun son iki parcasi ya da komutun ilk 60 karakteri.
+    /// Komutta bas taraftaki <c>cd "…" &amp;&amp;</c> on eki atilir (ajan her komutu proje koku ile baslatir; asil is ondan sonradir),
+    /// satir sonlari tek bosluga iner.
+    /// </summary>
+    internal static string? Shorten(string? target)
     {
         if (string.IsNullOrWhiteSpace(target))
         {
             return null;
         }
 
-        var t = target.Trim();
+        var t = CollapseWhitespace.Replace(target.Trim(), " ");
         if (t.Contains('\\') || t.Contains('/'))
         {
             var parts = t.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -71,6 +75,21 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
             }
         }
 
+        // `cd "<yol>" && ` / `cd <yol>; ` on ekleri (birden fazla olabilir) atilir.
+        while (true)
+        {
+            var m = LeadingCd.Match(t);
+            if (!m.Success || m.Length >= t.Length)
+            {
+                break;
+            }
+
+            t = t[m.Length..].TrimStart();
+        }
+
         return t.Length <= 60 ? t : t[..59] + "…";
     }
+
+    private static readonly System.Text.RegularExpressions.Regex CollapseWhitespace = new(@"\s+", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex LeadingCd = new(@"^cd\s+(?:""[^""]*""|'[^']*'|\S+)\s*(?:&&|;)\s*", System.Text.RegularExpressions.RegexOptions.Compiled);
 }

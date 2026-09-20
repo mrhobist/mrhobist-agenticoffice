@@ -4,6 +4,10 @@
     <ProjectReference Include="..\MrHobist.AITeam.Domain\MrHobist.AITeam.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="MrHobist.AITeam.ServiceTests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
