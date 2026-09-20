@@ -619,8 +619,11 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .rail-count { font-size: 11px; color: #d9b98f; }
 .rail-add {
   margin-left: auto; width: 24px; height: 24px; border-radius: 6px; background: #d9a13a; border: 2px solid #3d2a17; color: #141413;
-  font: inherit; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer;
+  /* Arti isareti kutunun TAM ortasinda: yazi tipine gore kayan satir yuksekligi yerine flex. */
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  font: inherit; font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer;
 }
+.rail-add:hover { background: #e8b254; }
 .card {
   position: relative; display: flex; flex-direction: column; gap: 4px; text-align: left; font: inherit; cursor: pointer;
   padding: 12px 12px 10px; background: #ede9dc; color: #23283a; border: none; border-radius: 3px;

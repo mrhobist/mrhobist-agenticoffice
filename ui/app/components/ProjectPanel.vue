@@ -331,7 +331,7 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
           <div class="actions">
             <button class="primary" type="submit" :disabled="saving || !dirty">{{ saving ? 'Kaydediliyor…' : 'Kaydet' }}</button>
             <button type="button" class="ghost" :disabled="!dirty || saving" @click="card && fillForm(card)">Geri al</button>
-            <button type="button" class="danger" :disabled="confirmingDelete || activeRuns.length > 0" :title="activeRuns.length ? 'Süren iş var; önce bitirin ya da iptal edin' : undefined" @click="askRemove">Projeyi sil…</button>
+            <button type="button" class="danger" :disabled="confirmingDelete || activeRuns.length > 0" :title="activeRuns.length ? 'Süren iş var; önce bitirin ya da iptal edin' : undefined" @click="askRemove"><span class="ico" aria-hidden="true">🗑</span> Projeyi sil…</button>
             <span v-if="saveError" class="err" role="alert">{{ saveError }}</span>
           </div>
 
@@ -343,7 +343,7 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
             </label>
             <p class="sub">{{ deleteFiles ? 'Klasör ve içindeki her şey diskten silinir.' : 'Klasör diskte kalır; yalnız proje kaydı ve çalışma geçmişi gider.' }}</p>
             <div class="actions">
-              <button type="button" class="danger fill" :disabled="deleting" @click="remove">{{ deleting ? 'Siliniyor…' : (deleteFiles ? 'Evet, projeyi ve dosyaları sil' : 'Evet, projeyi sil (dosyalar kalsın)') }}</button>
+              <button type="button" class="danger fill" :disabled="deleting" @click="remove"><span class="ico" aria-hidden="true">🗑</span> {{ deleting ? 'Siliniyor…' : (deleteFiles ? 'Evet, projeyi ve dosyaları sil' : 'Evet, projeyi sil (dosyalar kalsın)') }}</button>
               <button type="button" class="ghost" :disabled="deleting" @click="confirmingDelete = false">Vazgeç</button>
             </div>
           </div>
@@ -414,7 +414,9 @@ button { font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px; 
 button:disabled { opacity: 0.5; cursor: default; }
 .primary { background: #23283a; color: #fff; border-color: #23283a; }
 .ghost { background: transparent; }
-.danger { margin-left: auto; color: #7a1f1f; border-color: #e0a0a0; }
+.danger { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: #7a1f1f; border-color: #e0a0a0; }
+/* Dugme ikonu: metinle ayni satirda, hafif kucuk ve biraz sonuk; yalniz isaret, anlam metinde. */
+.ico { font-size: 0.95em; line-height: 1; opacity: 0.85; }
 .danger.fill { margin-left: 0; background: #b3261e; color: #fff; border-color: #b3261e; font-weight: 700; }
 .confirm { border: 1px solid #e0a0a0; background: #fbecec; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .confirm p { margin: 0; font-size: 13px; line-height: 1.45; }
