@@ -16,7 +16,26 @@ export interface SpotDef extends Pt {
   queue?: Pt
 }
 /** Oturulabilir yer (ayak/sandalye tabani). `monitor`: oturulunca acilan monitor prop id'si. */
-export interface SeatDef extends Pt { facing: Facing; monitor?: string }
+export interface SeatDef extends Pt {
+  facing: Facing
+  monitor?: string
+  /** Masadaki kupa yeri: kahve barindan donen ajan kupasini buraya birakir (sol-ust, `w` genislik). */
+  mug?: { x: number; y: number; w: number }
+}
+
+/** Tiklanip acilip kapanan isik (mudur odasinin sarkiti). Kapaliyken `room` karartilir. */
+export interface LightDef {
+  id: string
+  name?: string
+  /** Lambanin tiklama dikdortgeni [x, y, w, h]. */
+  hit: [number, number, number, number]
+  /** Isik sonunce karartilan alan [x, y, w, h]. */
+  room: [number, number, number, number]
+  /** Acikken lambanin altina cizilen sicak hale. */
+  glow?: { x: number; y: number; r: number }
+  /** Baslangic durumu (varsayilan acik). */
+  on?: boolean
+}
 
 export type PropLayer = 'floor' | 'wall' | 'object'
 
@@ -59,6 +78,8 @@ export interface SceneConfig {
   door?: { x: number; y: number; h: number; w?: number }
   /** Kanban panosu; zeminde ayaksiz durur, tiklaninca buyuk gorunum acilir. */
   board: { x: number; y: number; w: number; h: number; title: string }
+  /** Tiklanabilir isiklar: mudur odasinin sarkiti. */
+  lights?: LightDef[]
   /** Kahve bari panosu: gunun ozeli. */
   cafe?: { board: { x: number; y: number; w: number; h: number }; specials: string[]; intervalMs?: number }
   seats: Record<string, SeatDef>
@@ -115,12 +136,13 @@ export type SceneEvent =
   | { type: 'clock.set'; data: { hour: number | null } }
   | { type: 'cafe.special'; data: { text: string | null } }
   | { type: 'workflow.set'; data: { key: string } }
+  | { type: 'light'; data: { id: string; state: 'on' | 'off' } }
   | { type: 'scene.reload'; data: { reason?: string } }
 
 export const EVENT_TYPES: ReadonlyArray<SceneEvent['type']> = [
   'agent.state', 'agent.say', 'agent.goto', 'agent.home', 'meet',
   'board.set', 'board.move', 'run.stage', 'cat', 'door',
-  'agent.leave', 'agent.enter', 'clock.set', 'cafe.special', 'workflow.set', 'scene.reload',
+  'agent.leave', 'agent.enter', 'clock.set', 'cafe.special', 'workflow.set', 'light', 'scene.reload',
 ]
 
 export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'mock'

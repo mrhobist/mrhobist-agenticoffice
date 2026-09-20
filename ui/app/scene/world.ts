@@ -1,7 +1,7 @@
-import { STATE_LABEL, type Facing, type MeetKind, type Pt, type PropDef, type SceneConfig, type SceneEvent, type SeatDef, type WorkflowConfig } from './contract'
+import { STATE_LABEL, type AgentState, type Facing, type LightDef, type MeetKind, type Pt, type PropDef, type SceneConfig, type SceneEvent, type SeatDef, type WorkflowConfig } from './contract'
 import { Sprites } from './atlas'
 import { NavGrid } from './nav'
-import { Agent, Cat, Door, type Action } from './entities'
+import { Agent, Cat, Door, drawMug, type Action } from './entities'
 import { Board } from './board'
 import { drawSky } from './sky'
 import { authHeaders } from '~/composables/useAuth'
@@ -25,9 +25,14 @@ export class World {
   readonly cat: Cat
   readonly door = new Door()
   readonly board: Board
+  /** Tiklanabilir isiklar (mudur odasinin sarkiti): id -> tanim + durum. */
+  readonly lights = new Map<string, { def: LightDef; on: boolean }>()
   hud: Hud = { stage: '—', task: '—', round: 0 }
   onHud: ((h: Hud) => void) | null = null
   hovered: string | null = null
+  /** Imlecin ustunde durdugu isik / kedi (parlama ve ipucu icin). */
+  hoveredLight: string | null = null
+  hoveredCat = false
   /** clock.set ile sabitlenen saat; null = gercek yerel saat. */
   clockHour: number | null = null
   /** cafe.special ile sabitlenen yazi; null = liste sirayla doner. */
@@ -48,6 +53,7 @@ export class World {
       const size = sprites.objectSize(p.sprite)
       return { ...p, h: p.h ?? (p.w * size.h) / size.w }
     })
+    for (const l of cfg.lights ?? []) this.lights.set(l.id, { def: l, on: l.on !== false })
     this.board = new Board(cfg.board)
     this.board.setWorkflow(wf)
     this.cat = new Cat(cfg.cat.bed, cfg.cat.spots)
@@ -61,6 +67,15 @@ export class World {
       else if (home.look) a.faceTo(home.look)
       else if (home.facing) a.facing = home.facing
       a.ambientReadyAt = performance.now() + 8000 + Math.random() * 30_000
+      // Ne koltugu ne duragi olan ajan (Api masa bulamadi): ziyaretci. Disarida baslar,
+      // 15-45 s sonra kapidan girip panoya bakar (docs/SCENE.md - Ajan yerlesimi ve ziyaretci).
+      if (!def.home.seat && !def.home.spot) {
+        const d = cfg.spots['door']
+        a.visitor = true
+        a.offstage = true
+        a.returnAt = performance.now() + 15_000 + Math.random() * 30_000
+        if (d) a.pos = { x: d.x, y: d.y }
+      }
       this.agents.set(def.key, a)
     }
   }
@@ -95,6 +110,7 @@ export class World {
         if ((e.data.state === 'working' || e.data.state === 'thinking') && !a.seated && !a.busy) a.command(this.goHome(a), now)
         if (e.data.state === 'blocked') a.bubble = { kind: 'alert', until: now + 2500 }
         if (e.data.state === 'waiting' && !a.busy) a.bubble = { kind: 'ask', until: now + 4000 }
+        if (a.visitor) this.visitorState(a, e.data.state, now)
         break
       }
       case 'agent.say': {
@@ -137,26 +153,13 @@ export class World {
         const a = this.agents.get(e.data.agent)
         const d = this.cfg.spots['door']
         if (!a || !d || a.offstage) return
-        a.command([
-          { t: 'walk', to: this.freeNear(d, a) },
-          { t: 'call', fn: () => this.door.set('open', performance.now()) },
-          { t: 'face', dir: 'up' },
-          { t: 'wait', ms: 500 },
-          { t: 'call', fn: () => { a.offstage = true; a.returnAt = null; this.door.set('closed', performance.now()) } },
-        ], now)
+        a.command(this.leaveActions(a, null), now)
         break
       }
       case 'agent.enter': {
         const a = this.agents.get(e.data.agent)
-        const d = this.cfg.spots['door']
-        if (!a || !d) return
-        a.offstage = false
-        a.returnAt = null
-        a.seated = null
-        a.pos = { x: d.x, y: d.y }
-        a.facing = 'down'
-        this.door.set('open', now)
-        a.command([{ t: 'wait', ms: 400 }, ...this.goHome(a)], now)
+        if (!a) return
+        this.enter(a, now, this.goHome(a))
         break
       }
       case 'clock.set':
@@ -165,6 +168,11 @@ export class World {
       case 'cafe.special':
         this.specialOverride = e.data.text
         break
+      case 'light': {
+        const l = this.lights.get(e.data.id)
+        if (l) l.on = e.data.state === 'on'
+        break
+      }
       case 'workflow.set':
         // Calisma hangi akisla kosuyorsa pano onu kurar (docs/SCENE.md). Yukleme asenkron; bu arada eski sutunlar kalir.
         void this.loadWorkflow(e.data.key)
@@ -288,6 +296,9 @@ export class World {
       const spot = this.cfg.spots[def.home.spot]
       if (spot) return { pos: { x: spot.x, y: spot.y }, facing: spot.facing, look: spot.look }
     }
+    // Evi olmayan (ziyaretci) ajan icin ev = pano onu: calisirken orada durur.
+    const board = this.cfg.spots['board']
+    if (board) return { pos: { x: board.x, y: board.y }, facing: board.facing, look: board.look }
     return { pos: { x: this.cfg.world.w / 2, y: this.cfg.world.h / 2 } }
   }
 
@@ -330,6 +341,10 @@ export class World {
     this.board.update(dt)
     this.ambient(now)
     this.returns(now)
+    // Kupa icildi sayilir: sure dolunca masadan (ya da elden) kalkar.
+    for (const a of this.agents.values()) {
+      if (a.mugUntil && now > a.mugUntil) { a.mugUntil = 0; a.mugSeat = null; a.carrying = false }
+    }
   }
 
   /** Ambient cikista olan ajanlar zamani gelince kapidan girer ve evine yurur. */
@@ -338,13 +353,8 @@ export class World {
     if (!d) return
     for (const a of this.agents.values()) {
       if (!a.offstage || a.returnAt === null || now < a.returnAt) continue
-      a.offstage = false
-      a.returnAt = null
-      a.seated = null
-      a.pos = { x: d.x, y: d.y }
-      a.facing = 'down'
-      this.door.set('open', now)
-      a.command([{ t: 'wait', ms: 400 }, ...this.goHome(a)], now, { ambient: true })
+      const busy = a.state === 'working' || a.state === 'thinking'
+      this.enter(a, now, a.visitor && !busy ? this.visitTour(a) : this.goHome(a), { ambient: true })
     }
   }
 
@@ -389,7 +399,7 @@ export class World {
           this.door.set('closed', performance.now())
         } },
       ]
-    } else if (r < 0.4) actions = trip('coffee', 4000 + Math.random() * 4000)
+    } else if (r < 0.4) actions = this.coffeeTrip(a)
     else if (r < 0.5) actions = trip('water', 3000 + Math.random() * 2000)
     else if (r < 0.65) actions = trip('board', 4000 + Math.random() * 3000)
     else if (r < 0.75) actions = trip('window', 5000 + Math.random() * 3000)
@@ -413,6 +423,110 @@ export class World {
     if (!actions.length) return
     a.command(actions, now, { ambient: true })
     this.lastAmbientAt = now
+  }
+
+  /**
+   * Kahve turu (kullanici istegi 2026-09-20): bara gider, makine demlerken bekler,
+   * kupasini alip masasina doner ve masaya birakir. Kupa bir sure sonra icilmis
+   * sayilip kaybolur. Masasi olmayan ajan (organizator) kupayi elinde tasir.
+   */
+  private coffeeTrip(a: Agent): Action[] {
+    if (!this.cfg.spots['coffee'] || !this.spotFree('coffee', a)) return []
+    return [
+      ...this.tripTo(a, 'coffee'),
+      { t: 'wait', ms: 2500 + Math.random() * 1500 },
+      { t: 'call', fn: () => {
+        a.carrying = true
+        a.bubble = { kind: 'talk', until: performance.now() + 1600 }
+      } },
+      { t: 'wait', ms: 700 },
+      ...this.goHome(a),
+      { t: 'call', fn: () => {
+        const seat = a.seated ?? this.homeOf(a.key).seat ?? null
+        a.mugUntil = performance.now() + 120_000
+        if (seat?.mug) { a.mugSeat = seat; a.carrying = false }
+      } },
+    ]
+  }
+
+  /** Kapidan girer: kapi acilir, ajan sahneye konur ve verilen plani isler. */
+  private enter(a: Agent, now: number, then: Action[], opts: { ambient?: boolean } = {}): void {
+    const d = this.cfg.spots['door']
+    if (!d) return
+    a.offstage = false
+    a.returnAt = null
+    a.seated = null
+    a.pos = { x: d.x, y: d.y }
+    a.facing = 'down'
+    this.door.set('open', now)
+    a.command([{ t: 'wait', ms: 400 }, ...then], now, opts)
+  }
+
+  /** Kapidan cikar. `returnMs` verilirse o kadar sonra kendi doner; null ise donmez. */
+  private leaveActions(a: Agent, returnMs: number | null): Action[] {
+    const d = this.cfg.spots['door']
+    if (!d) return []
+    return [
+      { t: 'walk', to: () => this.freeNear(d, a) },
+      { t: 'call', fn: () => this.door.set('open', performance.now()) },
+      { t: 'face', dir: 'up' },
+      { t: 'wait', ms: 500 },
+      { t: 'call', fn: () => {
+        a.offstage = true
+        a.returnAt = returnMs === null ? null : performance.now() + returnMs
+        this.door.set('closed', performance.now())
+      } },
+    ]
+  }
+
+  /** Ziyaretci turu: panoya bakar, cikar ve 60-150 s sonra yine ugrar. */
+  private visitTour(a: Agent): Action[] {
+    return [
+      ...this.tripTo(a, 'board'),
+      { t: 'wait', ms: 6000 + Math.random() * 4000 },
+      ...this.leaveActions(a, 60_000 + Math.random() * 90_000),
+    ]
+  }
+
+  /**
+   * Ziyaretci ajanin durum olayina tepkisi: is alinca (working/thinking) hemen girer ve
+   * panonun onunde durur; is bitince (idle/done) 3 s sonra cikar, sonra yine ugrar.
+   */
+  private visitorState(a: Agent, state: AgentState, now: number): void {
+    if (state === 'working' || state === 'thinking') {
+      if (a.offstage) this.enter(a, now, this.goHome(a))
+      else if (!a.busy) a.command(this.goHome(a), now)
+      return
+    }
+    if (!a.offstage && (state === 'idle' || state === 'done')) {
+      a.command([{ t: 'wait', ms: 3000 }, ...this.leaveActions(a, 60_000 + Math.random() * 90_000)], now, { ambient: true })
+    }
+  }
+
+  /** Kedi oksandi: uyanir, izleyiciye doner, kalp cikarir (yerel; sahne olayi degil). */
+  petCat(): void {
+    this.cat.pet(performance.now())
+  }
+
+  /** Isigi cevir; digerleri de gorsun diye mutlak durumu yayimla (yankisi zararsiz). */
+  toggleLight(id: string): void {
+    const l = this.lights.get(id)
+    if (!l) return
+    l.on = !l.on
+    void this.publish('light', { id, state: l.on ? 'on' : 'off' })
+  }
+
+  private async publish(type: string, data: unknown): Promise<void> {
+    try {
+      await fetch(`${this.apiBase}/api/v1/scene/commands`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ type, data }),
+      })
+    } catch (err) {
+      // Sahne kozmetiktir: yayin gitmese de yerel durum degisti.
+      console.warn('scene.command', type, err)
+    }
   }
 
   // ------------------------------------------------------------------ cizim
@@ -448,13 +562,22 @@ export class World {
     for (const [ox, oy, ow, oh] of this.cfg.overlays ?? []) {
       items.push({ y: oy + oh, draw: () => ctx.drawImage(bgImg, ox * sx, oy * sy, ow * sx, oh * sy, ox, oy, ow, oh) })
     }
-    for (const a of this.agents.values()) items.push({ y: a.pos.y, draw: () => a.draw(ctx, this.sprites, now) })
+    for (const a of this.agents.values()) {
+      items.push({ y: a.pos.y, draw: () => a.draw(ctx, this.sprites, now) })
+      // Masaya birakilan kupa: masanin ustunde, oturan ajanin arkasinda.
+      const seat = a.mugSeat
+      if (seat?.mug && !a.offstage && now < a.mugUntil) {
+        const mug = seat.mug
+        items.push({ y: seat.y - 12, draw: () => drawMug(ctx, this.sprites, mug.x, mug.y, mug.w, now) })
+      }
+    }
     items.push({ y: this.cat.pos.y, draw: () => this.cat.draw(ctx, this.sprites, now) })
     // Pano zeminde bir nesnedir: ajanlar onunden ve arkasindan gecer.
     items.push({ y: this.cfg.board.y + this.cfg.board.h, draw: () => this.board.draw(ctx, now) })
     items.sort((p, q) => p.y - q.y)
     for (const it of items) it.draw()
 
+    this.drawLights(ctx, now)
     for (const a of this.agents.values()) a.drawBubble(ctx, this.sprites, now)
     this.drawLabels(ctx)
   }
@@ -514,6 +637,51 @@ export class World {
     ctx.restore()
   }
 
+  /**
+   * Isiklar: kapaliysa oda (icindekilerle birlikte) karartilir, aciksa lambanin altina
+   * sicak bir hale duser. Imlec lambanin ustundeyse cerceve ve ipucu gorunur.
+   */
+  private drawLights(ctx: CanvasRenderingContext2D, now: number): void {
+    for (const [id, l] of this.lights) {
+      const [rx, ry, rw, rh] = l.def.room
+      ctx.save()
+      if (l.on) {
+        const g = l.def.glow
+        if (g) {
+          ctx.beginPath(); ctx.rect(rx, ry, rw, rh); ctx.clip()
+          const grad = ctx.createRadialGradient(g.x, g.y, 4, g.x, g.y, g.r)
+          grad.addColorStop(0, `rgba(255,216,148,${0.2 + 0.02 * Math.sin(now / 1300)})`)
+          grad.addColorStop(1, 'rgba(255,216,148,0)')
+          ctx.fillStyle = grad
+          ctx.fillRect(rx, ry, rw, rh)
+        }
+      } else {
+        ctx.fillStyle = 'rgba(9,13,28,0.62)'
+        ctx.fillRect(rx, ry, rw, rh)
+      }
+      ctx.restore()
+
+      if (this.hoveredLight !== id) continue
+      const [hx, hy, hw, hh] = l.def.hit
+      const text = `${l.def.name ?? 'Işık'} · ${l.on ? 'açık' : 'kapalı'}`
+      ctx.save()
+      ctx.strokeStyle = l.on ? 'rgba(255,216,148,0.9)' : 'rgba(180,192,216,0.85)'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([4, 3])
+      ctx.strokeRect(hx, hy, hw, hh)
+      ctx.setLineDash([])
+      ctx.font = '600 10px "Segoe UI", system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      const tw = ctx.measureText(text).width + 12
+      ctx.fillStyle = 'rgba(20,24,34,0.85)'
+      ctx.fillRect(hx + hw / 2 - tw / 2, hy - 20, tw, 16)
+      ctx.fillStyle = '#e8ecf5'
+      ctx.fillText(text, hx + hw / 2, hy - 11.5)
+      ctx.restore()
+    }
+  }
+
   private drawLabels(ctx: CanvasRenderingContext2D): void {
     for (const a of this.agents.values()) {
       const show = a.key === this.hovered || (a.note && a.state !== 'idle' && a.state !== 'done')
@@ -538,6 +706,21 @@ export class World {
   hitBoard(p: Pt): boolean {
     const b = this.cfg.board
     return p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6
+  }
+
+  /** Nokta bir lambanin tiklama dikdortgeninde mi; id doner. */
+  hitLight(p: Pt): string | null {
+    for (const [id, l] of this.lights) {
+      const [x, y, w, h] = l.def.hit
+      if (p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h) return id
+    }
+    return null
+  }
+
+  /** Nokta kedinin uzerinde mi (oksamak icin). */
+  hitCat(p: Pt): boolean {
+    const c = this.cat.pos
+    return p.x > c.x - 22 && p.x < c.x + 22 && p.y > c.y - 30 && p.y < c.y + 6
   }
 
   /** Dunya noktasinda bir ajan var mi (tiklama/hover icin). */

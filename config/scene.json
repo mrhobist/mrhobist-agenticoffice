@@ -219,6 +219,60 @@
       "w": 62,
       "layer": "object",
       "sortY": 790
+    },
+    {
+      "id": "coffeeMachine",
+      "sprite": "coffee-machine",
+      "x": 126,
+      "y": 190,
+      "w": 110,
+      "layer": "object",
+      "sortY": 262
+    },
+    {
+      "id": "deskD1",
+      "sprite": "desk-wide",
+      "x": 190,
+      "y": 772,
+      "w": 158,
+      "layer": "object"
+    },
+    {
+      "id": "deskD2",
+      "sprite": "desk-wide",
+      "x": 348,
+      "y": 772,
+      "w": 158,
+      "layer": "object"
+    },
+    {
+      "id": "monD1",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 241,
+      "y": 778,
+      "w": 56,
+      "layer": "object",
+      "sortY": 915
+    },
+    {
+      "id": "monD2",
+      "sprite": "monitor-b",
+      "spriteOff": "monitor-off",
+      "x": 405,
+      "y": 778,
+      "w": 60,
+      "layer": "object",
+      "sortY": 915
+    },
+    {
+      "id": "plantD",
+      "sprite": "plant-b",
+      "x": 198,
+      "y": 800,
+      "w": 34,
+      "layer": "object",
+      "sortY": 915
     }
   ],
   "door": {
@@ -241,42 +295,99 @@
       "x": 328,
       "y": 668,
       "facing": "up",
-      "monitor": "monA1"
+      "monitor": "monA1",
+      "mug": {
+        "x": 365,
+        "y": 545,
+        "w": 16
+      }
     },
     "deskA-right": {
       "x": 498,
       "y": 668,
       "facing": "up",
-      "monitor": "monA2"
+      "monitor": "monA2",
+      "mug": {
+        "x": 535,
+        "y": 545,
+        "w": 16
+      }
     },
     "deskB-left": {
       "x": 734,
       "y": 534,
       "facing": "up",
-      "monitor": "monB1"
+      "monitor": "monB1",
+      "mug": {
+        "x": 772,
+        "y": 415,
+        "w": 16
+      }
     },
     "deskB-right": {
       "x": 902,
       "y": 534,
       "facing": "up",
-      "monitor": "monB2"
+      "monitor": "monB2",
+      "mug": {
+        "x": 938,
+        "y": 415,
+        "w": 16
+      }
     },
     "meeting": {
       "x": 487,
       "y": 338,
-      "facing": "up"
+      "facing": "up",
+      "mug": {
+        "x": 508,
+        "y": 262,
+        "w": 14
+      }
     },
     "deskC-left": {
       "x": 737,
       "y": 822,
       "facing": "up",
-      "monitor": "monC1"
+      "monitor": "monC1",
+      "mug": {
+        "x": 774,
+        "y": 707,
+        "w": 16
+      }
     },
     "deskC-right": {
       "x": 904,
       "y": 822,
       "facing": "up",
-      "monitor": "monC2"
+      "monitor": "monC2",
+      "mug": {
+        "x": 944,
+        "y": 707,
+        "w": 16
+      }
+    },
+    "deskD-left": {
+      "x": 269,
+      "y": 954,
+      "facing": "up",
+      "monitor": "monD1",
+      "mug": {
+        "x": 305,
+        "y": 839,
+        "w": 16
+      }
+    },
+    "deskD-right": {
+      "x": 427,
+      "y": 954,
+      "facing": "up",
+      "monitor": "monD2",
+      "mug": {
+        "x": 465,
+        "y": 839,
+        "w": 16
+      }
     }
   },
   "spots": {
@@ -318,16 +429,17 @@
       }
     },
     "sofa": {
-      "x": 1130,
-      "y": 775,
+      "x": 1180,
+      "y": 614,
       "look": {
-        "x": 1130,
-        "y": 600
+        "x": 1180,
+        "y": 520
       },
       "queue": {
-        "x": 1060,
-        "y": 800
-      }
+        "x": 1004,
+        "y": 664
+      },
+      "_comment": "Kanepe onundeki serit: ajan minderin onunde durur."
     },
     "meeting": {
       "x": 487,
@@ -375,6 +487,11 @@
     "deskC": {
       "x": 820,
       "y": 880
+    },
+    "deskD": {
+      "x": 348,
+      "y": 1000,
+      "facing": "up"
     }
   },
   "blocked": [
@@ -389,12 +506,6 @@
       112,
       272,
       250
-    ],
-    [
-      1012,
-      512,
-      246,
-      232
     ],
     [
       1224,
@@ -485,6 +596,24 @@
       872,
       236,
       132
+    ],
+    [
+      188,
+      768,
+      320,
+      146
+    ],
+    [
+      1048,
+      514,
+      178,
+      76
+    ],
+    [
+      1068,
+      642,
+      144,
+      46
     ]
   ],
   "sprites": [
@@ -549,9 +678,9 @@
   ],
   "cat": {
     "bed": {
-      "x": 1130,
-      "y": 602,
-      "_comment": "Koltuk minderi. Engelli alanda oldugu icin kedi yola en yakin acik hucreye gelir, sonra buraya kayar."
+      "x": 1088,
+      "y": 606,
+      "_comment": "Kanepe minderi: artik engelli alanda DEGIL, kedi yuruyerek cikip oraya oturur (siçrama yok)."
     },
     "spots": [
       {
@@ -599,5 +728,30 @@
     ],
     "intervalMs": 20000,
     "_comment": "Kahve bari panosu: gunun ozeli. Liste sirayla doner; cafe.special olayi ile sabitlenir."
-  }
+  },
+  "lights": [
+    {
+      "id": "manager",
+      "name": "Müdür odası",
+      "hit": [
+        450,
+        120,
+        50,
+        50
+      ],
+      "room": [
+        358,
+        116,
+        264,
+        250
+      ],
+      "glow": {
+        "x": 476,
+        "y": 168,
+        "r": 190
+      },
+      "on": true,
+      "_comment": "hit: sarkit lambanin tiklama dikdortgeni; room: isigi sonunce karartilan cam oda; glow: lambanin altindaki sicak hale."
+    }
+  ]
 }

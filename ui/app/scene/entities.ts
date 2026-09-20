@@ -36,6 +36,24 @@ function faceTowards(from: Pt, to: Pt): Facing {
   return dx > 0 ? 'upright' : 'upleft'
 }
 
+/**
+ * Kupa (+ buhar). Elde tasinirken ve masada dururken ayni cizim kullanilir;
+ * `w` dunya genisligi, (x, y) sol-ust.
+ */
+export function drawMug(ctx: CanvasRenderingContext2D, sprites: Sprites, x: number, y: number, w: number, now: number): void {
+  const sz = sprites.objectSize('mug-white')
+  const h = (w * sz.h) / sz.w
+  sprites.drawObject(ctx, 'mug-white', x, y, w, h)
+  ctx.save()
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'
+  for (let i = 0; i < 2; i++) {
+    const t = (now / 900 + i * 0.5) % 1
+    ctx.globalAlpha = 0.5 * (1 - t)
+    ctx.fillRect(x + w * (0.3 + i * 0.35), y - 3 - t * 9, 1.6, 4)
+  }
+  ctx.restore()
+}
+
 export class Agent {
   pos: Pt
   facing: Facing = 'down'
@@ -62,6 +80,13 @@ export class Agent {
   spot: string | null = null
   /** Ambient disari cikista donus zamani; arka uc komutuyla cikanda null (kendi donmez). */
   returnAt: number | null = null
+  /** Masasi yok (`home: {}`): disarida yasar, ara sira panoya bakmaya ugrar. */
+  visitor = false
+  /** Elinde kahve var: kahve barindan masasina tasiyor. */
+  carrying = false
+  /** Masaya birakilan kupanin koltugu ve ne zamana kadar durdugu (icilince kaybolur). */
+  mugSeat: SeatDef | null = null
+  mugUntil = 0
 
   private path: Pt[] = []
   private walkT = 0
@@ -211,6 +236,12 @@ export class Agent {
       ctx.ellipse(this.pos.x, this.pos.y - 1, 14, 4.5, 0, 0, Math.PI * 2)
       ctx.fill()
       sprites.drawFrame(ctx, walk, frame, row, this.pos.x, this.pos.y)
+      if (this.carrying) {
+        // Kupa elde: yuruyus salinimiyla birlikte hafifce oynar.
+        const side = this.facing === 'left' || this.facing === 'upleft' || this.facing === 'downleft' ? -1 : 1
+        const bob = this.walking ? Math.sin(this.walkT * WALK_FPS * 0.7) * 1.2 : 0
+        drawMug(ctx, sprites, this.pos.x + side * 13 - 7, this.pos.y - 30 + bob, 14, now)
+      }
     }
 
     // Durum noktasi (calisiyor: nabiz)
@@ -328,9 +359,29 @@ export class Cat {
   private nextAt = 0
   private plan: Array<() => void> = []
 
+  /** Oksama: kalp balonu bu zamana kadar gorunur. */
+  heartUntil = 0
+  /** Kac kez oksandi: ucuncude uzanip keyif yapar. */
+  pets = 0
+
   constructor(readonly bed: Pt, readonly spots: Pt[]) {
     this.pos = { ...bed }
     this.nextAt = performance.now() + 45_000 + Math.random() * 60_000
+  }
+
+  /**
+   * Kullanici kediye tikladi: uyanir, izleyiciye doner, kalp cikarir. Ucuncu oksamada
+   * sirtustu uzanir ve daha uzun kalir; bu sirada kendi ritmi beklemeye alinir.
+   */
+  pet(now: number): void {
+    this.plan = []
+    this.path = []
+    this.snapTo = null
+    this.pets += 1
+    this.facing = 'down'
+    this.mode = this.pets % 3 === 0 ? 'lie' : 'sit'
+    this.heartUntil = now + 2600
+    this.nextAt = now + (this.mode === 'lie' ? 14_000 : 9_000)
   }
 
   /** Arka uctan komut: plani sifirla. */
@@ -398,6 +449,7 @@ export class Cat {
 
   draw(ctx: CanvasRenderingContext2D, sprites: Sprites, now: number): void {
     const cat = sprites.atlas.cat
+    this.drawHearts(ctx, now)
     if (this.mode === 'sleep') {
       sprites.drawSingle(ctx, cat.sleep, this.pos.x, this.pos.y)
       // zZz
@@ -423,6 +475,27 @@ export class Cat {
     const row = cat.walk.dirRows?.[this.facing] ?? 0
     const frame = Math.floor(this.walkT * 6) % cat.walk.cols
     sprites.drawFrame(ctx, cat.walk, frame, row, this.pos.x, this.pos.y)
+  }
+
+  /** Oksandiktan sonra yukari suzulen kalpler + "mirr". */
+  private drawHearts(ctx: CanvasRenderingContext2D, now: number): void {
+    if (now > this.heartUntil) return
+    const left = (this.heartUntil - now) / 2600
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    for (let i = 0; i < 3; i++) {
+      const t = ((now / 700 + i * 0.33) % 1)
+      ctx.globalAlpha = Math.min(1, left * 1.6) * (1 - t) * 0.9
+      ctx.font = `${9 + i}px "Segoe UI", system-ui, sans-serif`
+      ctx.fillStyle = '#e0699a'
+      ctx.fillText('♥', this.pos.x + (i - 1) * 9, this.pos.y - 26 - t * 22)
+    }
+    ctx.globalAlpha = Math.min(1, left * 2)
+    ctx.font = '600 9px "Segoe UI", system-ui, sans-serif'
+    ctx.fillStyle = '#e8ecf5'
+    ctx.fillText('mırr', this.pos.x, this.pos.y + 12)
+    ctx.restore()
   }
 }
 

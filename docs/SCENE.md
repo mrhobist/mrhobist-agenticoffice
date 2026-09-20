@@ -84,11 +84,12 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `props[]` | `sprite` (tileset adı ya da `@sofaSet`), `x y w [h]`, `layer`, `sortY` (masa üstü monitör için) |
 | `door`, `board` | kapı (iki kare: kapalı/açık; giren-çıkan açar, 1.4 s sonra kapanır); Kanban panosu — sahnede 4 şerit (Yapılacak / Yapılıyor / İnceleme / Bitti), iş akışı adımları bunlara katlanır; tıklanınca ya da `B` ile tüm adım sütunlarını ve görev adlarını gösteren büyük görünüm açılır (`legs`/`angle` isteğe bağlı) |
 | `cafe` | kahve barı panosu: `board` dikdörtgeni, `specials[]` sırayla döner (`intervalMs`), `cafe.special` olayıyla sabitlenir |
-| `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `monitor` → oturulunca açılan, kalkınca kapanan monitör prop'u (`props[].spriteOff`) |
-| `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing`. `capacity` (varsayılan 1): dolu durağa gelen `queue` noktasında durağa dönük bekler, boşalınca girer; ambient turlar dolu durağı seçmez |
+| `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `monitor` → oturulunca açılan, kalkınca kapanan monitör prop'u (`props[].spriteOff`); `mug: {x,y,w}` → kahve barından dönen ajanın kupasını bıraktığı masa noktası |
+| `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB deskC deskD`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing`. `capacity` (varsayılan 1): dolu durağa gelen `queue` noktasında durağa dönük bekler, boşalınca girer; ambient turlar dolu durağı seçmez |
 | `blocked[]` | yürünemez dikdörtgenler; yol bulma bunlardan ızgara kurar |
 | `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Sahne ajanı iş akışı rolünden fazla olabilir (`intern`, `devops` yalnız sahnede yaşar; olay almazlarsa ambient davranır) |
-| `cat` | yatak ve gezinti noktaları |
+| `cat` | yatak ve gezinti noktaları. Yatak **açık alandadır** (koltuğun minderi): kedi oraya yürüyerek çıkar |
+| `lights[]` | tıklanınca açılıp kapanan ışık: `hit` (lambanın tıklama dikdörtgeni), `room` (sönünce karartılan alan), `glow` (açıkken lambanın altındaki hale), `on` (varsayılan açık). Bugün tek ışık var: müdür odasının sarkıtı |
 
 `object` katmanı varlıklarla birlikte **alt kenara göre** sıralanır; oturan ajan, masasının
 hemen ardına çizilir.
@@ -124,6 +125,7 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `clock.set` | `hour: 0-24 \| null` | pencere manzarasının saati; `null` gerçek yerel saat |
 | `cafe.special` | `text \| null` | kahve panosundaki günün özeli; `null` listeye döner |
 | `workflow.set` | `key` | pano sütunları o iş akışına göre yeniden kurulur (`GET /api/v1/workflows/{key}`); Faz 5'te çalışma başlarken yayımlanır |
+| `light` | `id, state: on/off` | o ışık açılır/kapanır (**mutlak** durum: yankılanması zararsız). Tuvale tıklamak da aynı komutu yayımlar, böylece ikinci bir tarayıcı da görür |
 | `scene.reload` | `reason?` | `config/scene.json` değişti (ajan eklendi/silindi/adı değişti, masa eklendi): UI `GET /scene` ile sahneyi yeniden kurar, SSE kopmaz. Api ajan değişikliklerinde yayımlar; elle: `POST /scene/commands` |
 
 **Simülasyon çizimden bağımsızdır.** `requestAnimationFrame` sekme gizliyken durur; simülasyon
@@ -131,8 +133,23 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 arka planda kalsa da ajanlar yerlerine varır. Geliştirmede `window.__world` sahneyi konsoldan
 sorgulamak için açıktır.
 
-**Kedi koltukta uyur.** Yatak koltuğun engelli alanında olduğu için yol en yakın açık hücrede
-biter; varınca yatağa kayılır (`snapTo`). Uyku 60–150 s, gezinti kısa; komutla `sleep` 120 s.
+**Kedi koltukta uyur.** Uyku 60–150 s, gezinti kısa; komutla `sleep` 120 s. Koltuk köşesi
+(2026-09-20): tek büyük engel dikdörtgeni yerine **koltuk gövdesi** ve **sehpa** ayrı ayrı
+engellendi; arada kalan minder şeridi yürünebilir. Yatak orada olduğu için kedi artık ışınlanmaz
+(`snapTo` gerekmez), yürüyerek mindere çıkar; koltuğa gelen ajan da minderin önünde durur.
+
+**Sahnede tıklanabilir ne varsa** (kullanıcı isteği 2026-09-20) `OfficeScene.vue` tek bir sırayla
+dener: ajan → kedi → ışık → pano. İmleç hepsinin üstünde `pointer` olur.
+
+- **Kedi:** tıklayınca uyanır, izleyiciye döner, kalpler çıkar ("mırr"); her üçüncü okşamada uzanır.
+  Yalnız o tarayıcıda olur, sahne olayı yayımlanmaz.
+- **Işık:** müdür odasının sarkıtına tıklanınca oda (içindekilerle birlikte) kararır; üstüne gelince
+  "Müdür odası · açık/kapalı" ipucu görünür. Durum `light` olayıyla da gelir/gider.
+
+**Kahve barından masaya kahve.** Sol üstteki tezgâhta artık `coffee-machine` sprite'ı var. Ambient
+kahve turu (`World.coffeeTrip`) bara gider, makine demlerken bekler, **kupayı eline alır**
+(yürürken elinde çizilir), masasına döner ve kupayı `seats[].mug` noktasına bırakır; 120 s sonra
+içilmiş sayılıp kalkar. Masası olmayan ajan (organizatör) kupayı elinde taşır.
 
 **Aynı noktada iki kişi durmaz.** Her yürüyüş hedefi `freeNear` ile seçilir: başka bir ajanın
 durduğu ya da hedeflediği noktaya 26 px'den yakınsa 28/52/76 px halkalarda boş bir açık hücre
