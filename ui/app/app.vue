@@ -92,14 +92,23 @@
 
 
         <!-- Ekip pusulasi: sahnede kim ne yapiyor; tiklaninca ajan paneli. Yari saydam, sahneyi kapatmaz. -->
-        <div v-if="!selected && !runPanel && !settings && !jobs && !board" class="compass" aria-label="Ekip">
-          <div class="compass-title">Ekip</div>
-          <button v-for="a in agents" :key="a.key" type="button" class="compass-row" :title="teamSummary(a.key)" @click="selectAgent(a.key)">
-            <span class="dot" :style="{ background: ROLE_HEX[a.key] }" />
-            <span class="name">{{ a.name }}</span>
-            <span class="state" :style="{ color: STATE_HEX[a.state as AgentState] }">{{ a.note || STATE_LABEL[a.state as AgentState] }}</span>
+        <!-- Ekip pusulasi: sahnede kim ne yapiyor. Kucultulebilir (kullanici istegi 2026-09-20): kapaliyken yalniz renkli
+             noktalar + mesgul sayisi; tiklaninca acilir. Secim localStorage'da kalir. -->
+        <div v-if="!selected && !runPanel && !settings && !jobs && !board" class="compass" :class="{ min: compassMin }" aria-label="Ekip">
+          <button type="button" class="compass-head" :title="compassMin ? 'Ekibi göster' : 'Ekibi küçült'" @click="toggleCompass">
+            <span class="compass-title">Ekip</span>
+            <span v-if="compassMin" class="compass-dots"><span v-for="a in agents" :key="a.key" class="dot" :class="{ busy: a.state !== 'idle' && a.state !== 'done' }" :style="{ background: ROLE_HEX[a.key] }" :title="`${a.name}: ${a.note || STATE_LABEL[a.state as AgentState]}`" /></span>
+            <span v-if="compassMin && busyAgents" class="compass-busy">{{ busyAgents }} çalışıyor</span>
+            <span class="compass-chev" aria-hidden="true">{{ compassMin ? '▴' : '▾' }}</span>
           </button>
-          <p v-if="teamState === 'error'" class="compass-warn">Ekip listesi alınamadı: {{ teamError }}</p>
+          <template v-if="!compassMin">
+            <button v-for="a in agents" :key="a.key" type="button" class="compass-row" :title="teamSummary(a.key)" @click="selectAgent(a.key)">
+              <span class="dot" :style="{ background: ROLE_HEX[a.key] }" />
+              <span class="name">{{ a.name }}</span>
+              <span class="state" :style="{ color: STATE_HEX[a.state as AgentState] }">{{ a.note || STATE_LABEL[a.state as AgentState] }}</span>
+            </button>
+            <p v-if="teamState === 'error'" class="compass-warn">Ekip listesi alınamadı: {{ teamError }}</p>
+          </template>
         </div>
 
         <!-- Buyuk pano: sahnedeki Kanban'a tiklaninca ya da B. Ajan paneliyle ayni anda acilmaz. -->
@@ -235,6 +244,15 @@ function fmtAgo(s: string): string {
   if (h < 24) return `${h} sa önce`
   return `${Math.floor(h / 24)} g önce`
 }
+
+/** Pusula kucuk mu: tercih tarayicida kalir (kisisel gorunum ayari, sunucuya gitmez). */
+const compassMin = ref(false)
+try { compassMin.value = localStorage.getItem('aiteam.compass') === 'min' } catch { /* varsayilan acik */ }
+function toggleCompass() {
+  compassMin.value = !compassMin.value
+  try { localStorage.setItem('aiteam.compass', compassMin.value ? 'min' : 'open') } catch { /* yalniz bellek */ }
+}
+const busyAgents = computed(() => agents.value.filter(a => a.state !== 'idle' && a.state !== 'done').length)
 
 function sceneNameOf(key: string): string {
   return agents.value.find(a => a.key === key)?.name ?? key
@@ -592,7 +610,16 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
   position: absolute; right: 14px; bottom: 14px; width: 232px; padding: 10px 10px 8px; border-radius: 10px;
   background: rgba(21,24,32,0.88); border: 1px solid var(--rule); display: flex; flex-direction: column; gap: 2px; z-index: 2;
 }
-.compass-title { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); padding: 0 4px 4px; }
+.compass-title { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.compass-head { display: flex; align-items: center; gap: 8px; width: 100%; font: inherit; background: transparent; border: none; color: var(--ink-3); cursor: pointer; padding: 2px 4px 6px; text-align: left; }
+.compass-head:hover .compass-title { color: var(--ink-2); }
+.compass-chev { margin-left: auto; font-size: 11px; }
+.compass.min { width: auto; padding: 6px 10px; }
+.compass.min .compass-head { padding: 0; }
+.compass-dots { display: inline-flex; gap: 4px; }
+.compass-dots .dot { width: 9px; height: 9px; border-radius: 2px; opacity: 0.45; }
+.compass-dots .dot.busy { opacity: 1; box-shadow: 0 0 0 2px rgba(255,255,255,0.15); }
+.compass-busy { font-size: 11px; color: var(--ink-2); }
 .compass-row {
   display: grid; grid-template-columns: 9px 1fr auto; column-gap: 8px; align-items: center; text-align: left;
   font: inherit; font-size: 11px; color: var(--ink); background: transparent; border: none; border-radius: 6px; padding: 4px 6px; cursor: pointer;

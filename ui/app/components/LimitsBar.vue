@@ -52,6 +52,16 @@ function label(l: UsageLimit): string {
   if (l.scope) return `${l.scope}/${KIND_LABEL[l.kind]?.split('/').pop() ?? l.kind}`
   return KIND_LABEL[l.kind] ?? l.kind.replaceAll('_', ' ')
 }
+/** Halka altindaki tek kelimelik etiket: 5s · hafta · Opus · Sonnet · model adi. */
+function shortLabel(l: UsageLimit): string {
+  if (l.scope) return l.scope.replace(/^claude-/, '').split('-')[0] ?? l.scope
+  const k = l.kind
+  if (k === 'session' || k === 'five_hour') return '5s'
+  if (k.includes('opus')) return 'Opus'
+  if (k.includes('sonnet')) return 'Sonnet'
+  if (k.includes('week') || k.includes('seven')) return 'hafta'
+  return k.slice(0, 6)
+}
 function remaining(l: UsageLimit): number { return Math.max(0, Math.min(100, Math.round(100 - l.percent))) }
 function tone(l: UsageLimit): string {
   const r = remaining(l)
@@ -78,19 +88,18 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
 <template>
   <div class="limits" role="status">
     <template v-if="state === 'ready' && items">
+      <!-- Minimal (kullanici istegi 2026-09-20): saglayici adi + her pencere icin yuvarlak yuzde halkasi; ayrinti ipucunda. -->
       <button v-for="p in active" :key="p.provider" type="button" class="prov" :title="p.subscription ? `${providerLabel(p.provider)} · ${p.subscription}` : providerLabel(p.provider)" @click="emit('open')">
         <span class="name">{{ providerLabel(p.provider) }}</span>
-        <!-- isActive = su an baglayici pencere; digerleri de gosterilir, soluk. -->
-        <span v-for="l in p.limits" :key="l.kind + (l.scope ?? '')" class="meter" :class="[tone(l), { dim: !l.isActive }]" :title="title(p, l)">
-          <span class="lbl">{{ label(l) }}</span>
-          <span class="bar"><span class="fill" :style="{ width: remaining(l) + '%' }" /></span>
-          <span class="pct">%{{ remaining(l) }}</span>
+        <span v-for="l in p.limits" :key="l.kind + (l.scope ?? '')" class="ring" :class="[tone(l), { dim: !l.isActive }]" :style="{ '--p': remaining(l) }" :title="title(p, l)">
+          <span class="pct">{{ remaining(l) }}</span>
+          <span class="tag">{{ shortLabel(l) }}</span>
         </span>
-        <span v-if="!p.limits.length" class="sub">kalan hak bilgisi yok</span>
+        <span v-if="!p.limits.length" class="sub">—</span>
       </button>
       <button v-for="p in unavailable" :key="p.provider" type="button" class="prov off" :title="p.detail" @click="emit('open')">
         <span class="name">{{ providerLabel(p.provider) }}</span>
-        <span class="sub">kalan hak alınamadı · {{ p.detail }}</span>
+        <span class="ring none" title="kalan hak alınamadı"><span class="pct">–</span></span>
       </button>
     </template>
     <span v-else-if="state === 'loading'" class="sub">kalan hak…</span>
@@ -109,23 +118,27 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
 <style scoped>
 .limits { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
 .prov {
-  display: flex; align-items: center; gap: 8px; font: inherit; cursor: pointer; color: var(--ink-2);
-  background: var(--surface-2); border: 1px solid var(--rule); border-radius: 999px; padding: 3px 10px 3px 8px;
+  display: flex; align-items: center; gap: 9px; font: inherit; cursor: pointer; color: var(--ink-2);
+  background: var(--surface-2); border: 1px solid var(--rule); border-radius: 999px; padding: 3px 12px 3px 10px; height: 38px;
 }
 .prov:hover { border-color: #3d5a80; }
 .prov.off { color: var(--ink-3); }
 .prov.off.bad { border-color: #8a3a3a; }
 .prov.off.bad .sub { color: #f0a0a0; }
 .name { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
-.meter { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; }
-.lbl { color: var(--ink-3); }
-.bar { width: 46px; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
-.fill { display: block; height: 100%; border-radius: 3px; background: #35b98a; }
-.meter.warn .fill { background: #d99b3a; }
-.meter.crit .fill { background: #e05252; }
-.pct { font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
-.meter.warn .pct { color: #f0c26a; }
-.meter.crit .pct { color: #f0a0a0; }
-.meter.dim { opacity: 0.7; }
+/* Halka: conic-gradient ile kalan yuzde; icinde sayi, altinda kisa etiket. */
+.ring {
+  --p: 0; position: relative; width: 30px; height: 30px; border-radius: 50%; flex: none;
+  background: conic-gradient(var(--c, #35b98a) calc(var(--p) * 1%), rgba(255,255,255,0.1) 0);
+  display: inline-grid; place-items: center;
+}
+.ring::before { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--surface-2); }
+.ring .pct { position: relative; font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1; }
+.ring .tag { position: absolute; bottom: -9px; left: 50%; transform: translateX(-50%); font-size: 7.5px; color: var(--ink-3); white-space: nowrap; letter-spacing: 0.02em; }
+.ring.warn { --c: #d99b3a; }
+.ring.crit { --c: #e05252; }
+.ring.dim { opacity: 0.55; }
+.ring.none { background: rgba(255,255,255,0.08); }
+.ring.none .pct { color: var(--ink-3); }
 .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
 </style>
