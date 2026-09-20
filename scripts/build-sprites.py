@@ -353,7 +353,7 @@ CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | None]] = {
 # ayakta durur, masaya oturunca yanlis gorunur (kullanici 2026-09-20). Eksik sandalye,
 # ayni panelin sandalyeli oldugu bir katalogdan alinip ayni DUNYA olceginde monte edilir:
 # hedef anahtar -> bagisci anahtar. Bagiscinin karesinden yalniz sandalye ayiklanir.
-TYPE_CHAIR_DONOR: dict[str, str] = {"ponytail": "bun"}
+TYPE_CHAIR_DONOR: dict[str, str] = {"ponytail": "curly-yellow"}
 
 
 def checker_mask(a: np.ndarray) -> np.ndarray:

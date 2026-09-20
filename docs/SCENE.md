@@ -44,6 +44,14 @@ kullanılmadı.
 ajan masanın önüne (kameraya yakın kenar) tam kare olarak çizilir, çalışırken 3 kare yazma
 döngüsü oynar, ziyaretçi gelince yüzünü döner (ön kareler).
 
+**Sandalye üretildi (2026-09-20).** `sim3` (tasarımcı, `ponytail`) katalogunda "Typing" panelinin
+arka kareleri **sandalyesizdir** — karakter ayakta durur, masaya oturunca yanlış görünürdü. Kataloğun
+"Sit / Stand (Chair)" panelinde sandalye yalnız **yandan** vardır; arkadan oturma karesi yoktur.
+Eksik kare `scripts/build-sprites.py` içinde üretilir (`TYPE_CHAIR_DONOR`): sandalyeli bir katalogdan
+(`curly-yellow`) sandalye ayıklanır (karakterin örttüğü sırtlık sütun sütun doldurulur), iki karakterin
+**dünya ölçeği oranıyla** büyütülür, gövde oturağın altında kesilir ve sandalye gövdenin önüne çizilir.
+Yalnız arka üç yazma karesi değişir; yürüyüş ve yandan oturma kareleri kataloğun kendisidir.
+
 **Hâlâ eksik / istenirse üretilecek**
 
 | Eksik | Bugünkü telafi |
