@@ -23,16 +23,22 @@ export interface SeatDef extends Pt {
   mug?: { x: number; y: number; w: number }
 }
 
-/** Tiklanip acilip kapanan isik (mudur odasinin sarkiti). Kapaliyken `room` karartilir. */
+/**
+ * Tiklanip acilip kapanan isik. Iki kullanim var:
+ * - oda isigi (mudur odasinin sarkiti): `room` + `glow` — sonunce oda kararir;
+ * - abajur: yalniz `bulb` — sonunce SADECE basligi koyulasir, cevresi etkilenmez.
+ */
 export interface LightDef {
   id: string
   name?: string
   /** Lambanin tiklama dikdortgeni [x, y, w, h]. */
   hit: [number, number, number, number]
-  /** Isik sonunce karartilan alan [x, y, w, h]. */
-  room: [number, number, number, number]
-  /** Acikken lambanin altina cizilen sicak hale. */
+  /** Isik sonunce karartilan alan [x, y, w, h]. Verilmezse oda karartmasi yok. */
+  room?: [number, number, number, number]
+  /** Acikken lambanin altina cizilen sicak hale (yalniz `room` ile anlamli). */
   glow?: { x: number; y: number; r: number }
+  /** Sonunce koyulasan baslik/ampul dikdortgeni [x, y, w, h]; cevreye dokunulmaz. */
+  bulb?: [number, number, number, number]
   /** Baslangic durumu (varsayilan acik). */
   on?: boolean
 }

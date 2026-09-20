@@ -11,6 +11,17 @@ const LANES: Array<{ id: Lane; title: string; hex: string }> = [
   { id: 'done', title: 'Bitti', hex: '#7cc46b' },
 ]
 
+/** Kucuk panoda serit basina gorunen kart sayisi; gerisi "+N". */
+const VISIBLE = 3
+
+/** Metni verilen genislige sigdir; sigmazsa sonuna "…" koy. */
+function ellipsize(ctx: CanvasRenderingContext2D, text: string, max: number): string {
+  if (ctx.measureText(text).width <= max) return text
+  let cut = text
+  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > max) cut = cut.slice(0, -1)
+  return `${cut}…`
+}
+
 const COLUMN_HEX = ['#f3c34a', '#4fa3e0', '#ef6f9a', '#a889e6', '#7cc46b', '#e0995c']
 const DONE_HEX = '#7cc46b'
 
@@ -116,14 +127,16 @@ export class Board {
     const gap = 5
     const top = y + 28
     const colW = (w - pad * 2 - gap * (LANES.length - 1)) / LANES.length
-    const noteW = Math.min(22, colW - 8)
-    const noteH = 17
-    const perRow = Math.max(1, Math.floor((colW - 4) / (noteW + 3)))
+    // Canli mini pano (kullanici istegi 2026-09-20): her seritte ilk VISIBLE kart adiyla gorunur,
+    // gerisi "+N" olarak sayilir. Kartlar serit genisligini kaplar: ad okunabilsin.
+    const noteW = colW - 2
+    const noteH = 16
+    const cardTop = top + 20
 
     const colX = (i: number) => x + pad + i * (colW + gap)
     const notePos = (col: number, row: number) => ({
-      x: colX(col) + 3 + (row % perRow) * (noteW + 3),
-      y: top + 24 + Math.floor(row / perRow) * (noteH + 4),
+      x: colX(col) + 1,
+      y: cardTop + Math.min(row, VISIBLE) * (noteH + 3),
     })
 
     // Serit basliklari
@@ -159,18 +172,32 @@ export class Board {
         p = { x: from.x + (p.x - from.x) * e, y: from.y + (p.y - from.y) * e - Math.sin(e * Math.PI) * 14 }
       }
       const hex = LANES[col]?.hex ?? '#ccc'
-      this.drawNote(ctx, p.x, p.y, noteW, noteH, hex, t.state, now, t.id)
+      // Ilk uc kart cizilir; tasan kart yalnizca sayaca eklenir (asagida).
+      if (row < VISIBLE || this.anim.has(t.id)) this.drawNote(ctx, p.x, p.y, noteW, noteH, hex, t, now)
 
-      // Ileri: aktif gorevin bir sonraki seridinde hayalet not.
+      // Ileri: aktif gorevin bir sonraki seridinde hayalet kart.
       if (t.state === 'active' && col < LANES.length - 1) {
         const nextRow = rows.get(col + 1) ?? 0
-        const g = notePos(col + 1, nextRow)
-        ctx.setLineDash([2, 2])
-        ctx.strokeStyle = 'rgba(42,47,61,0.45)'
-        ctx.lineWidth = 1
-        ctx.strokeRect(g.x + 0.5, g.y + 0.5, noteW - 1, noteH - 1)
-        ctx.setLineDash([])
+        if (nextRow < VISIBLE) {
+          const g = notePos(col + 1, nextRow)
+          ctx.setLineDash([2, 2])
+          ctx.strokeStyle = 'rgba(42,47,61,0.4)'
+          ctx.lineWidth = 1
+          ctx.strokeRect(g.x + 0.5, g.y + 0.5, noteW - 1, noteH - 1)
+          ctx.setLineDash([])
+        }
       }
+    }
+
+    // Serite sigmayan kartlar: "+N"
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'alphabetic'
+    ctx.font = 'bold 7px "Segoe UI", system-ui, sans-serif'
+    ctx.fillStyle = 'rgba(42,47,61,0.6)'
+    for (const [col, count] of rows) {
+      if (count <= VISIBLE) continue
+      const p = notePos(col, VISIBLE)
+      ctx.fillText(`+${count - VISIBLE}`, p.x + noteW - 1, p.y + 7)
     }
   }
 
@@ -198,40 +225,58 @@ export class Board {
     ctx.restore()
   }
 
+  /**
+   * Kart: solda serit rengi, uzerinde gorev adi. Ad sigmiyorsa "…" ile kisalir
+   * (fillText'in maxWidth'i harfleri ezdigi icin elle kesilir).
+   */
   private drawNote(
     ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number,
-    hex: string, state: TaskState, now: number, id: string,
+    hex: string, task: BoardTask, now: number,
   ): void {
+    const state = task.state
     const wobble = state === 'active' ? Math.sin(now / 300 + x) * 0.6 : 0
     ctx.save()
     ctx.translate(x + w / 2, y + h / 2)
-    ctx.rotate(wobble * 0.03)
-    ctx.globalAlpha = state === 'queued' ? 0.55 : 1
+    ctx.rotate(wobble * 0.02)
+    ctx.globalAlpha = state === 'queued' ? 0.7 : 1
     ctx.fillStyle = 'rgba(0,0,0,0.12)'
     ctx.fillRect(-w / 2 + 1, -h / 2 + 2, w, h)
-    ctx.fillStyle = hex
+    ctx.fillStyle = '#fbfaf4'
     ctx.fillRect(-w / 2, -h / 2, w, h)
-    ctx.fillStyle = 'rgba(255,255,255,0.35)'
-    ctx.fillRect(-w / 2, -h / 2, w, 2)
+    ctx.fillStyle = hex
+    ctx.fillRect(-w / 2, -h / 2, 3, h)
     if (state === 'blocked') {
       ctx.strokeStyle = '#d23b3b'
       ctx.lineWidth = 1.5
       ctx.strokeRect(-w / 2 + 0.75, -h / 2 + 0.75, w - 1.5, h - 1.5)
+    } else {
+      ctx.strokeStyle = 'rgba(42,47,61,0.18)'
+      ctx.lineWidth = 1
+      ctx.strokeRect(-w / 2 + 0.5, -h / 2 + 0.5, w - 1, h - 1)
     }
+
+    const right = state === 'done' ? 12 : 3
+    ctx.font = 'bold 7px "Segoe UI", system-ui, sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = state === 'done' ? 'rgba(42,47,61,0.55)' : '#2a2f3d'
+    ctx.fillText(ellipsize(ctx, task.title || task.id, w - 6 - right), -w / 2 + 5, 1)
+
     if (state === 'done') {
-      ctx.strokeStyle = 'rgba(30,60,30,0.75)'
+      ctx.strokeStyle = 'rgba(40,120,60,0.9)'
       ctx.lineWidth = 1.5
       ctx.beginPath()
-      ctx.moveTo(-w / 4, 0)
-      ctx.lineTo(-w / 12, h / 4)
-      ctx.lineTo(w / 3, -h / 4)
+      ctx.moveTo(w / 2 - 10, 0)
+      ctx.lineTo(w / 2 - 7, h / 4 - 1)
+      ctx.lineTo(w / 2 - 3, -h / 4 + 1)
       ctx.stroke()
-    } else {
-      ctx.fillStyle = 'rgba(30,30,40,0.55)'
-      ctx.font = 'bold 7px "Segoe UI", system-ui, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(id.slice(0, 3), 0, 1, w - 2)
+    } else if (state === 'active') {
+      // Calisiyor: nabiz atan nokta.
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(now / 260)
+      ctx.fillStyle = hex
+      ctx.beginPath()
+      ctx.arc(w / 2 - 5, -h / 2 + 4.5, 2, 0, Math.PI * 2)
+      ctx.fill()
     }
     ctx.restore()
   }

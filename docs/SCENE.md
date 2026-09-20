@@ -88,14 +88,14 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `walkable` | yürünebilir dış dikdörtgen |
 | `floor`, `walls` | arka plan yoksa prosedürel zemin/duvar (V1 yolu, hâlâ çalışır) |
 | `props[]` | `sprite` (tileset adı ya da `@sofaSet`), `x y w [h]`, `layer`, `sortY` (masa üstü monitör için) |
-| `door`, `board` | kapı (iki kare: kapalı/açık; giren-çıkan açar, 1.4 s sonra kapanır); Kanban panosu — sahnede 4 şerit (Yapılacak / Yapılıyor / İnceleme / Bitti), iş akışı adımları bunlara katlanır; tıklanınca ya da `B` ile tüm adım sütunlarını ve görev adlarını gösteren büyük görünüm açılır (`legs`/`angle` isteğe bağlı) |
+| `door`, `board` | kapı (iki kare: kapalı/açık; giren-çıkan açar, 1.4 s sonra kapanır); Kanban panosu — sahnede 4 şerit (Yapılacak / Yapılıyor / İnceleme / Bitti), iş akışı adımları bunlara katlanır. **Şeritte ilk 3 kart adıyla görünür, kalanı `+N`**; tıklanınca ya da `B` ile tüm adım sütunlarını ve görev adlarını gösteren büyük görünüm açılır |
 | `cafe` | kahve barı panosu: `board` dikdörtgeni, `specials[]` sırayla döner (`intervalMs`), `cafe.special` olayıyla sabitlenir |
 | `seats` | oturulabilir yerler: konum (ayak/sandalye tabanı), bakış; `monitor` → oturulunca açılan, kalkınca kapanan monitör prop'u (`props[].spriteOff`); `mug: {x,y,w}` → kahve barından dönen ajanın kupasını bıraktığı masa noktası |
 | `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB deskC deskD`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing`. `capacity` (varsayılan 1): dolu durağa gelen `queue` noktasında durağa dönük bekler, boşalınca girer; ambient turlar dolu durağı seçmez |
 | `blocked[]` | yürünemez dikdörtgenler; yol bulma bunlardan ızgara kurar |
 | `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Sahne ajanı iş akışı rolünden fazla olabilir (`intern`, `devops` yalnız sahnede yaşar; olay almazlarsa ambient davranır) |
 | `cat` | yatak ve gezinti noktaları. Yatak **açık alandadır** (koltuğun minderi): kedi oraya yürüyerek çıkar |
-| `lights[]` | tıklanınca açılıp kapanan ışık: `hit` (lambanın tıklama dikdörtgeni), `room` (sönünce karartılan alan), `glow` (açıkken lambanın altındaki hale), `on` (varsayılan açık). Bugün tek ışık var: müdür odasının sarkıtı |
+| `lights[]` | tıklanınca açılıp kapanan ışık: `hit` (tıklama dikdörtgeni), `on` (varsayılan açık) ve iki kullanımdan biri — **oda ışığı**: `room` sönünce karartılır, `glow` açıkken hale düşer (müdür odasının sarkıtı); **abajur**: yalnız `bulb`, sönünce sadece başlık koyulaşır (`multiply`), çevresi etkilenmez (kanepenin yanındaki abajur) |
 
 `object` katmanı varlıklarla birlikte **alt kenara göre** sıralanır; oturan ajan, masasının
 hemen ardına çizilir.
@@ -150,13 +150,15 @@ dener: ajan → kedi → ışık → pano. İmleç hepsinin üstünde `pointer` 
 
 - **Kedi:** tıklayınca uyanır, izleyiciye döner, kalpler çıkar ("mırr"); her üçüncü okşamada uzanır.
   Yalnız o tarayıcıda olur, sahne olayı yayımlanmaz.
-- **Işık:** müdür odasının sarkıtına tıklanınca oda (içindekilerle birlikte) kararır; üstüne gelince
-  "Müdür odası · açık/kapalı" ipucu görünür. Durum `light` olayıyla da gelir/gider.
+- **Işık:** müdür odasının sarkıtına tıklanınca oda (içindekilerle birlikte) kararır; kanepenin
+  yanındaki abajurda **yalnız başlık** söner, çevre olduğu gibi kalır. Üstüne gelince
+  "Müdür odası / Abajur · açık/kapalı" ipucu görünür. Durum `light` olayıyla da gelir/gider.
 
-**Kahve barından masaya kahve.** Sol üstteki tezgâhta artık `coffee-machine` sprite'ı var. Ambient
-kahve turu (`World.coffeeTrip`) bara gider, makine demlerken bekler, **kupayı eline alır**
-(yürürken elinde çizilir), masasına döner ve kupayı `seats[].mug` noktasına bırakır; 120 s sonra
-içilmiş sayılıp kalkar. Masası olmayan ajan (organizatör) kupayı elinde taşır.
+**Kahve ve su masaya gelir.** Sol üstteki tezgâhta `coffee-machine` sprite'ı var. Ambient içecek turu
+(`World.drinkTrip`) kahve barına ya da su sebiline gider, doldurulmasını bekler (kahve demlenir, su
+hemen dolar), **bardağı/kupayı eline alır** (yürürken elinde çizilir), masasına döner ve
+`seats[].mug` noktasına bırakır; kahve 120 s, su 90 s sonra içilmiş sayılıp kalkar. Masası olmayan
+ajan (organizatör) elinde taşır. Kupa tileset'ten, su bardağı prosedüreldir (tileset'te bardak yok).
 
 **Aynı noktada iki kişi durmaz.** Her yürüyüş hedefi `freeNear` ile seçilir: başka bir ajanın
 durduğu ya da hedeflediği noktaya 26 px'den yakınsa 28/52/76 px halkalarda boş bir açık hücre

@@ -1,7 +1,7 @@
 import { STATE_LABEL, type AgentState, type Facing, type LightDef, type MeetKind, type Pt, type PropDef, type SceneConfig, type SceneEvent, type SeatDef, type WorkflowConfig } from './contract'
 import { Sprites } from './atlas'
 import { NavGrid } from './nav'
-import { Agent, Cat, Door, drawMug, type Action } from './entities'
+import { Agent, Cat, Door, drawDrink, type Action, type Drink } from './entities'
 import { Board } from './board'
 import { drawSky } from './sky'
 import { authHeaders } from '~/composables/useAuth'
@@ -353,7 +353,7 @@ export class World {
     this.returns(now)
     // Kupa icildi sayilir: sure dolunca masadan (ya da elden) kalkar.
     for (const a of this.agents.values()) {
-      if (a.mugUntil && now > a.mugUntil) { a.mugUntil = 0; a.mugSeat = null; a.carrying = false }
+      if (a.mugUntil && now > a.mugUntil) { a.mugUntil = 0; a.mugSeat = null; a.carrying = null }
     }
   }
 
@@ -409,8 +409,8 @@ export class World {
           this.door.set('closed', performance.now())
         } },
       ]
-    } else if (r < 0.4) actions = this.coffeeTrip(a)
-    else if (r < 0.5) actions = trip('water', 3000 + Math.random() * 2000)
+    } else if (r < 0.4) actions = this.drinkTrip(a, 'coffee')
+    else if (r < 0.5) actions = this.drinkTrip(a, 'water')
     else if (r < 0.65) actions = trip('board', 4000 + Math.random() * 3000)
     else if (r < 0.75) actions = trip('window', 5000 + Math.random() * 3000)
     else {
@@ -436,25 +436,29 @@ export class World {
   }
 
   /**
-   * Kahve turu (kullanici istegi 2026-09-20): bara gider, makine demlerken bekler,
-   * kupasini alip masasina doner ve masaya birakir. Kupa bir sure sonra icilmis
-   * sayilip kaybolur. Masasi olmayan ajan (organizator) kupayi elinde tasir.
+   * Icecek turu (kullanici istegi 2026-09-20): kahve barina ya da su sebiline gider,
+   * doldurulmasini bekler, bardagi/kupayi eline alip masasina doner ve masaya birakir.
+   * Bir sure sonra icilmis sayilip kalkar. Masasi olmayan ajan (organizator) elinde tasir.
    */
-  private coffeeTrip(a: Agent): Action[] {
-    if (!this.cfg.spots['coffee'] || !this.spotFree('coffee', a)) return []
+  private drinkTrip(a: Agent, kind: Drink): Action[] {
+    const spot = kind === 'coffee' ? 'coffee' : 'water'
+    if (!this.cfg.spots[spot] || !this.spotFree(spot, a)) return []
+    // Kahve demlenir, su hemen dolar.
+    const fill = kind === 'coffee' ? 2500 + Math.random() * 1500 : 1500 + Math.random() * 1000
     return [
-      ...this.tripTo(a, 'coffee'),
-      { t: 'wait', ms: 2500 + Math.random() * 1500 },
+      ...this.tripTo(a, spot),
+      { t: 'wait', ms: fill },
       { t: 'call', fn: () => {
-        a.carrying = true
+        a.carrying = kind
         a.bubble = { kind: 'talk', until: performance.now() + 1600 }
       } },
       { t: 'wait', ms: 700 },
       ...this.goHome(a),
       { t: 'call', fn: () => {
         const seat = a.seated ?? this.homeOf(a.key).seat ?? null
-        a.mugUntil = performance.now() + 120_000
-        if (seat?.mug) { a.mugSeat = seat; a.carrying = false }
+        a.mugUntil = performance.now() + (kind === 'coffee' ? 120_000 : 90_000)
+        a.mugKind = kind
+        if (seat?.mug) { a.mugSeat = seat; a.carrying = null }
       } },
     ]
   }
@@ -578,7 +582,7 @@ export class World {
       const seat = a.mugSeat
       if (seat?.mug && !a.offstage && now < a.mugUntil) {
         const mug = seat.mug
-        items.push({ y: seat.y - 12, draw: () => drawMug(ctx, this.sprites, mug.x, mug.y, mug.w, now) })
+        items.push({ y: seat.y - 12, draw: () => drawDrink(ctx, this.sprites, mug.x, mug.y, mug.w, now, a.mugKind) })
       }
     }
     items.push({ y: this.cat.pos.y, draw: () => this.cat.draw(ctx, this.sprites, now) })
@@ -653,23 +657,36 @@ export class World {
    */
   private drawLights(ctx: CanvasRenderingContext2D, now: number): void {
     for (const [id, l] of this.lights) {
-      const [rx, ry, rw, rh] = l.def.room
-      ctx.save()
-      if (l.on) {
-        const g = l.def.glow
-        if (g) {
-          ctx.beginPath(); ctx.rect(rx, ry, rw, rh); ctx.clip()
-          const grad = ctx.createRadialGradient(g.x, g.y, 4, g.x, g.y, g.r)
-          grad.addColorStop(0, `rgba(255,216,148,${0.2 + 0.02 * Math.sin(now / 1300)})`)
-          grad.addColorStop(1, 'rgba(255,216,148,0)')
-          ctx.fillStyle = grad
+      const room = l.def.room
+      if (room) {
+        const [rx, ry, rw, rh] = room
+        ctx.save()
+        if (l.on) {
+          const g = l.def.glow
+          if (g) {
+            ctx.beginPath(); ctx.rect(rx, ry, rw, rh); ctx.clip()
+            const grad = ctx.createRadialGradient(g.x, g.y, 4, g.x, g.y, g.r)
+            grad.addColorStop(0, `rgba(255,216,148,${0.2 + 0.02 * Math.sin(now / 1300)})`)
+            grad.addColorStop(1, 'rgba(255,216,148,0)')
+            ctx.fillStyle = grad
+            ctx.fillRect(rx, ry, rw, rh)
+          }
+        } else {
+          ctx.fillStyle = 'rgba(9,13,28,0.62)'
           ctx.fillRect(rx, ry, rw, rh)
         }
-      } else {
-        ctx.fillStyle = 'rgba(9,13,28,0.62)'
-        ctx.fillRect(rx, ry, rw, rh)
+        ctx.restore()
       }
-      ctx.restore()
+      // Abajur: sonunce YALNIZ baslik koyulasir. `multiply` arka planin kendi dokusunu
+      // korur (duz bir dikdortgen yapistirmak yerine sicak sariyi soguga cevirir).
+      if (l.def.bulb && !l.on) {
+        const [bx, by, bw, bh] = l.def.bulb
+        ctx.save()
+        ctx.globalCompositeOperation = 'multiply'
+        ctx.fillStyle = '#5a6480'
+        ctx.fillRect(bx, by, bw, bh)
+        ctx.restore()
+      }
 
       if (this.hoveredLight !== id) continue
       const [hx, hy, hw, hh] = l.def.hit

@@ -283,10 +283,10 @@
     "_comment": "Sag ust girinti: sol kenar pencere pervazi (1182), ust kenar duvar yuzu bandi (y 68), sag kenar dis duvar (1289), alt kenar bitki dibi (250). Giris/cikislar buradan."
   },
   "board": {
-    "x": 1028,
+    "x": 972,
     "y": 878,
-    "w": 224,
-    "h": 120,
+    "w": 280,
+    "h": 148,
     "title": "KANBAN",
     "_comment": "Sag alt, ayaksiz pano. Kucuk gorunum 4 serit (Yapilacak / Yapiliyor / Inceleme / Bitti); tiklaninca buyuk gorunum acilir (tum is akisi sutunlari, gorev adlari)."
   },
@@ -404,16 +404,17 @@
       }
     },
     "board": {
-      "x": 985,
-      "y": 960,
+      "x": 928,
+      "y": 986,
       "look": {
-        "x": 1140,
-        "y": 940
+        "x": 1110,
+        "y": 950
       },
       "queue": {
-        "x": 940,
-        "y": 990
-      }
+        "x": 872,
+        "y": 1012
+      },
+      "_comment": "Panonun solunda durup panoya bakar."
     },
     "water": {
       "x": 62,
@@ -592,12 +593,6 @@
       152
     ],
     [
-      1022,
-      872,
-      236,
-      132
-    ],
-    [
       188,
       768,
       320,
@@ -614,6 +609,12 @@
       642,
       144,
       46
+    ],
+    [
+      966,
+      872,
+      292,
+      160
     ]
   ],
   "sprites": [
@@ -752,6 +753,24 @@
       },
       "on": true,
       "_comment": "hit: sarkit lambanin tiklama dikdortgeni; room: isigi sonunce karartilan cam oda; glow: lambanin altindaki sicak hale."
+    },
+    {
+      "id": "floorLamp",
+      "name": "Abajur",
+      "hit": [
+        1226,
+        502,
+        40,
+        46
+      ],
+      "bulb": [
+        1230,
+        508,
+        31,
+        36
+      ],
+      "on": true,
+      "_comment": "Kanepenin yanindaki abajur: yalniz baslik koyulasir (bulb), oda karartmasi yok."
     }
   ]
 }

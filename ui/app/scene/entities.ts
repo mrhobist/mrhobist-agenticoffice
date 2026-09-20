@@ -36,11 +36,18 @@ function faceTowards(from: Pt, to: Pt): Facing {
   return dx > 0 ? 'upright' : 'upleft'
 }
 
+/** Ajanin getirdigi icecek: kahve bari kupasi ya da sebil bardagi. */
+export type Drink = 'coffee' | 'water'
+
 /**
- * Kupa (+ buhar). Elde tasinirken ve masada dururken ayni cizim kullanilir;
- * `w` dunya genisligi, (x, y) sol-ust.
+ * Icecek. Elde tasinirken ve masada dururken ayni cizim kullanilir; `w` dunya genisligi,
+ * (x, y) sol-ust. Kahve tileset kupasidir (+ buhar), su prosedurel bir bardaktir
+ * (tileset'te bardak yok, kupayi maviye boyamak yaniltici olurdu).
  */
-export function drawMug(ctx: CanvasRenderingContext2D, sprites: Sprites, x: number, y: number, w: number, now: number): void {
+export function drawDrink(
+  ctx: CanvasRenderingContext2D, sprites: Sprites, x: number, y: number, w: number, now: number, kind: Drink = 'coffee',
+): void {
+  if (kind === 'water') { drawGlass(ctx, x, y, w * 0.8, now); return }
   const sz = sprites.objectSize('mug-white')
   const h = (w * sz.h) / sz.w
   sprites.drawObject(ctx, 'mug-white', x, y, w, h)
@@ -51,6 +58,23 @@ export function drawMug(ctx: CanvasRenderingContext2D, sprites: Sprites, x: numb
     ctx.globalAlpha = 0.5 * (1 - t)
     ctx.fillRect(x + w * (0.3 + i * 0.35), y - 3 - t * 9, 1.6, 4)
   }
+  ctx.restore()
+}
+
+/** Su bardagi: hafifce salinan su yuzeyi; buhar yok. */
+function drawGlass(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, now: number): void {
+  const h = w * 1.25
+  const level = y + h * 0.34 + Math.sin(now / 700) * 0.4
+  ctx.save()
+  ctx.fillStyle = 'rgba(228,240,250,0.85)'
+  ctx.fillRect(x, y, w, h)
+  ctx.fillStyle = '#5fb6e6'
+  ctx.fillRect(x + 1, level, w - 2, y + h - level - 1)
+  ctx.fillStyle = 'rgba(255,255,255,0.8)'
+  ctx.fillRect(x + 1.5, y + 2, 1.2, h - 5)
+  ctx.strokeStyle = 'rgba(40,60,80,0.5)'
+  ctx.lineWidth = 1
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
   ctx.restore()
 }
 
@@ -82,10 +106,11 @@ export class Agent {
   returnAt: number | null = null
   /** Masasi yok (`home: {}`): disarida yasar, ara sira panoya bakmaya ugrar. */
   visitor = false
-  /** Elinde kahve var: kahve barindan masasina tasiyor. */
-  carrying = false
-  /** Masaya birakilan kupanin koltugu ve ne zamana kadar durdugu (icilince kaybolur). */
+  /** Elinde ne tasiyor (kahve bari / su sebili); yoksa null. */
+  carrying: Drink | null = null
+  /** Masaya birakilan icecek: koltugu, turu ve ne zamana kadar durdugu (icilince kaybolur). */
   mugSeat: SeatDef | null = null
+  mugKind: Drink = 'coffee'
   mugUntil = 0
 
   private path: Pt[] = []
@@ -237,10 +262,10 @@ export class Agent {
       ctx.fill()
       sprites.drawFrame(ctx, walk, frame, row, this.pos.x, this.pos.y)
       if (this.carrying) {
-        // Kupa elde: yuruyus salinimiyla birlikte hafifce oynar.
+        // Icecek elde: yuruyus salinimiyla birlikte hafifce oynar.
         const side = this.facing === 'left' || this.facing === 'upleft' || this.facing === 'downleft' ? -1 : 1
         const bob = this.walking ? Math.sin(this.walkT * WALK_FPS * 0.7) * 1.2 : 0
-        drawMug(ctx, sprites, this.pos.x + side * 13 - 7, this.pos.y - 30 + bob, 14, now)
+        drawDrink(ctx, sprites, this.pos.x + side * 13 - 7, this.pos.y - 30 + bob, 14, now, this.carrying)
       }
     }
 
