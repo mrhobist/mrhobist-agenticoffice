@@ -13,6 +13,12 @@ veritabanı, görev kavramı, role göre dallanma. `scripts/verify.ps1` bunu den
 
 ## Çalıştırma
 
+**Normalde elle başlatmaya gerek yok:** .NET Api ayağa kalkarken bu süreci de başlatır ve
+kapanırken durdurur (`Api/Runtime/RuntimeSupervisor`). Api önce `GET /health` ile yoklar —
+5090'da zaten sağlıklı bir runtime varsa **ona dokunmaz** ve kapanışta da durdurmaz, yani
+aşağıdaki komutla kendin başlatıp logu ayrı izleyebilirsin. Otomatik başlatmayı kapatmak için
+`AITeam:AutoStartRuntime=false`.
+
 Depo kökünden (sanal ortam `runtime/.venv`, Python 3.12+):
 
 ```bash

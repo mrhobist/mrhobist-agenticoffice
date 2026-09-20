@@ -109,6 +109,10 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
 dotnet run --project src/MrHobist.AITeam.Api
 ```
 
+Runtime'ı Api başlatır ve kapatır (`AITeam:AutoStartRuntime=false` ile kapanır). Ayrı izlemek
+için önce kendin başlat — ayakta olana dokunulmaz. `.venv` cihaza bağlıdır, taşınmaz:
+onarımı `verify.ps1 -SetupRuntime`.
+
 ```bash
 runtime/.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5090 --app-dir runtime
 ```

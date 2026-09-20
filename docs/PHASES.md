@@ -312,6 +312,18 @@ Python'unu bulup (`py -3` → `python` → `python3`, `sys.executable` sorulur, 
 `.venv`'i siler ve yeniden kurar. Kapı kendiliğinden kurulum yapmaz — sessiz onarım, `verify.ps1`'in
 "eksik altyapıda sessizce geçme" kuralına aykırı olurdu.
 
+**Runtime'ı Api başlatıyor (2026-09-20).** İki terminal açma zorunluluğu kalktı:
+`Api/Runtime/RuntimeSupervisor` (IHostedService) kalkışta `GET {RuntimeUrl}/health` ile yoklar,
+kapalıysa `runtime/.venv` yorumlayıcısıyla uvicorn'u başlatır, kapanışta öldürür.
+**Sahiplik kuralı:** 5090'da zaten sağlıklı bir runtime varsa ona dokunulmaz ve kapanışta
+durdurulmaz (elle başlatılmış olabilir). Python yoksa Api **yine kalkar**; uyarı günlüğe düşer
+(onarım komutuyla birlikte), UI zaten "Runtime kapalı" der — `Python'u kapatmak derlemeyi ve
+ServiceTests'i bozmaz` kuralı korunur. Sağlık beklemesi startup'ı bloklamaz, arka planda koşar.
+Süreç başlatma Infrastructure'da (`PythonRuntimeProcess`, `WindowsProjectLauncher` gibi), gözetim
+Api'de (`JobWorker`/`RunResumer` gibi); iş kuralı taşımaz (CLAUDE.md §1). uvicorn çıktısı Api
+günlüğüne `runtime: ...` diye akar. Kapatma anahtarı `AITeam:AutoStartRuntime=false`.
+Aynı turda `AITeam:RuntimeUrl` için de loopback denetimi eklendi (CLAUDE.md §3; `ApiUrl`'de vardı).
+
 **UI ikon ve düğme tutarlılığı.** Emoji/glif karışımı bitti: tek renkli SVG ikon seti
 `Ico.vue` (`bell · gear · folder · trash · refresh · clock · check · exit`). Kapat düğmeleri
 tüm panellerde aynı (28×28, ortalı, hover); "+" ortalandı; proje silmede çöp kutusu ikonu;

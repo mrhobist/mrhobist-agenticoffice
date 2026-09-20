@@ -22,26 +22,31 @@ başlatma Windows'a bağlı) · model için Claude Code CLI ya da Codex CLI otur
 
 ## Çalıştırma
 
-Üç süreç de ayrı terminalde, depo kökünden. **Üçü de gerekir** — runtime kapalıyken UI açılır
-ama hiçbir model çağrısı yapılamaz (üst barda uyarı çıkar).
+İki terminal yeter: **Python runtime'ı Api kendisi başlatır** ve kapanırken durdurur.
 
 ```bash
 dotnet run --project src/MrHobist.AITeam.Api
 ```
 
 ```bash
-runtime/.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5090 --app-dir runtime
-```
-
-```bash
 npm --prefix ui install && npm --prefix ui run dev
 ```
 
-| Süreç | Adres |
-|---|---|
-| Api (orkestrasyon, `/openapi/v1.json`) | `127.0.0.1:5080` |
-| Runtime (LLM çağrı katmanı) | `127.0.0.1:5090` |
-| UI (piksel ofis) | `127.0.0.1:3000` |
+| Süreç | Adres | Nasıl kalkar |
+|---|---|---|
+| Api (orkestrasyon, `/openapi/v1.json`) | `127.0.0.1:5080` | elle |
+| Runtime (LLM çağrı katmanı) | `127.0.0.1:5090` | **Api başlatır** |
+| UI (piksel ofis) | `127.0.0.1:3000` | elle |
+
+Runtime'ı ayrı izlemek istersen önce kendin başlat — Api ayakta olanı görür, ona dokunmaz ve
+kapanışta durdurmaz:
+
+```bash
+runtime/.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5090 --app-dir runtime
+```
+
+Otomatik başlatmayı kapatmak için `AITeam:AutoStartRuntime=false`. Python yoksa Api yine kalkar;
+günlüğe uyarı düşer, UI "Runtime kapalı" der, model çağrısı yapılamaz.
 
 Python sanal ortamı yoksa (ya da başka bir makinede/Windows kullanıcısında kurulduğu için
 çalışmıyorsa) tek komut, bu cihazın Python'unu bulup kurar:

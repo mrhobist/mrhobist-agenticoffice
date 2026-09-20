@@ -56,7 +56,7 @@
         </mxCell>
 
         <!-- RUNTIME -->
-        <mxCell id="s-rt" value="&lt;b&gt;runtime/ — Python FastAPI&lt;/b&gt;&lt;br&gt;port 5090 · &lt;b&gt;yalnız LLM çağrısı&lt;/b&gt; · durumsuz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=13;spacingTop=4;" vertex="1" parent="1">
+        <mxCell id="s-rt" value="&lt;b&gt;runtime/ — Python FastAPI&lt;/b&gt;&lt;br&gt;port 5090 · &lt;b&gt;yalnız LLM çağrısı&lt;/b&gt; · durumsuz · süreci &lt;b&gt;Api başlatır&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=13;spacingTop=4;" vertex="1" parent="1">
           <mxGeometry x="1200" y="100" width="340" height="330" as="geometry"/>
         </mxCell>
         <mxCell id="s-rt-1" value="&lt;b&gt;POST /v1/turn&lt;/b&gt; {systemPrompt, messages, provider, model, schema?, tools?, cwd?, progressUrl?} → {text, structured, usage, costUsd, toolUses}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;" vertex="1" parent="1">
@@ -296,14 +296,14 @@
         <mxCell id="o-api-6" value="&lt;b&gt;Scene/&lt;/b&gt;SceneEndpoints (GET scene, SSE events, commands) · &lt;b&gt;SceneEventBus&lt;/b&gt; (ISceneEventPublisher uygulaması)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
           <mxGeometry x="55" y="295" width="490" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="o-api-7" value="&lt;b&gt;Jobs/&lt;/b&gt;JobChannel (sıralı kuyruk, çalışma başına kilit) · JobWorker havuzu (çalışmalar arası paralel) · RunScheduler (IRunScheduler: limit sonrası uyandırma) · RunResumer (açılışta Running → Interrupted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
-          <mxGeometry x="55" y="343" width="490" height="56" as="geometry"/>
+        <mxCell id="o-api-7" value="&lt;b&gt;Jobs/&lt;/b&gt;JobChannel (sıralı kuyruk, çalışma başına kilit) · JobWorker havuzu (çalışmalar arası paralel) · RunScheduler (IRunScheduler: limit sonrası uyandırma) · RunResumer (açılışta Running → Interrupted)&lt;br&gt;&lt;b&gt;Runtime/&lt;/b&gt;RuntimeSupervisor — Api kalkarken runtime'ı başlatır, kapanırken durdurur; 5090 zaten sağlıklıysa dokunmaz (AITeam:AutoStartRuntime)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="343" width="490" height="76" as="geometry"/>
         </mxCell>
         <mxCell id="o-api-8" value="&lt;b&gt;Errors/&lt;/b&gt;ProblemMapping — DomainException / NotFound → Problem Details + errorCode (title/detail ekrana basılmaz)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
-          <mxGeometry x="55" y="407" width="490" height="40" as="geometry"/>
+          <mxGeometry x="55" y="427" width="490" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="o-api-9" value="Uçlar &lt;b&gt;hızlı doğrulama&lt;/b&gt; yapar, uzun işi kanala bırakır, 202 döner. Okuma IRunReader." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontStyle=2;spacingLeft=6;" vertex="1" parent="1">
-          <mxGeometry x="55" y="455" width="490" height="40" as="geometry"/>
+          <mxGeometry x="55" y="475" width="490" height="40" as="geometry"/>
         </mxCell>
 
         <!-- Infrastructure -->
@@ -758,7 +758,7 @@
           <mxGeometry x="40" y="200" width="220" height="80" as="geometry"/>
         </mxCell>
 
-        <mxCell id="y-app" value="&lt;b&gt;runtime/app — FastAPI (127.0.0.1:5090, uvicorn)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+        <mxCell id="y-app" value="&lt;b&gt;runtime/app — FastAPI (127.0.0.1:5090, uvicorn)&lt;/b&gt;&lt;br&gt;süreci .NET Api başlatır ve durdurur (RuntimeSupervisor); elle açılmış runtime'a dokunulmaz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
           <mxGeometry x="340" y="120" width="620" height="560" as="geometry"/>
         </mxCell>
         <mxCell id="y-main" value="&lt;b&gt;main.py&lt;/b&gt; — uçlar; iş mantığı yok: isteği adaptöre verir, sonucu olduğu gibi döner&lt;br&gt;PROVIDERS = {anthropic, openai}; bilinmeyen → 501 runtime.provider_unsupported" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">

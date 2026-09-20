@@ -20,6 +20,9 @@ public sealed record StoragePaths(string ConfigRoot, string RunsRoot)
 
     public string ConfigFile(string fileName) => Path.Combine(ConfigRoot, fileName);
 
+    /// <summary>Depo koku: <c>config/</c>'in ustu. <c>runtime/</c> ve <c>scripts/</c> buradan bulunur.</summary>
+    public string RepoRoot => Path.GetDirectoryName(ConfigRoot)!;
+
     public static StoragePaths Discover(string start, string? configRoot = null, string? runsRoot = null)
     {
         var config = string.IsNullOrWhiteSpace(configRoot) ? FindConfig(start) : Path.GetFullPath(configRoot);

@@ -5,6 +5,7 @@ using MrHobist.AITeam.Api.Errors;
 using MrHobist.AITeam.Api.Jobs;
 using MrHobist.AITeam.Api.Projects;
 using MrHobist.AITeam.Api.Runs;
+using MrHobist.AITeam.Api.Runtime;
 using MrHobist.AITeam.Api.Scene;
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Runs;
@@ -42,7 +43,17 @@ var paths = StoragePaths.Discover(
     builder.Configuration["AITeam:ConfigRoot"],
     builder.Configuration["AITeam:RunsRoot"]);
 builder.Services.AddFileStorage(paths);
-builder.Services.AddPythonRuntime(new Uri(builder.Configuration["AITeam:RuntimeUrl"] ?? "http://127.0.0.1:5090"));
+
+var runtimeUrl = new Uri(builder.Configuration["AITeam:RuntimeUrl"] ?? "http://127.0.0.1:5090");
+if (!runtimeUrl.IsLoopback)
+{
+    throw new InvalidOperationException("AITeam:RuntimeUrl yalniz loopback olabilir (CLAUDE.md §3).");
+}
+
+builder.Services.AddPythonRuntime(runtimeUrl);
+// Api kalkarken runtime da kalkar, kapanirken durur (AITeam:AutoStartRuntime=false ile kapatilir).
+// Zaten ayakta olan runtime'a dokunulmaz; Python yoksa Api yine kalkar, uyari gunluge yazilir.
+builder.Services.AddHostedService<RuntimeSupervisor>();
 builder.Services.AddSingleton<SceneEventBus>();
 builder.Services.AddSingleton<ISceneEventPublisher>(sp => sp.GetRequiredService<SceneEventBus>());
 
