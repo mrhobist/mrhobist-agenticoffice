@@ -97,6 +97,14 @@ hemen ardına çizilir.
 `spriteOff`), `seats`'e koltuk (`monitor` ile), `blocked`'a masanın dikdörtgeni eklenir; bir ajanı
 oturtmak için `agents[].home.seat` o koltuğa çevrilir. Üçüncü ada (`deskC-*`) böyle eklendi; arka plandaki A/B masaları da `background.erase` ile silinip aynı sprite'la yeniden kuruldu, böylece altı masa tek stilde.
 
+## Ajan yerleşimi ve ziyaretçi (2026-09-20)
+
+`agents[]` artık Api tarafından da yazılır (`JsonSceneLayoutStore`): yeni ajan → `sprites[]` içinden kullanılmayan
+ilk karakter (hepsi doluysa sırayla tekrar) + `seats` içinde hiçbir ajanın evi olmayan ilk masa. Masa yoksa
+`home: {}` → **ziyaretçi**: dışarıda başlar, 15–45 s içinde kapıdan girip panoya bakar (6–10 s), çıkar; 60–150 s
+sonra yine. İş alınca (`agent.state working`) hemen girer, panonun önünde durur; bitince çıkar. Koordinatlara ve
+diğer alanlara dokunulmaz. Elle düzenleme serbest; Api yalnız `agents[]`'e ekler/siler.
+
 ## Olaylar
 
 SSE `event:` adı = tür, `data:` = JSON. Api `EventTypes` kümesinde olmayan türü **400** ile
@@ -116,6 +124,7 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `clock.set` | `hour: 0-24 \| null` | pencere manzarasının saati; `null` gerçek yerel saat |
 | `cafe.special` | `text \| null` | kahve panosundaki günün özeli; `null` listeye döner |
 | `workflow.set` | `key` | pano sütunları o iş akışına göre yeniden kurulur (`GET /api/v1/workflows/{key}`); Faz 5'te çalışma başlarken yayımlanır |
+| `scene.reload` | `reason?` | `config/scene.json` değişti (ajan eklendi/silindi/adı değişti, masa eklendi): UI `GET /scene` ile sahneyi yeniden kurar, SSE kopmaz. Api ajan değişikliklerinde yayımlar; elle: `POST /scene/commands` |
 
 **Simülasyon çizimden bağımsızdır.** `requestAnimationFrame` sekme gizliyken durur; simülasyon
 200 ms'lik `setInterval` ile sabit adımlarla (50 ms, en çok 5 s telafi) ayrıca ilerletilir. Sekme

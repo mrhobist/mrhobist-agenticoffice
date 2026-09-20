@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Common;
 using MrHobist.AITeam.Domain;
@@ -82,8 +83,11 @@ public interface IAgentService
     Task<string> ComposePromptAsync(string key, CancellationToken ct);
 }
 
-public sealed class AgentService(IAgentStore store, IWorkflowStore workflows) : IAgentService
+public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, ISceneLayout scene, ISceneEventPublisher events) : IAgentService
 {
+    /// <summary>Sahne yerlesimi degisti: UI yeniden kurar (docs/SCENE.md → scene.reload).</summary>
+    private void PublishReload(string reason) => events.Publish(SceneEventTypes.SceneReload, JsonSerializer.Serialize(new { reason }));
+
     public async Task<IReadOnlyList<AgentListItem>> ListAsync(CancellationToken ct)
     {
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
@@ -109,14 +113,27 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows) : 
         var agent = Compose(
             new Agent(key, key, "", [], null, null, [], null, ""),
             new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort));
-        return await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
+        var detail = await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
+
+        // Sahne: bos sprite + bos masa (yoksa ziyaretci). Ekip md'si yazildiktan sonra; yerlesim hatasi ajani geri almaz.
+        await scene.UpsertAgentAsync(agent.Key, agent.Name, ct).ConfigureAwait(false);
+        PublishReload($"ajan eklendi: {agent.Key}");
+        return detail;
     }
 
     public async Task<AgentDetail> UpdateAsync(string key, UpdateAgentRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
-        return await SaveValidatedAsync(team, Compose(Find(team, key), request), ct).ConfigureAwait(false);
+        var current = Find(team, key);
+        var detail = await SaveValidatedAsync(team, Compose(current, request), ct).ConfigureAwait(false);
+        if (!string.Equals(current.Name, detail.Name, StringComparison.Ordinal))
+        {
+            await scene.UpsertAgentAsync(key, detail.Name, ct).ConfigureAwait(false);
+            PublishReload($"ajan adi degisti: {key}");
+        }
+
+        return detail;
     }
 
     public async Task DeleteAsync(string key, CancellationToken ct)
@@ -141,6 +158,8 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows) : 
         }
 
         await store.DeleteAgentAsync(agent.Key, ct).ConfigureAwait(false);
+        await scene.RemoveAgentAsync(agent.Key, ct).ConfigureAwait(false);
+        PublishReload($"ajan silindi: {agent.Key}");
     }
 
     public async Task<IReadOnlyList<KnowledgeItem>> ListKnowledgeAsync(CancellationToken ct)

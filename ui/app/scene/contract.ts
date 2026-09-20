@@ -115,11 +115,12 @@ export type SceneEvent =
   | { type: 'clock.set'; data: { hour: number | null } }
   | { type: 'cafe.special'; data: { text: string | null } }
   | { type: 'workflow.set'; data: { key: string } }
+  | { type: 'scene.reload'; data: { reason?: string } }
 
 export const EVENT_TYPES: ReadonlyArray<SceneEvent['type']> = [
   'agent.state', 'agent.say', 'agent.goto', 'agent.home', 'meet',
   'board.set', 'board.move', 'run.stage', 'cat', 'door',
-  'agent.leave', 'agent.enter', 'clock.set', 'cafe.special', 'workflow.set',
+  'agent.leave', 'agent.enter', 'clock.set', 'cafe.special', 'workflow.set', 'scene.reload',
 ]
 
 export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'mock'

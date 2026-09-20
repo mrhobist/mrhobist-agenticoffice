@@ -273,7 +273,7 @@ maliyet **eşdeğer** (≈$), asıl koruma **limit eşiği %99** platform bazın
 
 1. **`canAsk`**: ajan → manager sorusu (`ask`/`answer` mesajları var, yürütücü yok; bugün developer yalnız kullanıcıya sorar).
 2. **Faz 5 SSE** `GET /runs/{id}/events`: UI 2 s yoklamayla idare ediyor; çok çalışma açıkken yük artar.
-3. **İş Akışı paneli** (adım ekle/sil/sırala, `PUT /workflows/{key}`); uç var, ekran yok.
+3. ~~İş Akışı paneli~~ → Ekip paneli "Takımlar" sekmesi (2026-09-20): adım ekle/sil/sırala, ajan/tür/ofis rolü; yeni ajan ekleme ve sahneye otomatik yerleşim (ziyaretçi dahil) da geldi.
 4. **Tasarım artıkları**: ray daralması (proje açıkken 72 px), pano için çalışma düzeyinde analiz kartı.
 5. **Açık kararlar** (DOMAIN §Açık kararlar 4–7): `canAsk` hedefi, `officeRole` çakışması, `kind: handoff` ikiliği.
 6. **`ownerId`** JWT claim'inden; LDAP / kullanıcı deposu `IUserDirectory`.

@@ -8,6 +8,21 @@ Kararlar tarihli alınır; "varsayımla ilerlenir" işaretli olanlar kullanıcı
 
 Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akışı belirler. Bugünkü kadro:
 
+### Ekip yönetimi (2026-09-20, kullanıcı kararı)
+
+- **Takım = iş akışı.** "Takım kurmak" bir akış kurmaktır: analist → tasarımcı → developer → … ya da analist →
+  developer → … gibi sıralı adımlar, her adımda bir ajan. Ajanlar tek havuzdur (`config/agents/*.md`); proje bir
+  takım (akış) seçer. Ayrı bir "takım" kavramı **yok** (alternatif — adlandırılmış ajan grubu — reddedildi: akış-ajan
+  eşlemesi ve göç getiriyordu).
+- **Ekip paneli** (üst bar "Ekip", kısayol E, pusulada "Yönet"): Ajanlar sekmesi = havuz, yeni ajan (ad, anahtar,
+  özet, ofis rolleri, sağlayıcı/model/efor, sorabilir, bilgi dosyaları, sistem promptu), silme (akışta ya da
+  `can_ask`'ta kullanılıyorsa 409). Takımlar sekmesi = akış düzenleyici (adım ekle/sil/sırala, tür, ajan, ofis rolü;
+  ilk adım analiz kilitli; `PUT /workflows/{key}`, `default` silinemez).
+- **Sahne yerleşimi.** Yeni ajan `config/scene.json → agents[]`'e otomatik yazılır: kullanılmayan ilk karakter
+  sprite'ı (`sprites[]`, 8 karakter; bitince tekrar) + boş ilk masa (`seats`). Masa kalmadıysa `home: {}` →
+  **ziyaretçi**: ofiste evi yoktur, arada kapıdan girip panoya bakar, çıkar; iş alınca panonun önünde çalışır.
+  Silinince sahneden düşer. Her değişiklikte Api `scene.reload` yayımlar, UI sahneyi yeniden kurar.
+
 | Ajan | Ne yapar | Kod mu prompt mu |
 |---|---|---|
 | `analyst` | Brief'i çözümler; özet, mimari, bağlayıcı kurallar ve bağımlılık sıralı görev listesi üretir. Onay gelmeden plan **değişebilir**, iş açılmaz | prompt |

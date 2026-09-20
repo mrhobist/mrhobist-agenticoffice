@@ -15,6 +15,7 @@
           İşler <b v-if="overview" class="n">{{ overview.total }}</b>
           <span v-if="inboxCount" class="badge" :aria-label="`${inboxCount} iş senden cevap bekliyor`">{{ inboxCount }}</span>
         </button>
+        <button type="button" class="chip action" :class="{ on: teamPanel }" aria-label="Ekip yönetimi" title="Ekip yönetimi (E): ajanlar ve takımlar" @click="toggleTeam">Ekip</button>
         <button type="button" class="chip action" :class="{ on: settings }" aria-label="Ayarlar" title="Ayarlar (S)" @click="toggleSettings">⚙ Ayarlar</button>
         <!-- Bildirimler: senden cevap bekleyenler islerin DISINDA ayri bir alanda (kullanici istegi 2026-09-19). -->
         <span class="bell-wrap">
@@ -94,13 +95,14 @@
         <!-- Ekip pusulasi: sahnede kim ne yapiyor; tiklaninca ajan paneli. Yari saydam, sahneyi kapatmaz. -->
         <!-- Ekip pusulasi: sahnede kim ne yapiyor. Kucultulebilir (kullanici istegi 2026-09-20): kapaliyken yalniz renkli
              noktalar + mesgul sayisi; tiklaninca acilir. Secim localStorage'da kalir. -->
-        <div v-if="!selected && !runPanel && !settings && !jobs && !board" class="compass" :class="{ min: compassMin }" aria-label="Ekip">
+        <div v-if="!selected && !runPanel && !settings && !jobs && !board && !teamPanel" class="compass" :class="{ min: compassMin }" aria-label="Ekip">
           <button type="button" class="compass-head" :title="compassMin ? 'Ekibi göster' : 'Ekibi küçült'" @click="toggleCompass">
             <span class="compass-title">Ekip</span>
             <span v-if="compassMin" class="compass-dots"><span v-for="a in agents" :key="a.key" class="dot" :class="{ busy: a.state !== 'idle' && a.state !== 'done' }" :style="{ background: ROLE_HEX[a.key] }" :title="`${a.name}: ${a.note || STATE_LABEL[a.state as AgentState]}`" /></span>
             <span v-if="compassMin && busyAgents" class="compass-busy">{{ busyAgents }} çalışıyor</span>
             <span class="compass-chev" aria-hidden="true">{{ compassMin ? '▴' : '▾' }}</span>
           </button>
+          <button v-if="!compassMin" type="button" class="compass-manage" title="Ajan ekle, takım kur" @click.stop="toggleTeam">Yönet →</button>
           <template v-if="!compassMin">
             <button v-for="a in agents" :key="a.key" type="button" class="compass-row" :title="teamSummary(a.key)" @click="selectAgent(a.key)">
               <span class="dot" :style="{ background: ROLE_HEX[a.key] }" />
@@ -132,6 +134,9 @@
         <!-- Calisma paneli: yeni brief (projeye bagli), plan onayi, devir notlari. Diger panellerle ayni anda acilmaz. -->
         <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" @close="closeRun" @open="openRun" @jobs="toggleJobs" />
 
+        <!-- Ekip yonetimi: ajan havuzu (ekle/sil) ve takimlar = is akislari (kullanici karari 2026-09-20). -->
+        <TeamPanel v-if="teamPanel" :agents="team" @close="teamPanel = false" @select="k => { teamPanel = false; selectAgent(k) }" @changed="loadTeam(); loadProjects()" />
+
         <!-- Ayarlar: LLM baglantilari (tek tikla giris) ve kullanim. -->
         <SettingsPanel v-if="settings" @close="settings = false" @changed="loadProviders(); limitsBar?.reload()" />
 
@@ -159,6 +164,7 @@ import LimitsBar from '~/components/LimitsBar.vue'
 import JobsPanel from '~/components/JobsPanel.vue'
 import ProjectPanel from '~/components/ProjectPanel.vue'
 import LoginPanel from '~/components/LoginPanel.vue'
+import TeamPanel from '~/components/TeamPanel.vue'
 import { useAuth } from '~/composables/useAuth'
 import type { Hud } from '~/scene/world'
 import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
@@ -330,6 +336,15 @@ const settings = ref(false)
 const jobs = ref(false)
 const bell = ref(false)
 function toggleBell() { bell.value = !bell.value; if (bell.value) void loadOverview() }
+const teamPanel = ref(false)
+function toggleTeam() {
+  if (teamPanel.value) { teamPanel.value = false; return }
+  if (selected.value && !leaveAgent()) return
+  closeOthers()
+  runPanel.value = false
+  teamPanel.value = true
+  void loadTeam()
+}
 const projectPanel = ref(false)
 const projectKey = ref<string | null>(null) // null = yeni proje formu
 
@@ -338,6 +353,7 @@ function closeOthers() {
   board.value = null
   settings.value = false
   jobs.value = false
+  teamPanel.value = false
 }
 
 /** Proje kartini ac ('' → yeni proje formu). Calisma paneli kapanir; ray daralir. */
@@ -372,6 +388,7 @@ function toggleSettings() {
   board.value = null
   runPanel.value = false
   jobs.value = false
+  teamPanel.value = false
   settings.value = true
 }
 
@@ -382,6 +399,7 @@ function toggleJobs() {
   board.value = null
   runPanel.value = false
   settings.value = false
+  teamPanel.value = false
   jobs.value = true
   void loadOverview()
 }
@@ -393,7 +411,7 @@ function leaveAgent(): boolean {
 function selectAgent(key: string | null) {
   if (key === selected.value || !leaveAgent()) return
   selected.value = key
-  if (key) { board.value = null; runPanel.value = false; settings.value = false; jobs.value = false }
+  if (key) { board.value = null; runPanel.value = false; settings.value = false; jobs.value = false; teamPanel.value = false }
 }
 
 function closeAgent() {
@@ -409,6 +427,7 @@ function openBoard(s: BoardSnapshot) {
   runPanel.value = false
   settings.value = false
   jobs.value = false
+  teamPanel.value = false
   board.value = s
 }
 
@@ -434,6 +453,7 @@ function onKey(e: KeyboardEvent) {
   if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
   if (e.key === 'Escape') {
     if (bell.value) bell.value = false
+    else if (teamPanel.value) teamPanel.value = false
     else if (settings.value) settings.value = false
     else if (jobs.value) jobs.value = false
     else if (runPanel.value) runPanel.value = false
@@ -448,6 +468,7 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'n' || e.key === 'N') openProject('')
   if (e.key === 's' || e.key === 'S') toggleSettings()
   if (e.key === 'i' || e.key === 'I') toggleJobs()
+  if (e.key === 'e' || e.key === 'E') toggleTeam()
 }
 function bootData() {
   void loadTeam()
@@ -620,6 +641,8 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .compass-dots .dot { width: 9px; height: 9px; border-radius: 2px; opacity: 0.45; }
 .compass-dots .dot.busy { opacity: 1; box-shadow: 0 0 0 2px rgba(255,255,255,0.15); }
 .compass-busy { font-size: 11px; color: var(--ink-2); }
+.compass-manage { font: inherit; font-size: 11px; font-weight: 700; color: #9cc3ef; background: transparent; border: none; cursor: pointer; text-align: left; padding: 4px 6px 2px; }
+.compass-manage:hover { text-decoration: underline; }
 .compass-row {
   display: grid; grid-template-columns: 9px 1fr auto; column-gap: 8px; align-items: center; text-align: left;
   font: inherit; font-size: 11px; color: var(--ink); background: transparent; border: none; border-radius: 6px; padding: 4px 6px; cursor: pointer;

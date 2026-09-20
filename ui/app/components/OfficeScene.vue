@@ -65,18 +65,29 @@ function onMove(ev: MouseEvent) {
   const p = toWorld(ev)
   const a = world.pick(p)
   world.hovered = a?.key ?? null
-  cv.value!.style.cursor = a || world.hitBoard(p) ? 'pointer' : 'default'
+  world.hoveredLight = a ? null : world.hitLight(p)
+  world.hoveredCat = !a && world.hitCat(p)
+  cv.value!.style.cursor = a || world.hitBoard(p) || world.hoveredLight || world.hoveredCat ? 'pointer' : 'default'
 }
 
 function onLeave() {
-  if (world) world.hovered = null
+  if (!world) return
+  world.hovered = null
+  world.hoveredLight = null
+  world.hoveredCat = false
 }
 
+/** Tiklama sirasi: ajan > kedi > isik > pano (kucuk hedefler once). */
 function onClick(ev: MouseEvent) {
   if (!world) return
   const p = toWorld(ev)
+  const a = world.pick(p)
+  if (a) { emit('select', a.key); return }
+  if (world.hitCat(p)) { world.petCat(); return }
+  const light = world.hitLight(p)
+  if (light) { world.toggleLight(light); return }
   if (world.hitBoard(p)) { emit('board', world.board.snapshot()); return }
-  emit('select', world.pick(p)?.key ?? null)
+  emit('select', null)
 }
 
 /** Panel acikken canli kalsin: dis dunya her 1.5 s'de yeni anlik goruntu alir. */
@@ -93,7 +104,7 @@ function focusAgent(key: string | null) {
   if (key) world.focus(key)
   else world.unfocus()
 }
-defineExpose({ publishBoard, setAttention, focusAgent })
+defineExpose({ publishBoard, setAttention, focusAgent, reboot })
 
 function fit() {
   const el = host.value
@@ -133,6 +144,20 @@ function publishAgents() {
   emit('agents', [...world.agents.values()].map(a => ({ key: a.key, name: a.def.name, state: a.state, note: a.note })))
 }
 
+/** Sahneyi yeniden kur (yerlesim degisti); akis (SSE) kopmaz, yalniz dunya nesnesi yenilenir. */
+async function reboot() {
+  try {
+    const next = await World.create(apiBase)
+    next.onHud = h => emit('hud', h)
+    if (import.meta.dev) (window as unknown as { __world?: World }).__world = next
+    world = next
+    fit()
+    publishAgents()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
 async function boot() {
   error.value = null
   ready.value = false
@@ -147,7 +172,12 @@ async function boot() {
   if (import.meta.dev) (window as unknown as { __world?: World }).__world = world
   ready.value = true
   fit()
-  feed = connectFeed(apiBase, (e: SceneEvent) => { world?.apply(e); publishAgents() }, s => emit('status', s))
+  feed = connectFeed(apiBase, (e: SceneEvent) => {
+    // config/scene.json degisti (ajan eklendi/silindi, masa eklendi): sahne yeniden kurulur, SSE ayni kalir.
+    if (e.type === 'scene.reload') { void reboot(); return }
+    world?.apply(e)
+    publishAgents()
+  }, s => emit('status', s))
   agentsTimer = setInterval(publishAgents, 1500)
   simLast = performance.now()
   clearInterval(simTimer)

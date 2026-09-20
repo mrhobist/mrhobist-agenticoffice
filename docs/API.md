@@ -95,6 +95,7 @@ Değişmezler (400): tam 1 `analyze` ve ilk sırada (`workflow.analyze_count`, `
 - `stage.officeRole` (sahnedeki karakter tipi): `pm | arch | dev | qa | ops | res | gate | designer`.
 - `handoffRole`: ajan anahtarı ya da `null` (devir notu yok).
 - Sahne olayı `workflow.set { key }`: pano sütunları o akışa göre yeniden kurulur (Faz 5'te çalışma başlarken yayımlanır).
+- Sahne olayı `scene.reload { reason? }`: `config/scene.json` değişti, UI sahneyi yeniden kurar. `POST/PUT/DELETE /agents` bunu yayımlar (yeni ajan sahneye yerleşir: boş sprite + boş masa, yoksa ziyaretçi — docs/SCENE.md).
 
 ## Sahne (mevcut)
 

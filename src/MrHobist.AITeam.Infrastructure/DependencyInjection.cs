@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddSingleton<ISettingsStore, JsonSettingsStore>();
         services.AddSingleton<IWorkspaceLocator, WorkspaceLocator>();
         services.AddSingleton<IProjectLauncher, WindowsProjectLauncher>();
+        services.AddSingleton<ISceneLayout, JsonSceneLayoutStore>();
         services.AddSingleton<LimitGuard>();
         services.AddSingleton(RetryPolicy.Default);
         services.AddSingleton<AgentCaller>();

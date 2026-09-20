@@ -19,6 +19,18 @@ export const EFFORT_LABEL: Record<Effort, string> = {
 
 export const EFFORTS = Object.keys(EFFORT_LABEL) as Effort[]
 
+/** Ofis rolleri (Domain Workflow.ValidOfficeRoles ile ayni kume): ajan ve akis adimi bu kumeden secer. */
+export const OFFICE_ROLE_LABEL: Record<string, string> = {
+  pm: 'analiz / PM', arch: 'mimari', dev: 'geliştirme', qa: 'test', ops: 'operasyon / devir', res: 'araştırma', gate: 'karar kapısı', designer: 'tasarım',
+}
+export const OFFICE_ROLES = Object.keys(OFFICE_ROLE_LABEL)
+
+/** Akis adim turleri (Domain StageKind). */
+export const STAGE_KIND_LABEL: Record<string, string> = {
+  analyze: 'analiz (bir kez, plan)', design: 'tasarım (rehberlik)', implement: 'geliştirme (kod yazar)', review: 'inceleme (kabul / red)', handoff: 'devir (not)',
+}
+export const STAGE_KINDS = Object.keys(STAGE_KIND_LABEL)
+
 /** Calisma durumu → kullaniciya donuk metin (docs/DOMAIN.md yasam dongusu). */
 export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
   running: 'çalışıyor',

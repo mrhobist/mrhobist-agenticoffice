@@ -30,10 +30,12 @@ public static class SceneEventTypes
     public const string ClockSet = "clock.set";       // { hour: 0-24 | null }  null = gercek saat
     public const string CafeSpecial = "cafe.special"; // { text: string | null }  null = liste doner
     public const string WorkflowSet = "workflow.set";  // { key }  pano sutunlari o is akisina gore kurulur
+    public const string Light = "light";              // { id, state: on|off }  tiklanabilir isik (mudur odasi sarkiti); mutlak durum
+    public const string SceneReload = "scene.reload";  // { reason }  config/scene.json degisti (ajan eklendi/silindi, masa eklendi): UI sahneyi yeniden kurar
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         AgentState, AgentSay, AgentGoto, AgentHome, Meet, BoardSet, BoardMove, RunStage,
-        Cat, Door, AgentLeave, AgentEnter, ClockSet, CafeSpecial, WorkflowSet,
+        Cat, Door, AgentLeave, AgentEnter, ClockSet, CafeSpecial, WorkflowSet, Light, SceneReload,
     };
 }

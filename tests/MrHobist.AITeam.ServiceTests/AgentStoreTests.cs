@@ -14,7 +14,13 @@ public sealed class AgentStoreTests : IDisposable
 
     private static readonly string[] ShippedRoles = ["analyst", "designer", "developer", "tester", "manager", "organizer"];
 
-    private AgentService Service() => new(new MarkdownAgentStore(_fx.Paths), new JsonWorkflowStore(_fx.Paths));
+    private AgentService Service() => new(new MarkdownAgentStore(_fx.Paths), new JsonWorkflowStore(_fx.Paths), new JsonSceneLayoutStore(_fx.Paths), new NoScene());
+
+    /// <summary>Sahne olaylari testte yayimlanmaz.</summary>
+    private sealed class NoScene : Application.Abstractions.ISceneEventPublisher
+    {
+        public void Publish(string type, string json) { }
+    }
 
     [Fact]
     public async Task Gercek_config_yuklenir()

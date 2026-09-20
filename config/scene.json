@@ -487,6 +487,16 @@
       132
     ]
   ],
+  "sprites": [
+    "shirt-tie",
+    "green-hoodie",
+    "ponytail",
+    "bun",
+    "blond-maroon",
+    "curly-yellow",
+    "hipster",
+    "blue-hoodie"
+  ],
   "agents": [
     {
       "key": "analyst",
