@@ -24,6 +24,8 @@ const api = useApiClient()
 // ------------------------------------------------------------------ calisma sekmeleri
 
 const ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'awaitingApproval', 'paused', 'awaitingInput'])
+/** Sekme sirasi: senden cevap bekleyen → calisan → onay bekleyen → limit → bitmis (yeni → eski). */
+const RANK: Record<RunStatus, number> = { awaitingInput: 0, running: 1, awaitingApproval: 2, paused: 3, failed: 4, interrupted: 4, budgetExceeded: 4, completed: 5, cancelled: 6, policyRejected: 7 }
 const runs = ref<RunSummary[]>([])
 const projects = ref<ProjectCard[]>([])
 const tabRun = ref<string | null>(null) // null = sahne
@@ -39,6 +41,7 @@ const groups = computed(() => {
   return [...byKey.values()].sort((a, b) => a.title.localeCompare(b.title, 'tr'))
 })
 const runDetail = ref<RunDetail | null>(null)
+let picked = false
 let runsTimer: ReturnType<typeof setInterval> | undefined
 let detailTimer: ReturnType<typeof setInterval> | undefined
 
@@ -46,12 +49,10 @@ async function loadRuns() {
   try {
     const [all, ps] = await Promise.all([api.get<RunSummary[]>('/api/v1/runs?limit=50'), api.get<ProjectCard[]>('/api/v1/projects').catch(() => projects.value)])
     projects.value = ps
-    runs.value = all.filter(r => ACTIVE.has(r.status))
-    if (tabRun.value && !runs.value.some(r => r.id === tabRun.value)) {
-      // Sekmesi acik calisma bitti: sekme kalsin, detay son halini gostersin; listeye 'bitti' diye eklenir.
-      const gone = all.find(r => r.id === tabRun.value)
-      if (gone) runs.value = [...runs.value, gone]
-    }
+    // Bitmis isler de sekmede kalir (kullanici: "tamamlanan isler yanlis" — listeden dusuyordu): aktifler once, sonra en yeni bitenler.
+    runs.value = [...all].sort((a, b) => (RANK[a.status] - RANK[b.status]) || b.startedAt.localeCompare(a.startedAt)).slice(0, 12)
+    // Ilk acilista en anlamli sekme kendi secilir: sahne panosu yalniz canli olaylari bilir, yenilemede bos kalir.
+    if (!picked && runs.value.length) { picked = true; selectTab(runs.value[0]!.id) }
   } catch { /* sahne sekmesi her zaman var */ }
 }
 
@@ -73,27 +74,36 @@ onBeforeUnmount(() => { clearInterval(runsTimer); clearInterval(detailTimer) })
 
 const COLUMN_HEX = ['#f3c34a', '#4fa3e0', '#ef6f9a', '#a889e6', '#7cc46b', '#e0995c']
 
-/** Calisma detayindan pano: sutun = devir disi adimlar + Bitti; kart durumu son fazdan. */
+/**
+ * Calisma detayindan pano: sutun = devir disi adimlar + Bitti; kart yeri son fazdan (sunucu BoardTarget ile ayni kural):
+ * Started → o sutunda calisiliyor · Done/Skipped → SONRAKI sutunda sirada, son adimsa Bitti · Rejected → onceki implement
+ * sutununda takildi · Failed → ayni sutunda takildi · faz yok → ilk sutunda sirada.
+ */
 const runBoard = computed<BoardSnapshot | null>(() => {
   const d = runDetail.value
   if (!tabRun.value || !d?.workflowDef) return null
   const stages = d.workflowDef.stages.filter(s => s.kind !== 'analyze' && s.kind !== 'handoff')
   const columns = stages.map((s, i) => ({ id: s.id, title: s.title, hex: COLUMN_HEX[i % COLUMN_HEX.length]! }))
   columns.push({ id: '__done', title: 'Bitti', hex: '#7cc46b' })
-  const lastStage = stages[stages.length - 1]?.id
   const tasks = (d.spec?.tasks ?? []).map((t) => {
     const phases = d.tasks.find(x => x.id === t.id)?.phases ?? []
     const last = phases[phases.length - 1]
     let state: TaskState = 'queued'
     let column = stages[0]?.id ?? '__done'
     if (last) {
+      const i = stages.findIndex(s => s.id === last.stage)
       column = last.stage
       if (last.status === 'started') state = 'active'
-      else if (last.status === 'done') { state = last.stage === lastStage ? 'done' : 'queued'; if (state === 'done') column = '__done' }
-      else if (last.status === 'rejected' || last.status === 'failed') state = 'blocked'
-      else state = 'queued'
+      else if (last.status === 'done' || last.status === 'skipped') {
+        if (i >= 0 && i + 1 < stages.length) { column = stages[i + 1]!.id; state = 'queued' }
+        else { column = '__done'; state = 'done' }
+      } else if (last.status === 'rejected') {
+        state = 'blocked'
+        for (let k = i - 1; k >= 0; k--) if (stages[k]!.kind === 'implement') { column = stages[k]!.id; break }
+      } else state = 'blocked'
     }
-    const lane = column === '__done' ? 'done' : state === 'active' ? 'doing' : state === 'blocked' ? 'review' : 'todo'
+    const kind = stages.find(s => s.id === column)?.kind
+    const lane = column === '__done' ? 'done' : state === 'active' ? 'doing' : (kind === 'review' || state === 'blocked') ? 'review' : 'todo'
     return { id: t.id, title: t.title, stage: column, state, column, lane } as BoardSnapshot['tasks'][number]
   })
   return { columns, tasks }
@@ -163,7 +173,7 @@ function toggle(id: string) {
             <span class="dot" :class="r.status" /> {{ r.label }}
           </button>
         </template>
-        <span v-if="!runs.length" class="sub">aktif çalışma yok</span>
+        <span v-if="!runs.length" class="sub">henüz çalışma yok</span>
         <button v-if="tabRun" type="button" class="open" @click="emit('open', tabRun)">Çalışmayı aç →</button>
       </nav>
       <p v-if="tabRun && runDetail && !runDetail.spec" class="empty tabnote">Bu çalışmanın planı henüz yok ({{ RUN_STATUS_LABEL[runDetail.status] }}); onaylanınca görevler burada açılır.</p>
@@ -265,6 +275,9 @@ h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: upperca
 .tabs .dot.awaitingApproval { background: #f3c34a; }
 .tabs .dot.paused { background: #a889e6; }
 .tabs .dot.awaitingInput { background: #d23b3b; }
+.tabs .dot.completed { background: #7cc46b; }
+.tabs .dot.failed, .tabs .dot.interrupted, .tabs .dot.budgetExceeded { background: #d23b3b; }
+.tabs .dot.cancelled, .tabs .dot.policyRejected { background: #9aa1b3; }
 .tabs .open { margin-left: auto; font-weight: 700; color: #1f5f93; }
 .tabs .sub { font-size: 11px; color: #6b7285; padding: 6px 4px; }
 .tabs .group { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6b4a2b; padding: 0 4px 0 10px; align-self: center; border-left: 2px solid #b9ad92; }

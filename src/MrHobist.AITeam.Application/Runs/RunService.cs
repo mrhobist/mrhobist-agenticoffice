@@ -603,8 +603,47 @@ public sealed class RunService(
         }
     }
 
-    private Task ClosePhaseAsync(Run run, Assignment a, int round, PhaseStatus status, DateTimeOffset started, string? detail, CancellationToken ct)
-        => runs.AppendPhaseAsync(run.Id, new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, status, (DateTimeOffset.UtcNow - started).TotalSeconds, detail), ct);
+    private async Task ClosePhaseAsync(Run run, Assignment a, int round, PhaseStatus status, DateTimeOffset started, string? detail, CancellationToken ct)
+    {
+        await runs.AppendPhaseAsync(run.Id, new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, status, (DateTimeOffset.UtcNow - started).TotalSeconds, detail), ct).ConfigureAwait(false);
+
+        // Pano canli kalsin: faz kapaninca not hedef sutuna gecer (atamada yalniz "active" yayimlaniyordu; bitince yerinde kaliyordu).
+        var wf = await runs.ReadWorkflowAsync(run.Id, ct).ConfigureAwait(false);
+        if (wf is null)
+        {
+            return;
+        }
+
+        var (stage, state) = BoardTarget(wf, a.Stage, status);
+        Publish(SceneEventTypes.BoardMove, new { task = a.Task.Id, stage, state, run = run.Id });
+    }
+
+    /// <summary>
+    /// Faz sonucunun panodaki yeri: Done/Skipped → sonraki sutunda sirada, son adimsa Bitti (<c>done</c>) · Rejected → en yakin
+    /// onceki implement sutununda takildi · Failed → ayni sutunda takildi. UI'daki turetim (KanbanPanel) ayni kurali uygular.
+    /// </summary>
+    private static (string Stage, string State) BoardTarget(Workflow wf, Stage stage, PhaseStatus status)
+    {
+        var stages = wf.TaskStages;
+        var index = stages.ToList().FindIndex(s => s.Id == stage.Id);
+        switch (status)
+        {
+            case PhaseStatus.Done or PhaseStatus.Skipped:
+                return index >= 0 && index + 1 < stages.Count ? (stages[index + 1].Id, "queued") : (stage.Id, "done");
+            case PhaseStatus.Rejected:
+                for (var i = index - 1; i >= 0; i--)
+                {
+                    if (stages[i].Kind == StageKind.Implement)
+                    {
+                        return (stages[i].Id, "blocked");
+                    }
+                }
+
+                return (stage.Id, "blocked");
+            default:
+                return (stage.Id, "blocked");
+        }
+    }
 
     private async Task<Run> AddCostAsync(Run run, decimal cost, CancellationToken ct)
     {

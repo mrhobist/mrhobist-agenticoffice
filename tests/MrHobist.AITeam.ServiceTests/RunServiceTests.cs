@@ -125,9 +125,13 @@ public sealed class RunServiceTests : IDisposable
         var devTurn = (await _store.ReadTurnsAsync(run.Id, "developer", Ct))[0];
         Assert.Equal("Write", Assert.Single(devTurn.ToolUses!).Tool);
 
-        // Sahne: pano kuruldu, organizator developer'a yurudu, gorev sutun degistirdi.
+        // Sahne: pano kuruldu, organizator developer'a yurudu, gorev sutun degistirdi; her faz kapanisinda not hedef sutuna gecer
+        // (gelistirme bitti → test'te sirada; karar bitti → done). Pano canli kalir, yalniz atamada oynamaz.
         var types = _scene.Events.Select(e => e.Type).ToList();
         Assert.Contains(SceneEventTypes.BoardSet, types);
+        var moves = _scene.Events.Where(e => e.Type == SceneEventTypes.BoardMove && e.Json.Contains("\"t1\"", StringComparison.Ordinal)).Select(e => e.Json).ToList();
+        Assert.Contains(moves, j => j.Contains("\"stage\":\"test\"", StringComparison.Ordinal) && j.Contains("\"queued\"", StringComparison.Ordinal));
+        Assert.Contains(moves, j => j.Contains("\"stage\":\"karar\"", StringComparison.Ordinal) && j.Contains("\"done\"", StringComparison.Ordinal));
         Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.Meet && e.Json.Contains("\"organizer\"", StringComparison.Ordinal) && e.Json.Contains("\"developer\"", StringComparison.Ordinal));
         Assert.True(types.IndexOf(SceneEventTypes.BoardSet) < types.IndexOf(SceneEventTypes.BoardMove));
     }
@@ -151,6 +155,8 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal(3, t1.Count(p => p.Stage == "gelistirme" && p.Status == PhaseStatus.Done));
         var feedback = (await _store.ReadMessagesAsync(run.Id, Ct)).Where(m => m.Subject == "review-feedback").ToList();
         Assert.Equal(3, feedback.Count);
+        // Red: not gelistirme sutununa "takildi" olarak doner (pano canli).
+        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.BoardMove && e.Json.Contains("\"stage\":\"gelistirme\"", StringComparison.Ordinal) && e.Json.Contains("\"blocked\"", StringComparison.Ordinal));
         Assert.All(feedback, m => Assert.Equal(("tester", "developer", "t1"), (m.From, m.To, m.Task)));
         // Ikinci developer turu geri bildirimi gordu.
         var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).ToList();
