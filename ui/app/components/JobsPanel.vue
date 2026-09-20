@@ -163,7 +163,12 @@ h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: upperca
 h3 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #4a5068; display: flex; align-items: center; gap: 6px; }
 h3 b { background: #d23b3b; color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11px; }
 .inbox.empty h3 b { background: #7cc46b; color: #1f2430; }
-.x { background: none; border: none; font-size: 22px; cursor: pointer; color: #23283a; line-height: 1; margin-left: auto; padding: 0 4px; }
+/* Kapat: 28x28 tiklama alani, isaret tam ortada, ustune gelince hafif zemin (tum panellerde ayni). */
+.x {
+  margin-left: auto; width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; padding: 0; font-size: 20px; line-height: 1; color: #23283a; cursor: pointer;
+}
+.x:hover { background: rgba(35,40,58,0.10); }
 .sub { font-size: 11px; color: #6b7285; line-height: 1.4; }
 .err { color: #b3261e; font-size: 12px; margin: 0; }
 button { font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px; border: 1px solid #c9c3b3; background: #fff; color: #23283a; }

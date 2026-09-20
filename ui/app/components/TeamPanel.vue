@@ -441,7 +441,12 @@ onMounted(() => { void loadKnowledge(); void loadWorkflows() })
 .panel > header { display: flex; align-items: center; gap: 14px; }
 h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; }
 h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #4a5068; }
-.x { background: none; border: none; font-size: 22px; cursor: pointer; color: #23283a; line-height: 1; margin-left: auto; padding: 0 4px; }
+/* Kapat: 28x28 tiklama alani, isaret tam ortada, ustune gelince hafif zemin (tum panellerde ayni). */
+.x {
+  margin-left: auto; width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; padding: 0; font-size: 20px; line-height: 1; color: #23283a; cursor: pointer;
+}
+.x:hover { background: rgba(35,40,58,0.10); }
 .tabs { display: flex; gap: 2px; }
 .tabs button { font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; background: transparent; color: #4a5068; border: none; border-bottom: 2px solid transparent; padding: 6px 10px; }
 .tabs button.on { color: #23283a; border-bottom-color: #23283a; }

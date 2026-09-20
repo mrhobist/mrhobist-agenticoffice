@@ -470,7 +470,12 @@ h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: upperca
 .timeline details summary { font-size: 11px; cursor: pointer; color: #4a5068; }
 .errtext { border-color: #e0a0a0 !important; color: #7a1f1f; }
 .key { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 3px; }
-.x { background: none; border: none; font-size: 22px; cursor: pointer; color: #23283a; line-height: 1; margin-left: auto; padding: 0 4px; }
+/* Kapat: 28x28 tiklama alani, isaret tam ortada, ustune gelince hafif zemin (tum panellerde ayni). */
+.x {
+  margin-left: auto; width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; padding: 0; font-size: 20px; line-height: 1; color: #23283a; cursor: pointer;
+}
+.x:hover { background: rgba(35,40,58,0.10); }
 
 .msg { margin: 0; font-size: 13px; color: #4a5068; }
 .empty { display: flex; flex-direction: column; gap: 8px; padding: 18px 14px; background: rgba(0,0,0,0.04); border-radius: 6px; }
