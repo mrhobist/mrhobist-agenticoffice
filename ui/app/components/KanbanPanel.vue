@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { World } from '~/scene/world'
 
-/** Sahne motorunun verdigi anlik goruntu; panel yalniz bunu okur, kendi kopyasini tutmaz. */
+/** Sahne motorunun anlik goruntusu. Panel artik bunu cizmez (sekmeler proje bazli); tip, sahnedeki kucuk pano icin app.vue'da kullanilir. */
 export type BoardSnapshot = ReturnType<World['board']['snapshot']>
 </script>
 
@@ -12,62 +12,76 @@ import { INBOX_KIND_LABEL, RUN_STATUS_LABEL } from '~/api/labels'
 import { useApiClient } from '~/api/client'
 
 /**
- * `inbox`: senden bir sey bekleyen isler (GET /runs/overview). Onaysiz plan panoya is acmaz; bekleyen plan burada gorunur.
- * Sekmeler (kullanici karari 2026-09-19): "Sahne" = canli sahne panosu (olay akisi); her aktif calisma icin bir sekme,
- * sutunlar o calismanin dondurulmus akisindan, kartlar plan + fazlardan TURETILIR (GET /runs/{id}, 3 s) — yenilemede kaybolmaz.
+ * Sprint panosu (kullanici karari 2026-09-20): sekmeler **Tümü | proje | proje …** (proje sirasi ve rengiyle; "Sahne" yok).
+ * Sutunlar dort Kanban seridi (akislar projeye gore degisebilir). Kartlar calisma detayindan TURETILIR (GET /runs/{id}, 5 s):
+ * "Tümü"de proje proje gruplu, proje sekmesinde calisma (is) basina gruplu. Sag tarafta sekmeden bagimsiz "Senden bekleniyor"
+ * sutunu: zille ayni kaynak (`inbox`). Iptal / politika reddi kartlari gosterilmez.
  */
 const props = defineProps<{ board: BoardSnapshot; inbox: InboxItem[] }>()
 const emit = defineEmits<{ close: []; open: [runId: string] }>()
 
 const api = useApiClient()
 
-// ------------------------------------------------------------------ calisma sekmeleri
+// ------------------------------------------------------------------ veri: projeler, calismalar, detaylar
 
-const ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'awaitingApproval', 'paused', 'awaitingInput'])
-/** Sekme sirasi: senden cevap bekleyen → calisan → onay bekleyen → limit → bitmis (yeni → eski). */
+/** Panoda gorunmeyen durumlar: gorevleri hic baslamamis ya da vazgecilmis. */
+const HIDDEN: ReadonlySet<RunStatus> = new Set<RunStatus>(['cancelled', 'policyRejected'])
+/** Grup sirasi: senden cevap bekleyen → calisan → onay bekleyen → limit → dusen → bitmis (yeni → eski). */
 const RANK: Record<RunStatus, number> = { awaitingInput: 0, running: 1, awaitingApproval: 2, paused: 3, failed: 4, interrupted: 4, budgetExceeded: 4, completed: 5, cancelled: 6, policyRejected: 7 }
-const runs = ref<RunSummary[]>([])
+
 const projects = ref<ProjectCard[]>([])
-const tabRun = ref<string | null>(null) // null = sahne
+const runs = ref<RunSummary[]>([])
+const details = ref<Record<string, RunDetail>>({})
+/** null = Tümü; aksi halde proje anahtari. */
+const tab = ref<string | null>(null)
+let runsTimer: ReturnType<typeof setInterval> | undefined
+let detailsTimer: ReturnType<typeof setInterval> | undefined
 
-/** Sekmeler proje bazinda gruplu (kullanici istegi 2026-09-19): baslik = proje adi, altinda o projenin aktif isleri. */
-const groups = computed(() => {
-  const byKey = new Map<string, { key: string; title: string; runs: RunSummary[] }>()
-  for (const r of runs.value) {
-    const k = r.project ?? ''
-    if (!byKey.has(k)) byKey.set(k, { key: k, title: projects.value.find(p => p.key === k)?.title ?? (k || 'Projesiz'), runs: [] })
-    byKey.get(k)!.runs.push(r)
-  }
-  const order = new Map(projects.value.map((p, i) => [p.key, i]))
-  return [...byKey.values()].sort((a, b) => (order.get(a.key) ?? 99) - (order.get(b.key) ?? 99))
-})
-const runDetail = ref<RunDetail | null>(null)
-let picked = false
-
-// ------------------------------------------------------------------ "Tumu" (kullanici istegi 2026-09-20): tum projelerin gorevleri tek panoda,
-// akislar farkli olabildigi icin sutunlar dort Kanban seridi; kart rengi = proje rengi.
-const allMode = ref(false)
-const allDetails = ref<Record<string, RunDetail>>({})
-let allTimer: ReturnType<typeof setInterval> | undefined
-async function loadAllDetails() {
-  const ids = runs.value.map(r => r.id)
-  const results = await Promise.all(ids.map(id => api.get<RunDetail>(`/api/v1/runs/${encodeURIComponent(id)}`).catch(() => null)))
-  const next: Record<string, RunDetail> = {}
-  ids.forEach((id, i) => { const d = results[i]; if (d) next[id] = d })
-  allDetails.value = next
+async function loadRuns() {
+  try {
+    const [all, ps] = await Promise.all([api.get<RunSummary[]>('/api/v1/runs?limit=60'), api.get<ProjectCard[]>('/api/v1/projects').catch(() => projects.value)])
+    projects.value = ps
+    runs.value = all.filter(r => !HIDDEN.has(r.status)).sort((a, b) => (RANK[a.status] - RANK[b.status]) || b.startedAt.localeCompare(a.startedAt))
+    if (tab.value && !projects.value.some(p => p.key === tab.value)) tab.value = null
+    void loadDetails()
+  } catch { /* eski liste kalir */ }
 }
-function selectAll() {
-  tabRun.value = null
-  runDetail.value = null
+
+/** Gorunen calismalar: Tümü → hepsi (en yeni 30), proje sekmesi → o projenin calismalari. */
+const visibleRuns = computed(() => (tab.value ? runs.value.filter(r => r.project === tab.value) : runs.value).slice(0, 30))
+
+/** Yalniz gorunen calismalarin detayi cekilir; bitmis calismanin detayi degismez, bir kez yeter. */
+async function loadDetails() {
+  const need = visibleRuns.value.filter(r => !details.value[r.id] || !['completed', 'failed', 'interrupted', 'budgetExceeded'].includes(r.status))
+  const results = await Promise.all(need.map(r => api.get<RunDetail>(`/api/v1/runs/${encodeURIComponent(r.id)}`).catch(() => null)))
+  const next = { ...details.value }
+  need.forEach((r, i) => { const d = results[i]; if (d) next[r.id] = d })
+  details.value = next
+}
+
+function selectTab(key: string | null) {
+  tab.value = key
   selectedId.value = null
-  clearInterval(detailTimer)
-  allMode.value = true
-  void loadAllDetails()
-  clearInterval(allTimer)
-  allTimer = setInterval(() => { void loadAllDetails() }, 5000)
+  void loadDetails()
 }
-function projectColor(key: string): string { return projects.value.find(p => p.key === key)?.color || '#7b87a0' }
-function projectTitle(key: string): string { return projects.value.find(p => p.key === key)?.title ?? key }
+
+onMounted(() => {
+  void loadRuns()
+  runsTimer = setInterval(() => { void loadRuns() }, 5000)
+  detailsTimer = setInterval(() => { void loadDetails() }, 5000)
+})
+onBeforeUnmount(() => { clearInterval(runsTimer); clearInterval(detailsTimer) })
+
+function projectOf(key: string): ProjectCard | undefined { return projects.value.find(p => p.key === key) }
+function projectColor(key: string): string { return projectOf(key)?.color || '#7b87a0' }
+function projectTitle(key: string): string { return projectOf(key)?.title ?? key }
+/** Sekme rozeti: projede senden bekleyen var mi. */
+function pendingOfProject(key: string): number {
+  const ids = new Set(runs.value.filter(r => r.project === key).map(r => r.id))
+  return props.inbox.filter(i => ids.has(i.runId)).length
+}
+
+// ------------------------------------------------------------------ turetim: kartlar ve seritler
 
 type Lane = 'todo' | 'doing' | 'review' | 'done'
 const LANES: ReadonlyArray<{ id: Lane; title: string; hex: string }> = [
@@ -77,102 +91,41 @@ const LANES: ReadonlyArray<{ id: Lane; title: string; hex: string }> = [
   { id: 'done', title: 'Bitti', hex: '#7cc46b' },
 ]
 
-/** Bir calisma detayindan kartlar (sutun + serit). Tek sekme ve "Tumu" ayni turetimi kullanir; sunucu BoardTarget ile ayni kural. */
-function deriveTasks(d: RunDetail): Array<BoardSnapshot['tasks'][number]> {
+interface Card { id: string; task: string; title: string; state: TaskState; lane: Lane; stage: string; run: RunSummary; color: string }
+interface Group { key: string; title: string; color: string; status?: RunStatus; cards: Card[] }
+
+/**
+ * Bir calisma detayindan kartlar (sunucu BoardTarget ile ayni kural): Started → o adimda calisiliyor · Done/Skipped → SONRAKI
+ * adimda sirada, son adimsa Bitti · Rejected → onceki implement adiminda takildi · Failed → ayni adimda takildi · faz yok → ilk adimda sirada.
+ * Serit: Bitti → done; calisiliyor → doing; inceleme adimi ya da takildi → review; kalan → todo.
+ */
+function deriveCards(r: RunSummary, d: RunDetail): Card[] {
   const stages = d.workflowDef?.stages.filter(s => s.kind !== 'analyze' && s.kind !== 'handoff') ?? []
+  const color = projectColor(r.project)
   return (d.spec?.tasks ?? []).map((t) => {
     const phases = d.tasks.find(x => x.id === t.id)?.phases ?? []
     const last = phases[phases.length - 1]
     let state: TaskState = 'queued'
-    let column = stages[0]?.id ?? '__done'
+    let stage = stages[0]?.id ?? '__done'
     if (last) {
       const i = stages.findIndex(s => s.id === last.stage)
-      column = last.stage
+      stage = last.stage
       if (last.status === 'started') state = 'active'
       else if (last.status === 'done' || last.status === 'skipped') {
-        if (i >= 0 && i + 1 < stages.length) { column = stages[i + 1]!.id; state = 'queued' }
-        else { column = '__done'; state = 'done' }
+        if (i >= 0 && i + 1 < stages.length) { stage = stages[i + 1]!.id; state = 'queued' }
+        else { stage = '__done'; state = 'done' }
       } else if (last.status === 'rejected') {
         state = 'blocked'
-        for (let k = i - 1; k >= 0; k--) if (stages[k]!.kind === 'implement') { column = stages[k]!.id; break }
+        for (let k = i - 1; k >= 0; k--) if (stages[k]!.kind === 'implement') { stage = stages[k]!.id; break }
       } else state = 'blocked'
     }
-    const kind = stages.find(s => s.id === column)?.kind
-    const lane: Lane = column === '__done' ? 'done' : state === 'active' ? 'doing' : (kind === 'review' || state === 'blocked') ? 'review' : 'todo'
-    return { id: t.id, title: t.title, stage: column, state, column, lane } as BoardSnapshot['tasks'][number]
+    const kind = stages.find(s => s.id === stage)?.kind
+    const lane: Lane = stage === '__done' ? 'done' : state === 'active' ? 'doing' : (kind === 'review' || state === 'blocked') ? 'review' : 'todo'
+    return { id: `${r.id}:${t.id}`, task: t.id, title: t.title, state, lane, stage, run: r, color }
   })
 }
 
-/** "Tumu" panosu: seritler sutun olur; kart kimligi calisma+gorev (farkli calismalarda t1 cakisir). */
-const allBoard = computed<(BoardSnapshot & { meta: Record<string, { run: string; label: string; project: string; color: string }> }) | null>(() => {
-  if (!allMode.value) return null
-  const tasks: BoardSnapshot['tasks'] = []
-  const meta: Record<string, { run: string; label: string; project: string; color: string }> = {}
-  const order = new Map(projects.value.map((p, i) => [p.key, i]))
-  // Iptal/politika reddi: gorevleri hic baslamamis, "Tumu"yu kalabaliklastirmasin.
-  const sorted = [...runs.value].filter(r => r.status !== 'cancelled' && r.status !== 'policyRejected').sort((a, b) => (order.get(a.project) ?? 99) - (order.get(b.project) ?? 99))
-  for (const r of sorted) {
-    const d = allDetails.value[r.id]
-    if (!d) continue
-    for (const t of deriveTasks(d)) {
-      const id = `${r.id}:${t.id}`
-      tasks.push({ ...t, id, column: t.lane })
-      meta[id] = { run: r.id, label: r.label, project: r.project, color: projectColor(r.project) }
-    }
-  }
-  return { columns: LANES.map(l => ({ id: l.id, title: l.title, hex: l.hex })), tasks, meta }
-})
-let runsTimer: ReturnType<typeof setInterval> | undefined
-let detailTimer: ReturnType<typeof setInterval> | undefined
-
-async function loadRuns() {
-  try {
-    const [all, ps] = await Promise.all([api.get<RunSummary[]>('/api/v1/runs?limit=50'), api.get<ProjectCard[]>('/api/v1/projects').catch(() => projects.value)])
-    projects.value = ps
-    // Bitmis isler de sekmede kalir (kullanici: "tamamlanan isler yanlis" — listeden dusuyordu): aktifler once, sonra en yeni bitenler.
-    runs.value = [...all].sort((a, b) => (RANK[a.status] - RANK[b.status]) || b.startedAt.localeCompare(a.startedAt)).slice(0, 12)
-    // Ilk acilista en anlamli sekme kendi secilir: sahne panosu yalniz canli olaylari bilir, yenilemede bos kalir.
-    if (!picked && runs.value.length) { picked = true; selectTab(runs.value[0]!.id) }
-  } catch { /* sahne sekmesi her zaman var */ }
-}
-
-async function loadDetail() {
-  if (!tabRun.value) return
-  try { runDetail.value = await api.get<RunDetail>(`/api/v1/runs/${encodeURIComponent(tabRun.value)}`) } catch { /* eski detay kalir */ }
-}
-
-function selectTab(id: string | null) {
-  allMode.value = false
-  clearInterval(allTimer)
-  tabRun.value = id
-  runDetail.value = null
-  selectedId.value = null
-  clearInterval(detailTimer)
-  if (id) { void loadDetail(); detailTimer = setInterval(() => { void loadDetail() }, 3000) }
-}
-
-onMounted(() => { void loadRuns(); runsTimer = setInterval(() => { void loadRuns() }, 5000) })
-onBeforeUnmount(() => { clearInterval(runsTimer); clearInterval(detailTimer); clearInterval(allTimer) })
-
-const COLUMN_HEX = ['#f3c34a', '#4fa3e0', '#ef6f9a', '#a889e6', '#7cc46b', '#e0995c']
-
-/**
- * Calisma detayindan pano: sutun = devir disi adimlar + Bitti; kart yeri son fazdan (sunucu BoardTarget ile ayni kural):
- * Started → o sutunda calisiliyor · Done/Skipped → SONRAKI sutunda sirada, son adimsa Bitti · Rejected → onceki implement
- * sutununda takildi · Failed → ayni sutunda takildi · faz yok → ilk sutunda sirada.
- */
-const runBoard = computed<BoardSnapshot | null>(() => {
-  const d = runDetail.value
-  if (!tabRun.value || !d?.workflowDef) return null
-  const stages = d.workflowDef.stages.filter(s => s.kind !== 'analyze' && s.kind !== 'handoff')
-  const columns = stages.map((s, i) => ({ id: s.id, title: s.title, hex: COLUMN_HEX[i % COLUMN_HEX.length]! }))
-  columns.push({ id: '__done', title: 'Bitti', hex: '#7cc46b' })
-  return { columns, tasks: deriveTasks(d) }
-})
-
-/** Gosterilen pano: "Tumu" → projeler arasi seritler; secili calisma → turetilmis; yoksa sahne. */
-const view = computed<BoardSnapshot>(() => allBoard.value ?? runBoard.value ?? props.board)
-function cardMeta(id: string) { return allBoard.value?.meta[id] }
+const cards = computed<Card[]>(() => visibleRuns.value.flatMap(r => (details.value[r.id] ? deriveCards(r, details.value[r.id]!) : [])))
 
 type Filter = 'all' | 'active' | 'blocked' | 'done'
 const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [
@@ -182,36 +135,56 @@ const FILTERS: ReadonlyArray<{ id: Filter; label: string }> = [
   { id: 'done', label: 'bitti' },
 ]
 const TASK_LABEL: Record<TaskState, string> = { queued: 'sırada', active: 'çalışılıyor', blocked: 'takıldı', done: 'bitti' }
-
 const filter = ref<Filter>('all')
 const selectedId = ref<string | null>(null)
 
-const columns = computed(() => view.value.columns.map((c) => {
-  const all = view.value.tasks.filter(t => t.column === c.id)
-  const shown = filter.value === 'all' ? all : all.filter(t => t.state === filter.value)
-  return { ...c, total: all.length, tasks: shown }
+/** Serit → gruplar: Tümü'de proje proje (proje sirasiyla), proje sekmesinde calisma basina (durum sirasiyla). */
+const columns = computed(() => LANES.map((lane) => {
+  const inLane = cards.value.filter(c => c.lane === lane.id)
+  const shown = filter.value === 'all' ? inLane : inLane.filter(c => c.state === filter.value)
+  const groups: Group[] = []
+  if (tab.value === null) {
+    for (const p of projects.value) {
+      const mine = shown.filter(c => c.run.project === p.key)
+      if (mine.length) groups.push({ key: p.key, title: p.title, color: p.color || '#7b87a0', cards: mine })
+    }
+    const orphan = shown.filter(c => !projects.value.some(p => p.key === c.run.project))
+    if (orphan.length) groups.push({ key: '__none', title: 'Projesiz', color: '#7b87a0', cards: orphan })
+  } else {
+    for (const r of visibleRuns.value) {
+      const mine = shown.filter(c => c.run.id === r.id)
+      if (mine.length) groups.push({ key: r.id, title: r.label, color: projectColor(r.project), status: r.status, cards: mine })
+    }
+  }
+  return { ...lane, total: inLane.length, shown: shown.length, groups }
 }))
 
 const filterCount = computed<Record<Filter, number>>(() => ({
-  all: view.value.tasks.length,
-  active: view.value.tasks.filter(t => t.state === 'active').length,
-  blocked: view.value.tasks.filter(t => t.state === 'blocked').length,
-  done: view.value.tasks.filter(t => t.state === 'done').length,
+  all: cards.value.length,
+  active: cards.value.filter(c => c.state === 'active').length,
+  blocked: cards.value.filter(c => c.state === 'blocked').length,
+  done: cards.value.filter(c => c.state === 'done').length,
 }))
 
-/** Pano her 1.5 s yenilenir; secim id ile tutulur, gorev kaybolursa detay kapanir. */
-const selected = computed(() => selectedId.value ? view.value.tasks.find(t => t.id === selectedId.value) ?? null : null)
-const selectedColumn = computed(() => view.value.columns.find(c => c.id === selected.value?.column)?.title ?? '—')
+/** Sekmeye gore gelen kutusu: Tümü → hepsi, proje → o projenin calismalari. */
+const inboxShown = computed(() => {
+  if (tab.value === null) return props.inbox
+  const ids = new Set(runs.value.filter(r => r.project === tab.value).map(r => r.id))
+  return props.inbox.filter(i => ids.has(i.runId))
+})
+
+const selected = computed(() => selectedId.value ? cards.value.find(c => c.id === selectedId.value) ?? null : null)
+function stageTitle(c: Card): string {
+  if (c.stage === '__done') return 'Bitti'
+  return details.value[c.run.id]?.workflowDef?.stages.find(s => s.id === c.stage)?.title ?? c.stage
+}
+function toggle(id: string) { selectedId.value = selectedId.value === id ? null : id }
 
 function fmtWhen(ts: string): string {
   const d = new Date(ts)
   const today = new Date().toDateString() === d.toDateString()
   const time = d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
   return today ? time : `${d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' })} ${time}`
-}
-
-function toggle(id: string) {
-  selectedId.value = selectedId.value === id ? null : id
 }
 </script>
 
@@ -233,56 +206,71 @@ function toggle(id: string) {
         <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
       </header>
 
-      <!-- Sekmeler: Sahne (canli olay akisi) + aktif calismalar (durumdan turetilir). -->
+      <!-- Sekmeler: Tümü | proje | proje … (proje sirasi ve rengi; kullanici karari 2026-09-20). -->
       <nav class="tabs" role="tablist" aria-label="Pano">
-        <button type="button" role="tab" :aria-selected="tabRun === null && !allMode" :class="{ on: tabRun === null && !allMode }" @click="selectTab(null)">Sahne</button>
-        <button type="button" role="tab" class="all" :aria-selected="allMode" :class="{ on: allMode }" title="Tüm projelerin görevleri; renk = proje" @click="selectAll">Tümü</button>
-        <template v-for="g in groups" :key="g.key">
-          <span class="group"><span class="pdot" :style="{ background: projectColor(g.key) }" aria-hidden="true" />{{ g.title }}</span>
-          <button v-for="r in g.runs" :key="r.id" type="button" role="tab" :aria-selected="tabRun === r.id" :class="{ on: tabRun === r.id }" :title="`${g.title} › ${r.label} · ${RUN_STATUS_LABEL[r.status]}`" @click="selectTab(r.id)">
-            <span class="dot" :class="r.status" /> {{ r.label }}
-          </button>
-        </template>
-        <span v-if="!runs.length" class="sub">henüz çalışma yok</span>
-        <button v-if="tabRun" type="button" class="open" @click="emit('open', tabRun)">Çalışmayı aç →</button>
-        <button v-else-if="allMode && selected && cardMeta(selected.id)" type="button" class="open" @click="emit('open', cardMeta(selected.id)!.run)">Çalışmayı aç →</button>
+        <button type="button" role="tab" class="all" :aria-selected="tab === null" :class="{ on: tab === null }" @click="selectTab(null)">Tümü <b class="n">{{ runs.length }}</b></button>
+        <button
+          v-for="p in projects"
+          :key="p.key"
+          type="button"
+          role="tab"
+          :aria-selected="tab === p.key"
+          :class="{ on: tab === p.key }"
+          :title="`${p.title} · ${p.runs} iş`"
+          @click="selectTab(p.key)"
+        >
+          <span class="dot" :style="{ background: p.color || '#7b87a0' }" /> {{ p.title }}
+          <b v-if="pendingOfProject(p.key)" class="ask" :aria-label="`${pendingOfProject(p.key)} senden bekliyor`">{{ pendingOfProject(p.key) }}</b>
+        </button>
+        <span v-if="!projects.length" class="sub">henüz proje yok</span>
+        <button v-if="selected" type="button" class="open" @click="emit('open', selected.run.id)">Çalışmayı aç →</button>
       </nav>
-      <p v-if="tabRun && runDetail && !runDetail.spec" class="empty tabnote">Bu çalışmanın planı henüz yok ({{ RUN_STATUS_LABEL[runDetail.status] }}); onaylanınca görevler burada açılır.</p>
+      <p v-if="!visibleRuns.length" class="empty tabnote">{{ tab ? 'Bu projede gösterilecek iş yok.' : 'Henüz iş yok. Bir projeden "Yeni iş" ile brief gönder; onaylanan plan burada görünür.' }}</p>
 
       <div class="layout">
         <div class="cols">
           <div v-for="c in columns" :key="c.id" class="col">
             <div class="col-h" :style="{ background: c.hex }">
               <span>{{ c.title }}</span>
-              <span class="count">{{ filter === 'all' ? c.total : `${c.tasks.length}/${c.total}` }}</span>
+              <span class="count">{{ filter === 'all' ? c.total : `${c.shown}/${c.total}` }}</span>
             </div>
-            <p v-if="!c.tasks.length" class="empty">{{ c.total ? 'filtreye uyan görev yok' : 'boş' }}</p>
-            <button
-              v-for="t in c.tasks"
-              :key="t.id"
-              type="button"
-              class="card"
-              :class="[t.state, { on: t.id === selectedId }]"
-              :style="{ borderColor: cardMeta(t.id)?.color ?? c.hex }"
-              @click="toggle(t.id)"
-            >
-              <span v-if="cardMeta(t.id)" class="proj" :style="{ background: cardMeta(t.id)!.color }">{{ projectTitle(cardMeta(t.id)!.project) }}</span>
-              <span class="id">{{ cardMeta(t.id) ? `${cardMeta(t.id)!.label} · ${t.id.split(':').pop()}` : t.id }}</span>
-              <span class="title">{{ t.title }}</span>
-              <span class="badge" :class="t.state">{{ TASK_LABEL[t.state] }}</span>
-            </button>
+            <p v-if="!c.groups.length" class="empty">{{ c.total ? 'filtreye uyan görev yok' : 'boş' }}</p>
+            <!-- Grup: Tümü'de proje, proje sekmesinde çalışma. Başlık rengi projenin. -->
+            <section v-for="g in c.groups" :key="g.key" class="group" :style="{ borderColor: g.color }">
+              <header class="group-h" :title="g.title">
+                <span class="gdot" :style="{ background: g.color }" aria-hidden="true" />
+                <span class="gtitle">{{ g.title }}</span>
+                <span v-if="g.status" class="gstatus" :class="g.status">{{ RUN_STATUS_LABEL[g.status] }}</span>
+                <span class="count">{{ g.cards.length }}</span>
+              </header>
+              <button
+                v-for="t in g.cards"
+                :key="t.id"
+                type="button"
+                class="card"
+                :class="[t.state, { on: t.id === selectedId }]"
+                :style="{ borderColor: g.color }"
+                :title="tab === null ? t.run.label : undefined"
+                @click="toggle(t.id)"
+              >
+                <span class="id">{{ t.task }}</span>
+                <span class="title">{{ t.title }}</span>
+                <span v-if="tab === null" class="runlabel">{{ t.run.label }}</span>
+                <span class="badge" :class="t.state">{{ TASK_LABEL[t.state] }}</span>
+              </button>
+            </section>
           </div>
         </div>
 
-        <!-- Bagimsiz alan (kullanici istegi 2026-09-20): senden bekleyenler = zildeki bildirimlerle AYNI kaynak (GET /runs/overview → inbox).
-             Sekmeden bagimsizdir, bos olsa da durur; tiklaninca ilgili calisma acilir. -->
+        <!-- Bagimsiz alan: senden bekleyenler = zildeki bildirimlerle AYNI kaynak (GET /runs/overview → inbox).
+             Tümü'de hepsi, proje sekmesinde o projenin; bos olsa da durur; tiklaninca ilgili calisma acilir. -->
         <aside class="inbox-col" aria-label="Senden bekleniyor">
           <div class="col-h inbox-h">
             <span><span aria-hidden="true">🔔</span> Senden bekleniyor</span>
-            <span class="count" :class="{ alert: inbox.length }">{{ inbox.length }}</span>
+            <span class="count" :class="{ alert: inboxShown.length }">{{ inboxShown.length }}</span>
           </div>
-          <p v-if="!inbox.length" class="empty">Bekleyen yok. Plan onayı, takılma sorusu ya da düşen iş buraya ve zile düşer.</p>
-          <button v-for="i in inbox" :key="i.runId + i.kind + i.ts" type="button" class="item" :class="i.kind" :title="i.detail ?? ''" @click="emit('open', i.runId)">
+          <p v-if="!inboxShown.length" class="empty">Bekleyen yok. Plan onayı, takılma sorusu ya da düşen iş buraya ve zile düşer.</p>
+          <button v-for="i in inboxShown" :key="i.runId + i.kind + i.ts" type="button" class="item" :class="i.kind" :title="i.detail ?? ''" @click="emit('open', i.runId)">
             <span class="item-head"><span class="kind" :class="i.kind">{{ INBOX_KIND_LABEL[i.kind] }}</span><span class="when">{{ fmtWhen(i.ts) }}</span></span>
             <strong>{{ i.label }}</strong>
             <span class="what">{{ i.title }}</span>
@@ -293,14 +281,15 @@ function toggle(id: string) {
       </div>
 
       <dl v-if="selected" class="detail">
-        <div><dt>Görev</dt><dd>{{ selected.id }}</dd></div>
+        <div><dt>Görev</dt><dd>{{ selected.task }}</dd></div>
         <div class="wide"><dt>Başlık</dt><dd>{{ selected.title }}</dd></div>
-        <div><dt>Sütun</dt><dd>{{ selectedColumn }}</dd></div>
+        <div><dt>Çalışma</dt><dd>{{ selected.run.label }} · <span class="gstatus" :class="selected.run.status">{{ RUN_STATUS_LABEL[selected.run.status] }}</span></dd></div>
+        <div><dt>Adım</dt><dd>{{ stageTitle(selected) }}</dd></div>
         <div><dt>Durum</dt><dd><span class="badge" :class="selected.state">{{ TASK_LABEL[selected.state] }}</span></dd></div>
         <button class="x" type="button" aria-label="Detayı kapat" @click="selectedId = null">×</button>
       </dl>
 
-      <p class="hint">Sütunlar seçili iş akışının adımları (<code>config/workflows/</code>); sahnedeki küçük pano bunları dört Kanban şeridine katlar. Onaylanmamış plan panoya iş açmaz; onay bekleyenler üstteki şeritte durur. <kbd>Esc</kbd> ya da <kbd>B</kbd> kapatır.</p>
+      <p class="hint">Şeritler dört Kanban adımı; her projenin akış adımları bunlara katlanır (Bitti = akışın son adımı tamamlandı). Onaylanmamış plan panoya iş açmaz; bekleyen onay sağdaki sütunda ve zilde. <kbd>Esc</kbd> ya da <kbd>B</kbd> kapatır.</p>
     </section>
   </div>
 </template>
@@ -366,9 +355,14 @@ h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: upperca
 .tabs .dot.cancelled, .tabs .dot.policyRejected { background: #9aa1b3; }
 .tabs .open { margin-left: auto; font-weight: 700; color: #1f5f93; }
 .tabs .sub { font-size: 11px; color: #6b7285; padding: 6px 4px; }
-.tabs .group { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6b4a2b; padding: 0 4px 0 10px; align-self: center; border-left: 2px solid #b9ad92; }
 .tabnote { margin: 0 0 10px; }
-.cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 1fr); gap: 10px; }
+.cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; min-width: 0; }
+/* Dar pencere: bekleyenler sutunu seritlerin altina iner, seritler ikiser. */
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inbox-col { min-height: 0; }
+}
 .col { background: rgba(0,0,0,0.04); border-radius: 6px; padding: 6px; min-height: 160px; }
 .col-h {
   display: flex; justify-content: space-between; align-items: center;
@@ -410,6 +404,18 @@ h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: upperca
 .hint { margin: 12px 0 0; font-size: 11px; color: #6b7285; }
 code, kbd { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
 .tabs .all { font-weight: 700; color: #6b4a2b; }
-.tabs .group .pdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-.card .proj { grid-column: 1 / span 2; justify-self: start; display: inline-block; font-size: 9px; font-weight: 700; color: #fff; padding: 1px 6px; border-radius: 999px; margin-bottom: 3px; text-shadow: 0 1px 1px rgba(0,0,0,0.35); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabs .n { font-weight: 700; margin-left: 2px; color: #6b7285; }
+.tabs .ask { background: #d23b3b; color: #fff; border-radius: 999px; padding: 0 6px; font-size: 10px; margin-left: 2px; }
+.group { border-left: 3px solid; border-radius: 4px; padding: 4px 4px 2px 6px; margin-bottom: 8px; background: rgba(255,255,255,0.35); }
+.group-h { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; color: #4a5068; margin-bottom: 5px; min-width: 0; }
+.group-h .gdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.group-h .gtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.group-h .count { background: rgba(0,0,0,0.06); }
+.gstatus { font-size: 9px; font-weight: 700; padding: 0 6px; border-radius: 999px; background: #e5e7ee; color: #4a5068; white-space: nowrap; }
+.gstatus.running { background: #d8ebfa; color: #1f5f93; }
+.gstatus.awaitingApproval { background: #f3c34a; color: #3a2f12; }
+.gstatus.awaitingInput, .gstatus.failed, .gstatus.interrupted, .gstatus.budgetExceeded { background: #fadada; color: #9c1f1f; }
+.gstatus.paused { background: #efe6ff; color: #5b3fa0; }
+.gstatus.completed { background: #dcf1d3; color: #2f6b23; }
+.card .runlabel { grid-column: 1 / span 2; font-size: 10px; color: #6b7285; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

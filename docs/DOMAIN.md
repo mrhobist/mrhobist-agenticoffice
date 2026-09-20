@@ -152,7 +152,9 @@ Kod (`Application/Runs/Dispatcher`), her tetiklemede (onay, bir adımın bitişi
 - **Bütçe.** `POST /runs { maxCostUsd }` (boş = sınırsız; ≤0 → 400 `run.budget_invalid`). Her LLM turundan
   sonra toplam maliyet sınırla karşılaştırılır; aşılınca çalışma **`BudgetExceeded`** ile durur, neden
   `detail` ve `subject: error` notunda (CLAUDE.md §4: uyarıyla geçmez). Tekrar ile sürdürülebilir.
-- **Görünürlük.** Büyük Kanban panosunda sekmeler: **Sahne** (canlı olay akışı) + her aktif çalışma;
+- **Görünürlük.** Büyük Kanban panosunda sekmeler **Tümü | proje | proje …** (2026-09-20 kullanıcı kararı; "Sahne"
+  sekmesi kaldırıldı): dört Kanban şeridi, kartlar çalışma detayından türetilir; Tümü'de proje proje, proje sekmesinde
+  çalışma başına gruplu. Eski tarif: sekmeler Sahne + her aktif çalışma;
   çalışma sekmesinin sütunları dondurulmuş akıştan, kartları plan + fazlardan türetilir (yenilemede kaybolmaz).
   Ajan panelinde **Özellikler / İşler** sekmeleri: İşler, ajanın çalışma başına her turunu (gönderilen metin,
   çıktı, o anki sağlayıcı/model/efor), notlarını ve fazlarını gösterir (`GET /agents/{key}/work`).
