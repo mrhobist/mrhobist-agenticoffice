@@ -11,7 +11,7 @@ namespace MrHobist.AITeam.Infrastructure;
 
 public static class DependencyInjection
 {
-    /// <summary>Dosya tabanli depo + uzerine oturan uygulama servisleri. Iki host da ayni kaydi kullanir.</summary>
+    /// <summary>Dosya tabanli depo + uzerine oturan uygulama servisleri. Api ve ServiceTests ayni kaydi kullanir.</summary>
     public static IServiceCollection AddFileStorage(this IServiceCollection services, StoragePaths paths)
     {
         ArgumentNullException.ThrowIfNull(services);

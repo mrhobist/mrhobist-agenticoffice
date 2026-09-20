@@ -19,6 +19,7 @@ public sealed class RunServiceTests : IDisposable
     private readonly StorageFixture _fx = new();
     private readonly FakeRuntime _runtime = new();
     private readonly FakeScene _scene = new();
+    private readonly FakeScheduler _scheduler = new();
     private readonly JsonlRunStore _store;
     private readonly RunReader _reader;
     private readonly JsonProjectStore _projects;
@@ -32,7 +33,7 @@ public sealed class RunServiceTests : IDisposable
         _reader = new RunReader(_store);
         _projects = new JsonProjectStore(_fx.Paths);
         _projects.SaveAsync(new Project("test", "Test", "", "default", "projects/test", Project.LocalOwner, DateTimeOffset.UtcNow), Ct).GetAwaiter().GetResult();
-        _svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene, new WorkspaceLocator(_fx.Paths));
+        _svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
     }
 
     public void Dispose() => _fx.Dispose();
@@ -230,13 +231,14 @@ public sealed class RunServiceTests : IDisposable
         var workflows = new JsonWorkflowStore(_fx.Paths);
         var settings = new JsonSettingsStore(_fx.Paths);
         var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, new LimitGuard(_runtime, settings));
-        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths));
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
 
         _runtime.LimitPercent = 99.5; // esik varsayilan %99
         var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
         run = await svc.AnalyzeAsync(run.Id, Ct);
         Assert.Equal(RunStatus.Paused, run.Status);
         Assert.NotNull(run.ResumeAt);
+        Assert.Equal(RunStep.Analyze, run.Step); // kaldigi adim kayitta; Detail yalniz gorunum
         Assert.StartsWith("analiz", run.Detail, StringComparison.Ordinal);
         Assert.Empty(_runtime.Calls); // cagri hic yapilmadi
         Assert.True(run.IsRetryable);
@@ -246,8 +248,8 @@ public sealed class RunServiceTests : IDisposable
         // Esik yukseltilirse (ayar) cagri gecer; otomatik surdurme (LimitResumer yolu) sayaci artirmaz, kullanici tekrari sayilmaz.
         await settings.SaveAsync(new Domain.Settings.AppSettings(new Dictionary<Provider, int> { [Provider.Anthropic] = 100 }), Ct);
         var retry = await svc.ResumeAsync(run.Id, Ct);
-        Assert.Equal((RetryStep.Analyze, RunStatus.Running, 0), (retry.Step, retry.Run.Status, retry.Run.Retries));
-        Assert.Null(retry.Run.ResumeAt);
+        Assert.Equal((RunStep.Analyze, RunStatus.Running, 0), (retry.Step, retry.Status, retry.Retries));
+        Assert.Null(retry.ResumeAt);
         Assert.Contains(await _store.ReadMessagesAsync(run.Id, Ct), m => m.Subject == "limit-resume" && m.From == "organizer");
         Assert.DoesNotContain(await _store.ReadMessagesAsync(run.Id, Ct), m => m.Subject == "retry");
         run = await svc.AnalyzeAsync(run.Id, Ct);
@@ -333,7 +335,7 @@ public sealed class RunServiceTests : IDisposable
         var agents = new MarkdownAgentStore(_fx.Paths);
         var workflows = new JsonWorkflowStore(_fx.Paths);
         var caller = new AgentCaller(agents, _runtime, _store, _scene, new RetryPolicy(3, TimeSpan.Zero));
-        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths));
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
 
         _runtime.FailTransientTimes = 2; // ilk iki deneme 503, ucuncu gecer
         var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
@@ -372,11 +374,12 @@ public sealed class RunServiceTests : IDisposable
 
         Assert.Equal(1, await _svc.MarkInterruptedAsync(Ct));
         var phases = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
-        Assert.Equal((PhaseStatus.Failed, "süreç yeniden başladı"), (phases[^1].Status, phases[^1].Detail));
+        Assert.Equal((PhaseStatus.Failed, PhaseCause.Interrupted, "süreç yeniden başladı"), (phases[^1].Status, phases[^1].Cause, phases[^1].Detail));
+        Assert.True(phases[^1].IsSystemFailure);
 
         // Yeniden dene → dagitim ayni adimi (gelistirme) 1. tur olarak yeniden kosar; sistem fazi tur sayilmaz.
         var retry = await _svc.RetryAsync(run.Id, Ct);
-        Assert.Equal(RetryStep.Dispatch, retry.Step);
+        Assert.Equal(RunStep.Dispatch, retry.Step);
         run = await _svc.DispatchAsync(run.Id, Ct);
         Assert.Equal(RunStatus.Completed, run.Status);
         phases = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
@@ -390,8 +393,47 @@ public sealed class RunServiceTests : IDisposable
         await _store.AppendPhaseAsync(other.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Started), Ct);
         await _svc.CancelAsync(other.Id, Ct);
         var cancelled = await _store.ReadPhasesAsync(other.Id, "t1", Ct);
-        Assert.Equal(PhaseStatus.Failed, cancelled[^1].Status);
+        Assert.Equal((PhaseStatus.Failed, PhaseCause.Cancelled), (cancelled[^1].Status, cancelled[^1].Cause));
         Assert.StartsWith("iptal", cancelled[^1].Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Ajani_dolu_calisma_bekler_ajan_bosalinca_yeniden_dagitima_konur()
+    {
+        // A: onayli plan + developer'da Started faz (LLM cagrisi suruyor gibi). B: ayni ekip, dagitima girer.
+        var a = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief a"), Ct);
+        await _svc.AnalyzeAsync(a.Id, Ct);
+        await _svc.BeginApproveAsync(a.Id, Ct);
+        await _store.AppendPhaseAsync(a.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Started), Ct);
+
+        var b = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief b"), Ct);
+        await _svc.AnalyzeAsync(b.Id, Ct);
+        await _svc.BeginApproveAsync(b.Id, Ct);
+        var implementCalls = _runtime.Calls.Count(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true);
+        b = await _svc.DispatchAsync(b.Id, Ct);
+
+        // B Running kalir ama isi kuyrukta degil: WaitingSince isli, developer'a cagri yok; A'nin adimi kapanmadi, kimse uyandirilmadi.
+        Assert.Equal(RunStatus.Running, b.Status);
+        Assert.NotNull(b.WaitingSince);
+        Assert.Contains("ajan bekleniyor", b.Detail, StringComparison.Ordinal);
+        Assert.Equal(implementCalls, _runtime.Calls.Count(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true));
+        Assert.Empty(_scheduler.Scheduled);
+
+        // Yeniden baslatma: bekleyen calisma Interrupted OLMAZ, dagitim kuyruga geri girer (ortada yarim LLM cagrisi yok).
+        Assert.Equal(1, await _svc.MarkInterruptedAsync(Ct)); // yalniz A (Started fazi vardi)
+        Assert.Equal(RunStatus.Running, (await _reader.GetAsync(b.Id, Ct)).Status);
+        Assert.Equal((b.Id, RunStep.Dispatch), Assert.Single(_scheduler.Scheduled));
+        _scheduler.Scheduled.Clear();
+
+        // A'yi yeniden baslat ve iptal et: developer bosaldi → B dagitima kondu (uyandirma noktasi RunService).
+        var retryA = await _svc.RetryAsync(a.Id, Ct);
+        Assert.Equal(RunStatus.Running, retryA.Status);
+        await _svc.CancelAsync(a.Id, Ct);
+        Assert.Equal((b.Id, RunStep.Dispatch), Assert.Single(_scheduler.Scheduled));
+
+        b = await _svc.DispatchAsync(b.Id, Ct);
+        Assert.Equal(RunStatus.Completed, b.Status);
+        Assert.Null(b.WaitingSince);
     }
 
     [Fact]
@@ -448,9 +490,9 @@ public sealed class RunServiceTests : IDisposable
 
         // Yeniden dene: dusen calisma analizden surer (Running); onay beklerken iptal edilen onaya doner, kuyruga is girmez.
         var retryB = await _svc.RetryAsync(b.Id, Ct);
-        Assert.Equal((RetryStep.Analyze, RunStatus.Running), (retryB.Step, retryB.Run.Status));
+        Assert.Equal((RunStep.Analyze, RunStatus.Running), (retryB.Step, retryB.Status));
         var retryA = await _svc.RetryAsync(a.Id, Ct);
-        Assert.Equal(RunStatus.AwaitingApproval, retryA.Run.Status);
+        Assert.Equal((RunStep.Approval, RunStatus.AwaitingApproval), (retryA.Step, retryA.Status));
 
         o = await _reader.GetOverviewAsync(Ct);
         Assert.Equal((4, 1, 1, 1, 1), (o.Total, o.Running, o.AwaitingApproval, o.Failed, o.Cancelled)); // failed = c (PolicyRejected), cancelled = d
@@ -629,5 +671,13 @@ public sealed class RunServiceTests : IDisposable
         public List<(string Type, string Json)> Events { get; } = [];
 
         public void Publish(string type, string json) => Events.Add((type, json));
+    }
+
+    /// <summary>Is kanali yerine: RunService'in kuyruga koydugu (calisma, adim) ciftlerini kaydeder.</summary>
+    private sealed class FakeScheduler : IRunScheduler
+    {
+        public List<(string RunId, RunStep Step)> Scheduled { get; } = [];
+
+        public void Schedule(string runId, RunStep runStep) => Scheduled.Add((runId, runStep));
     }
 }

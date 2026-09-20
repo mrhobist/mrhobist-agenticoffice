@@ -143,18 +143,44 @@ public sealed record Workflow(string Key, string Title, int MaxReviewRounds, str
         }
     }
 
-    /// <summary>Bir review adiminin reddettigi isin geri donecegi implement adimi.</summary>
+    /// <summary>Bir review adiminin reddettigi isin geri donecegi implement adimi; <see cref="Validate"/> varligini garanti eder.</summary>
     public Stage ImplementBefore(Stage review)
     {
-        var index = Stages.ToList().IndexOf(review);
-        for (var i = index - 1; i >= 0; i--)
+        ArgumentNullException.ThrowIfNull(review);
+        return ImplementBefore(Stages, review.Id)
+            ?? throw new DomainException(ErrorCodes.WorkflowReviewBeforeImplement, $"{review.Id}: oncesinde implement adimi yok.");
+    }
+
+    /// <summary>
+    /// Geri donus kuralinin TEK kaynagi (docs/DOMAIN.md → Geri donus kurali): verilen adimdan geriye en yakin
+    /// <c>implement</c> adimi; yoksa null. Dagitici (Dispatcher.NextStage) ve pano hedefi (RunService) buradan okur.
+    /// </summary>
+    public static Stage? ImplementBefore(IReadOnlyList<Stage> stages, string stageId)
+    {
+        ArgumentNullException.ThrowIfNull(stages);
+        for (var i = IndexOf(stages, stageId) - 1; i >= 0; i--)
         {
-            if (Stages[i].Kind == StageKind.Implement)
+            if (stages[i].Kind == StageKind.Implement)
             {
-                return Stages[i];
+                return stages[i];
             }
         }
 
-        throw new DomainException(ErrorCodes.WorkflowReviewBeforeImplement, $"{review.Id}: oncesinde implement adimi yok.");
+        return null;
+    }
+
+    /// <summary>Adimin listedeki sirasi; yoksa -1.</summary>
+    public static int IndexOf(IReadOnlyList<Stage> stages, string stageId)
+    {
+        ArgumentNullException.ThrowIfNull(stages);
+        for (var i = 0; i < stages.Count; i++)
+        {
+            if (stages[i].Id == stageId)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 }

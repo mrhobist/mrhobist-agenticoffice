@@ -165,7 +165,8 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 
 `RunsOverview.awaitingInput`: takılıp seçim bekleyen çalışma sayısı (sona eklendi; `awaitingApproval` yalnız plan onayı).
 `RunSummary` ek alanlar: `question` (`awaitingInput`'ta `{ ts, agent, text, options: [{ id, label, detail, needsNote }], task, stage, context }`),
-`resumeAt` (limit beklemesi). `Turn` ek alanlar: `toolUses: [{ tool, target }]`, `turns` (ajan döngüsünün iç tur sayısı).
+`resumeAt` (limit beklemesi), `step` (`analyze | approval | dispatch`: kaldığı adım, "yeniden dene" buradan sürer),
+`waitingSince` (`running` ama hazır görevin ajanı başka çalışmada dolu; sunucu bir adım kapanınca kendisi yeniden dağıtır). `Turn` ek alanlar: `toolUses: [{ tool, target }]`, `turns` (ajan döngüsünün iç tur sayısı).
 `totalCostUsd` **eşdeğer** maliyettir (docs/DOMAIN.md → Bütçe ve limit).
 
 ```jsonc
@@ -196,7 +197,8 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
   `running | completed | failed | interrupted | budgetExceeded | policyRejected | awaitingApproval | paused | cancelled`.
 - `InboxKind` (adıyla): `approval` = soru, plan onayı (onayla / revize et) · `decision` = karar, çalışma durdu (yeniden dene / iptal) ·
   `question` = bir ajan kullanıcıya `ask` yazdı ve `ref`'i eşleşen `answer` yok (bugün üretilmiyor; sözleşme hazır).
-- `Phase`: `{ ts, task, stage, stageTitle, kind, agent, round, status: started|done|rejected|failed|skipped, durationS, detail }`.
+- `Phase`: `{ ts, task, stage, stageTitle, kind, agent, round, status: started|done|rejected|failed|skipped, durationS, detail, cause? }`.
+  `cause` (`agent | limit | cancelled | interrupted`, eski kayıtlarda yok): sistem kaynaklı `failed` fazlar tur sayılmaz.
 - `Message`: `{ ts, kind: ask|answer|handoff|note, from, to, body, task, stage, ref, subject }`. Plan revize notu
   `from: "user", to: "analyst", kind: "note", subject: "plan-revision"`. Bir adım hata ile bitince
   `from: <ajan>, to: "user", kind: "note", subject: "error", body: <neden>` yazılır ("takıldı" tek başına bilgi değildir).

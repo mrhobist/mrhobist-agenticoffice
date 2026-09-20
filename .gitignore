@@ -18,10 +18,16 @@ node_modules/
 .output/
 dist/
 
-# Sirlar
+# Sirlar (onleyici: bugun boyle dosya yok)
 .env
-.env.local
+.env.*
 appsettings.Development.json
+appsettings.*.local.json
+credentials.json
+*.pfx
+*.pem
+*.key
+.claude/settings.local.json
 
 # Calisma ciktilari (dosya tabanli depo)
 /runs/

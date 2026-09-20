@@ -97,8 +97,6 @@ public interface IAgentService
     /// <summary>Bir ajanin <c>includes</c>'inde geciyorsa <c>knowledge.in_use</c>.</summary>
     Task DeleteKnowledgeAsync(string key, CancellationToken ct);
 
-    /// <summary>Modele fiilen giden metin: govde + alt md'ler. RunService bunu kullanir.</summary>
-    Task<string> ComposePromptAsync(string key, CancellationToken ct);
 }
 
 public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, ISceneLayout scene, ISceneEventPublisher events) : IAgentService
@@ -242,11 +240,6 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         return team.Knowledge.Values.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => new KnowledgeItem(k.Key, k.Title, k.Body)).ToList();
     }
 
-    public async Task<string> ComposePromptAsync(string key, CancellationToken ct)
-    {
-        var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
-        return Find(team, key).ComposePrompt(team.Knowledge);
-    }
 
     /// <summary>Istekten ajan kaydi: metinler kirpilir, bos model/can_ask null olur.</summary>
     private static Agent Compose(Agent current, UpdateAgentRequest request) => current with

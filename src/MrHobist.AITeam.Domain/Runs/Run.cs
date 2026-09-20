@@ -51,6 +51,31 @@ public enum PhaseStatus
     Skipped,
 }
 
+/// <summary>
+/// Fazi kim kapatti (docs/DOMAIN.md → Yarim kalan adim). <see cref="Agent"/> ajanin kendi sonucu; digerleri SISTEM kaynaklidir
+/// (limit beklemesi, kullanici iptali, surec yeniden basladi): tur sayilmaz, tavana girmez. Eski kayitlarda alan yok = <see cref="Agent"/>.
+/// JSON'da adiyla tasinir; yeni uye SONA eklenir (CLAUDE.md §5).
+/// </summary>
+public enum PhaseCause
+{
+    Agent,
+    Limit,
+    Cancelled,
+    Interrupted,
+}
+
+/// <summary>
+/// Calismanin kaldigi adim: "yeniden dene" / limit surdurmesi buradan surer (docs/DOMAIN.md → Yasam dongusu).
+/// <see cref="Analyze"/> analist turu · <see cref="Approval"/> plan onay bekliyor (kuyruga is girmez) · <see cref="Dispatch"/> dagitim.
+/// Eski kayitlarda alan yok: plan yoksa analiz, varsa dagitim sayilir. JSON'da adiyla tasinir; yeni uye SONA eklenir.
+/// </summary>
+public enum RunStep
+{
+    Analyze,
+    Approval,
+    Dispatch,
+}
+
 public enum MessageKind
 {
     Ask,
@@ -76,6 +101,9 @@ public static class SensitivityPolicy
 /// tanimin kendisi <c>runs/{Id}/workflow.json</c> olarak dondurulur (docs/DOMAIN.md). <see cref="Detail"/>
 /// durumun insan icin kisa aciklamasi (Paused: hangi adim, Failed: neden). <see cref="MaxCostUsd"/> asildiginda
 /// calisma <see cref="RunStatus.BudgetExceeded"/> ile durur (CLAUDE.md §4). <see cref="Retries"/> "Yeniden dene" sayisi.
+/// <see cref="Step"/> kaldigi adim (durum bilgisi; <see cref="Detail"/> yalniz gorunum metnidir, karar ona bakmaz).
+/// <see cref="WaitingSince"/> dolu ise calisma Running'dir ama hazir gorevin ajani baska calismada doludur: is kuyrukta degil,
+/// bir adim kapaninca RunService onu yeniden dagitima koyar (docs/DOMAIN.md → Paralellik).
 /// </summary>
 public sealed record Run(
     string Id,
@@ -93,7 +121,9 @@ public sealed record Run(
     string Project = "",
     string OwnerId = "local",
     UserQuestion? Question = null,
-    DateTimeOffset? ResumeAt = null)
+    DateTimeOffset? ResumeAt = null,
+    RunStep? Step = null,
+    DateTimeOffset? WaitingSince = null)
 {
     /// <summary>
     /// Kullanicinin durdurabilecegi ya da "kapat" diyebilecegi durumlar. Dusen calismalar (Failed/Interrupted/BudgetExceeded)
@@ -149,7 +179,12 @@ public sealed record Phase(
     int Round,
     PhaseStatus Status,
     double? DurationS = null,
-    string? Detail = null);
+    string? Detail = null,
+    PhaseCause? Cause = null)
+{
+    /// <summary>Sistemden dogan faz (limit, iptal, kesinti): ajanin hatasi degil; tur sayilmaz, tavana girmez.</summary>
+    public bool IsSystemFailure => Status == PhaseStatus.Failed && Cause is PhaseCause.Limit or PhaseCause.Cancelled or PhaseCause.Interrupted;
+}
 
 /// <summary>Bir ajanin tek bir LLM cagrisi: <c>runs/{id}/conversations/{agent}.jsonl</c>. Tam metinler ayri alanlarda.</summary>
 public sealed record Turn(

@@ -2,7 +2,7 @@ namespace MrHobist.AITeam.Application.Abstractions;
 
 /// <summary>
 /// Canli sahneye olay yayimlar. Sahne kozmetiktir: yayin kalici degildir, abone yoksa olay dusur.
-/// Bugun <c>POST /api/v1/scene/commands</c> yazar; Faz 4-5'te <c>RunService</c> ayni kapidan yazar.
+/// <c>RunService</c>, <c>AgentCaller</c>, <c>ProgressRegistry</c> ve <c>POST /api/v1/scene/commands</c> ayni kapidan yazar.
 /// Uygulamasi host tarafindadir (Api: bellek ici SSE kanali).
 /// </summary>
 public interface ISceneEventPublisher

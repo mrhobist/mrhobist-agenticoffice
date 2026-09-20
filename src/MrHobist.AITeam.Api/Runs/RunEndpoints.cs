@@ -1,11 +1,13 @@
 using MrHobist.AITeam.Api.Jobs;
+using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Runs;
+using MrHobist.AITeam.Domain.Runs;
 
 namespace MrHobist.AITeam.Api.Runs;
 
 /// <summary>
 /// Calisma uclari (docs/API.md → Calismalar). Okuma <see cref="IRunReader"/>; yazma hizli dogrulanir
-/// (400/409 hemen), uzun is (analiz, dagitim) <see cref="JobChannel"/>'a birakilir ve 202 donulur.
+/// (400/409 hemen), uzun is (analiz, dagitim) <see cref="IRunScheduler"/> ile is kanalina birakilir ve 202 donulur.
 /// </summary>
 public static class RunEndpoints
 {
@@ -19,53 +21,26 @@ public static class RunEndpoints
         g.MapGet("/{id}", (string id, IRunReader reader, CancellationToken ct) => reader.GetDetailAsync(id, ct));
         g.MapGet("/{id}/turns", (string id, string? agent, IRunReader reader, CancellationToken ct) => reader.GetTurnsAsync(id, agent, ct));
 
-        g.MapPost("", async (RunRequest body, IRunService runs, JobChannel jobs, CancellationToken ct) =>
+        // Yazma uclari: durum hemen yazilir, is Run.Step'e gore kuyruga girer (Approval → is yok). Kural RunScheduler'da, tek yerde.
+        g.MapPost("", async (RunRequest body, IRunService runs, IRunScheduler scheduler, CancellationToken ct) =>
         {
             var run = await runs.CreateAsync(body, ct).ConfigureAwait(false);
-            jobs.Enqueue(run.Id, $"analiz {run.Id}", token => runs.AnalyzeAsync(run.Id, token));
-            return Results.Accepted($"/api/v1/runs/{run.Id}", run);
+            return ScheduleAndAccept(run, scheduler);
         });
 
-        g.MapPost("/{id}/approve", async (string id, IRunService runs, JobChannel jobs, CancellationToken ct) =>
-        {
-            var run = await runs.BeginApproveAsync(id, ct).ConfigureAwait(false);
-            jobs.Enqueue(run.Id, $"dagitim {run.Id}", token => runs.DispatchAsync(run.Id, token));
-            return Results.Accepted($"/api/v1/runs/{run.Id}", run);
-        });
+        g.MapPost("/{id}/approve", async (string id, IRunService runs, IRunScheduler scheduler, CancellationToken ct)
+            => ScheduleAndAccept(await runs.BeginApproveAsync(id, ct).ConfigureAwait(false), scheduler));
 
-        g.MapPost("/{id}/revise", async (string id, ReviseRequest body, IRunService runs, JobChannel jobs, CancellationToken ct) =>
-        {
-            var run = await runs.BeginReviseAsync(id, body.Note, ct).ConfigureAwait(false);
-            jobs.Enqueue(run.Id, $"revize {run.Id}", token => runs.AnalyzeAsync(run.Id, token));
-            return Results.Accepted($"/api/v1/runs/{run.Id}", run);
-        });
+        g.MapPost("/{id}/revise", async (string id, ReviseRequest body, IRunService runs, IRunScheduler scheduler, CancellationToken ct)
+            => ScheduleAndAccept(await runs.BeginReviseAsync(id, body.Note, ct).ConfigureAwait(false), scheduler));
 
         // Yeniden dene: kaldigi adimdan (analiz ya da dagitim) surer; onay bekliyorduysa yalniz durumu geri alir, kuyruga is girmez.
-        g.MapPost("/{id}/retry", async (string id, IRunService runs, JobChannel jobs, CancellationToken ct) =>
-        {
-            var result = await runs.RetryAsync(id, ct).ConfigureAwait(false);
-            if (result.Run.Status == Domain.Runs.RunStatus.Running)
-            {
-                jobs.Enqueue(
-                    result.Run.Id,
-                    result.Step == RetryStep.Analyze ? $"analiz {result.Run.Id}" : $"dagitim {result.Run.Id}",
-                    token => result.Step == RetryStep.Analyze ? runs.AnalyzeAsync(result.Run.Id, token) : runs.DispatchAsync(result.Run.Id, token));
-            }
+        g.MapPost("/{id}/retry", async (string id, IRunService runs, IRunScheduler scheduler, CancellationToken ct)
+            => ScheduleAndAccept(await runs.RetryAsync(id, ct).ConfigureAwait(false), scheduler));
 
-            return Results.Accepted($"/api/v1/runs/{result.Run.Id}", result.Run);
-        });
-
-        // Takilma cevabi (docs/DOMAIN.md → Takilma): secim uygulanir; Running donerse dagitim kuyruga girer.
-        g.MapPost("/{id}/answer", async (string id, AnswerRequest body, IRunService runs, JobChannel jobs, CancellationToken ct) =>
-        {
-            var run = await runs.BeginAnswerAsync(id, body, ct).ConfigureAwait(false);
-            if (run.Status == Domain.Runs.RunStatus.Running)
-            {
-                jobs.Enqueue(run.Id, $"dagitim {run.Id}", token => runs.DispatchAsync(run.Id, token));
-            }
-
-            return Results.Accepted($"/api/v1/runs/{run.Id}", run);
-        });
+        // Takilma cevabi (docs/DOMAIN.md → Takilma): secim uygulanir; Running donerse dagitim kuyruga girer (iptal secildiyse Cancelled).
+        g.MapPost("/{id}/answer", async (string id, AnswerRequest body, IRunService runs, IRunScheduler scheduler, CancellationToken ct)
+            => ScheduleAndAccept(await runs.BeginAnswerAsync(id, body, ct).ConfigureAwait(false), scheduler));
 
         // Canli arac akisi: runtime suren turda her arac cagrisini buraya bildirir (belirtec = yetki, JWT yok). Bilinmeyen belirtec 204: tur bitmis.
         app.MapPost("/api/v1/progress/{token}", (string token, ProgressEvent body, ProgressRegistry registry) =>
@@ -83,5 +58,16 @@ public static class RunEndpoints
         });
 
         return app;
+    }
+
+    /// <summary>Running ise kaldigi adimin isi kuyruga girer; 202 + calisma. Running degilse (onay bekliyor, iptal) is yok.</summary>
+    private static IResult ScheduleAndAccept(Run run, IRunScheduler scheduler)
+    {
+        if (run.Status == RunStatus.Running)
+        {
+            scheduler.Schedule(run.Id, run.Step ?? RunStep.Dispatch);
+        }
+
+        return Results.Accepted($"/api/v1/runs/{run.Id}", run);
     }
 }

@@ -247,7 +247,7 @@ UI (3000, 3005) ve runtime (5090) süreçleri bu kullanıcıdan durdurulamıyor 
 `bin/Debug` hem `bin/Release` çıktısını kilitliyor. Çözüm: Api `-p:OutputPath=<scratch>/bin/Debug/net10.0/` ile
 derlendi ve oradan 5083'te çalıştırıldı (Uygulama Denetimi bu yolu engellemedi; `launch.json` → `ui-5083`, UI 3006).
 `runtime/.venv` `SemihAI`'nin Python'unu gösteriyor; `SemihAI2` için Python yok → pytest ve yeni runtime başlatılamaz;
-çalışan 5090 runtime'ı (kodu güncel, Anthropic girişi var: `opugmai2@…`) yeniden kullanıldı. Kalıcı çözüm: eski süreçleri
+çalışan 5090 runtime'ı (kodu güncel, Anthropic girişi var) yeniden kullanıldı. Kalıcı çözüm: eski süreçleri
 kapatmak (Görev Yöneticisi, yönetici) ve bu kullanıcıya Python 3.12 kurup `.venv`'i yeniden oluşturmak.
 
 ## Faz 4d — Akış tamam: yürütücüler, takılma soruları, limit koruması (2026-09-20) ✅
@@ -338,3 +338,24 @@ ayrı bileşen (`KanbanPanel.vue`): sayaçlar, filtre, kart detayı. API tipleri
 
 **Biten sayılır:** Tarayıcıda canlı bir çalışma izlenir; bir ajanın md'si panelden
 değiştirilip kaydedilince sonraki çalışmada davranış gözle görülür biçimde değişir.
+
+## Kod incelemesi turu — akış düzeltmeleri ve temizlik (2026-09-20) ✅
+
+`/code-review [high]` bulguları (ölü kod, mimari uyumsuzluk, 1 iş 1 fonksiyon):
+
+- **Ajan bekleyen çalışma asılı kalmıyor.** `Run.waitingSince` + `IRunScheduler` (Api: `RunScheduler` → `JobChannel`):
+  bir adım kapanınca / dağıtım bitince / iptalde `RunService.WakeWaitingAsync` bekleyenleri dağıtıma koyar; `RunResumer`
+  (eski `LimitResumer`) emniyet taraması yapar; yeniden başlatmada bekleyen `Interrupted` olmaz, kuyruğa döner.
+- **Durum metinden değil alandan.** `Run.step` (`analyze|approval|dispatch`) ve `Phase.cause` (`agent|limit|cancelled|interrupted`);
+  `detail` yalnız görünüm. `RetryStep/RetryResult` kalktı, `RetryAsync/ResumeAsync` `Run` döner; hangi adımın hangi işi
+  doğurduğu tek yerde (`RunScheduler`), uçlar `ScheduleAndAccept` ile aynı kapıdan geçer.
+- **"Red → önceki implement" tek kaynak:** `Workflow.ImplementBefore(stages, id)`; `Dispatcher.NextStage` ve pano hedefi
+  (`BoardTarget`, kapanan fazı `NextStage`'e verir; `workflow.json` her fazda yeniden okunmuyor) oradan.
+- **Ölü kod:** `IAgentService.ComposePromptAsync`, `JobChannel.Running`, `launch.json` geçici girişleri (`ui-5083`,
+  `runtime-5091`, `api-rt5091`), bayat yorumlar. `hello-world-console` projesi, hedef dizini ve 3 çalışma geçmişi silindi.
+- **Sır taraması (ayrı ajan, public push öncesi):** engelleyici yok. Uyarılar: `AuthEndpoints.DevKey` sabit JWT geliştirme
+  anahtarı (loopback ile sınırlı; `AITeam:JwtKey` verilmezse herkesin bildiği anahtar — sertleştirme kararı açık),
+  gömülü `admin/admin` (bilinçli), belgelerde Windows kullanıcı adları. `.gitignore` önleyici kalıplarla genişletildi.
+- Ölçüm: `verify.ps1` yeşil — birim 34, servis 59 (yeni: `Ajani_dolu_calisma_bekler_ajan_bosalinca_yeniden_dagitima_konur`), ui typecheck.
+  Sonraki: `ExecuteStepAsync`'i adım türü başına yürütücülere bölmek, `BusyInOtherRunsAsync` I/O'sunu azaltmak,
+  `build-sprites.py`'de 9-dilim sınır denetimi ve `cafe.board`/`stretch.dst` tek kaynak.

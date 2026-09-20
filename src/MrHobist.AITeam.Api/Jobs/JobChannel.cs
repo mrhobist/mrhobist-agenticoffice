@@ -22,9 +22,6 @@ public sealed class JobChannel
     /// <summary>Kuyrukta bekleyen + kosan is sayisi (/jobs/health).</summary>
     public int Pending => Volatile.Read(ref _pending);
 
-    /// <summary>Su an fiilen kosan isler (calisma kimlikleri).</summary>
-    public IReadOnlyCollection<string> Running => _running.Keys.ToList();
-
     public void Enqueue(string runId, string name, Func<CancellationToken, Task> body)
     {
         Interlocked.Increment(ref _pending);

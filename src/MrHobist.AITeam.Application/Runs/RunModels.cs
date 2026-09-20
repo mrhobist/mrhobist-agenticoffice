@@ -15,15 +15,6 @@ public sealed record ReviseRequest(string Note);
 /// <summary><c>POST /runs/{id}/answer</c> govdesi: <see cref="Choice"/> sorunun seceneklerinden birinin kimligi; <see cref="Note"/> secenek isterse zorunlu.</summary>
 public sealed record AnswerRequest(string Choice, string? Note = null);
 
-/// <summary>"Yeniden dene" hangi adimdan surer: plan yoksa/analiz dustuyse analiz, yoksa dagitim.</summary>
-public enum RetryStep
-{
-    Analyze,
-    Dispatch,
-}
-
-public sealed record RetryResult(Run Run, RetryStep Step);
-
 /// <summary>Bir gorevin faz kayitlari (<c>tasks/{task}/phases.jsonl</c>).</summary>
 public sealed record TaskPhases(string Id, IReadOnlyList<Phase> Phases);
 
@@ -52,7 +43,11 @@ public sealed record RunDetail(
     Spec? Spec,
     IReadOnlyList<string> Order,
     IReadOnlyList<TaskPhases> Tasks,
-    IReadOnlyList<Message> Messages);
+    IReadOnlyList<Message> Messages,
+    /// <summary>Kaldigi adim (<see cref="Run.Step"/>). Sona eklendi (CLAUDE.md §5).</summary>
+    RunStep? Step = null,
+    /// <summary>Running ama ajani baska calismada dolu (<see cref="Run.WaitingSince"/>). Sona eklendi.</summary>
+    DateTimeOffset? WaitingSince = null);
 
 /// <summary>Bos birakilan ajan alanlari icin varsayilanlar (docs/DOMAIN.md → Model, efor ve kimlik; kullanici karari).</summary>
 public static class RunDefaults

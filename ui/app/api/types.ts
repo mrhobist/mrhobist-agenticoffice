@@ -251,7 +251,17 @@ export interface RunSummary {
   question?: UserQuestion | null
   /** Paused + resumeAt: limit korumasi bekletti; bu saatte kendisi surer. */
   resumeAt?: string | null
+  /** Kaldigi adim: "yeniden dene" buradan surer (durum bilgisi; `detail` yalniz metin). */
+  step?: RunStep | null
+  /** Running ama hazir gorevin ajani baska calismada dolu; bir adim kapaninca sunucu yeniden dagitima koyar. */
+  waitingSince?: string | null
 }
+
+/** Calismanin kaldigi adim (adiyla tasinir; yeni uye sona). */
+export type RunStep = 'analyze' | 'approval' | 'dispatch'
+
+/** Fazi kim kapatti: `agent` ajanin sonucu; digerleri sistem kaynakli (tur sayilmaz). Eski kayitlarda yok. */
+export type PhaseCause = 'agent' | 'limit' | 'cancelled' | 'interrupted'
 
 export interface QuestionOption { id: string; label: string; detail: string; needsNote: boolean }
 export interface UserQuestion {
@@ -325,6 +335,7 @@ export interface Phase {
   status: PhaseStatus
   durationS: number | null
   detail: string | null
+  cause?: PhaseCause | null
 }
 
 export interface RunMessage {

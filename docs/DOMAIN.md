@@ -167,12 +167,19 @@ Kod (`Application/Runs/Dispatcher`), her tetiklemede (onay, bir adımın bitişi
   ve **ajan başına tek LLM çağrısı** (`AgentCaller` kilidi: analist A'da konuşurken B'nin analizi bekler).
   Dağıtımda "boş ajan" çalışmalar arası hesaplanır: başka bir **Running** çalışmada `Started` fazı olan ya da
   o an LLM çağrısında olan ajan dolu sayılır; **Paused** çalışmaların ajanları sayılmaz (yürütücüsüz bekleme
-  kimseyi kilitlemesin). Hazır görev var ama ajanı doluysa çalışma `Running` kalır, `detail` "ajan bekleniyor" der.
+  kimseyi kilitlemesin). Hazır görev var ama ajanı doluysa çalışma `Running` kalır, `waitingSince` işlenir ve **işi
+  kuyruktan çıkar** (`detail` "ajan bekleniyor" der). **Uyandırma (2026-09-20):** herhangi bir çalışmada bir adım
+  kapanınca, dağıtım döngüsü bitince ya da iptalde `RunService.WakeWaitingAsync` bekleyen çalışmaları `IRunScheduler`
+  ile yeniden dağıtıma koyar; emniyet olarak `RunResumer` 2 dk'dan eski bekleyenleri dakikada bir tarar. Yeniden
+  başlatmada bekleyen çalışma `Interrupted` olmaz (ortada yarım LLM çağrısı yok), dağıtım kuyruğa geri girer.
 - **Otomatik tekrar (geçici hatalar).** `RetryPolicy` (3 deneme, 3 s · 6 s artan bekleme): runtime kapalı,
   429, 5xx, zaman aşımı, ağ. Şema/politika/4xx gibi kalıcı hatalar hemen düşer. Her deneme `messages.jsonl`'e
   `subject: retry` notu yazar; sahnede ajan "yeniden deneniyor 2/3" der.
 - **Elle tekrar.** `POST /runs/{id}/retry` kaldığı adımdan sürer (bkz. yaşam döngüsü ve Gelen kutusu);
-  `Retries` sayacı artar, `subject: retry` notu düşer.
+  `Retries` sayacı artar, `subject: retry` notu düşer. **Kaldığı adım `run.step`'tir** (`analyze | approval |
+  dispatch`; 2026-09-20): `detail` metninden çıkarım yapılmaz, metin yalnız görünüm içindir. `approval` = onay
+  beklerken iptal/kesinti; tekrar `AwaitingApproval`'a döner, kuyruğa iş girmez. Hangi adımın hangi işi doğurduğu
+  tek yerde: `RunScheduler` (Api) — uçlar, `RunResumer` ve `RunService`'in uyandırması aynı kapıdan geçer.
 - **İptal.** Durum hemen `Cancelled` yazılır; süren işin belirteci kesilir (LLM çağrısı durur), dönen sonuç
   yazılmaz (`WasCancelled` denetimi). `Started` fazlar `Skipped · iptal` ile kapanır; ajanlar boşa döner.
 - **Bütçe.** `POST /runs { maxCostUsd }` (boş = sınırsız; ≤0 → 400 `run.budget_invalid`). Her LLM turundan
@@ -219,8 +226,9 @@ geçiş bir organizatör turu ediyordu (ölçüldü: 14–70 s, ≈$0.02–0.05)
 
 **Yarım kalan adım.** Süreç yeniden başlar (`Interrupted`) ya da kullanıcı iptal ederse `Started` faz **`Failed`**
 ile kapanır (`süreç yeniden başladı` / `iptal`); "yeniden dene" aynı adımı yeniden koşar. `Skipped` kullanılmaz:
-o bir sonraki adıma geçirir ve kod yazılmadan test başlar. Sistem kaynaklı bu fazlar (limit, iptal, kesinti) tur
-sayılmaz, tavana girmez.
+o bir sonraki adıma geçirir ve kod yazılmadan test başlar. Sistem kaynaklı bu fazlar **`phase.cause`** ile işaretlenir
+(`limit | cancelled | interrupted`; ajanın kendi sonucu `agent`/boş) ve tur sayılmaz, tavana girmez — karar `detail`
+metnine değil bu alana bakar (2026-09-20).
 
 **Yürütme döngüsü.** `DispatchAsync`: planla → bir adımı koş → yeniden planla; hazır iş kalmayınca ya da durum
 `Running`'den çıkınca döner. Çalışma **içinde sıralı** (çalışma başına tek iş, kanal kilidi), **çalışmalar arası
@@ -233,7 +241,10 @@ paralel** (JobWorker havuzu). Tur = o adımda bitmiş deneme sayısı + 1.
 - **Tavan** `maxReviewRounds` **kapı başına** sayılır: aynı `review` adımı bu kadar kez reddedince akış durmaz,
   **kullanıcıya sorulur** (aşağıda Takılma). Aynı adımda üst üste `Failed` için de aynı tavan.
 - **Hata** (`Failed`) → aynı adım yeniden (yeniden dene ya da cevap sonrası). Limit beklemesinden doğan `Failed`
-  (`detail: limit…`) tur sayılmaz.
+  (`cause: limit`) tur sayılmaz.
+- **Tek kaynak:** "en yakın önceki `implement`" kuralı `Workflow.ImplementBefore`'dadır; dağıtıcı (`Dispatcher.NextStage`)
+  ve pano hedefi (`RunService.BoardTarget`, kapanan fazı `NextStage`'e verir) oradan okur. UI'daki türetim (`~/api/board`)
+  aynı kuralın TypeScript kopyasıdır; kural değişirse ikisi birlikte değişir.
 
 ## Takılma: soru + müdahale (2026-09-19, kullanıcı kararı)
 
@@ -273,7 +284,7 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   **%99**, Ayarlar ekranında platform bazında değiştirilir. Her LLM çağrısından önce (`LimitGuard`) sağlayıcının
   aktif kota pencereleri (5 saat, hafta, modele özel) okunur (runtime 90 s önbellek); biri eşiğe ulaştıysa çağrı
   **yapılmaz**: çalışma `Paused` + `resumeAt` (pencerenin sıfırlanma zamanı), `limit` notu, bildirim zilinde
-  "Limit doldu · HH:mm'de sürer". `LimitResumer` dakikada bir bakar, süresi gelen çalışmayı kendisi sürdürür
+  "Limit doldu · HH:mm'de sürer". `RunResumer` dakikada bir bakar, süresi gelen çalışmayı kendisi sürdürür
   (`ResumeAsync`: kullanıcı tekrarı sayılmaz, not organizatörden `limit-resume`); kullanıcı "Yeniden dene" ile
   erken deneyebilir. Kota ucu bilgi vermiyorsa koruma sessizce geçer (varsayımla
   ilerlenir; üst bar zaten "kalan kullanım yok" der).

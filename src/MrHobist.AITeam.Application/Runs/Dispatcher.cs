@@ -106,39 +106,14 @@ public static class Dispatcher
         }
 
         var last = phases[^1];
-        var index = IndexOf(stages, last.Stage);
-        switch (last.Status)
+        var index = Workflow.IndexOf(stages, last.Stage);
+        return last.Status switch
         {
-            case PhaseStatus.Started:
-                return null;
-            case PhaseStatus.Failed:
-                return index >= 0 ? stages[index] : stages[0];
-            case PhaseStatus.Rejected:
-                for (var i = index - 1; i >= 0; i--)
-                {
-                    if (stages[i].Kind == StageKind.Implement)
-                    {
-                        return stages[i];
-                    }
-                }
-
-                return stages[0];
-            default:
-                return index >= 0 && index + 1 < stages.Count ? stages[index + 1] : null;
-        }
-    }
-
-    private static int IndexOf(IReadOnlyList<Stage> stages, string id)
-    {
-        for (var i = 0; i < stages.Count; i++)
-        {
-            if (stages[i].Id == id)
-            {
-                return i;
-            }
-        }
-
-        return -1;
+            PhaseStatus.Started => null,
+            PhaseStatus.Failed => index >= 0 ? stages[index] : stages[0],
+            PhaseStatus.Rejected => Workflow.ImplementBefore(stages, last.Stage) ?? stages[0], // tek kaynak: Workflow
+            _ => index >= 0 && index + 1 < stages.Count ? stages[index + 1] : null,
+        };
     }
 
     private static IReadOnlyList<Phase> Phases(IReadOnlyDictionary<string, IReadOnlyList<Phase>> map, string task)
