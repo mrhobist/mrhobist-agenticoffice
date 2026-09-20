@@ -133,6 +133,7 @@ python scripts/build-sprites.py
 | [`docs/LESSONS.md`](docs/LESSONS.md) | Pahalıya öğrenilenler — **iş yapmadan önce oku** |
 | [`docs/PHASES.md`](docs/PHASES.md) | Faz faz teslim listesi; yeni oturum buradan devam eder |
 | [`docs/error-codes.md`](docs/error-codes.md) | `errorCode` → anlam. UI sözleşmesi |
+| [`docs/architecture.drawio`](docs/architecture.drawio) | 8 sayfalık resim: sistem, yığın, Onion, ekip, yaşam döngüsü, bir tur, UI, Python. draw.io ile aç |
 
 ⚠ **Yeni belge açma.** Envanter belgesi (uç nokta listesi, paket sürümleri) **hiç açma** —
 kodun ikinci kopyası bayatlar. Sözleşme `/openapi/v1.json`'dır.

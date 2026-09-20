@@ -1,0 +1,836 @@
+<mxfile host="app.diagrams.net" modified="2026-09-20T00:00:00.000Z" agent="MrHobist.AITeam" version="24.0.0" type="device">
+
+  <!-- ============================================================ -->
+  <!-- SAYFA 1 — SİSTEM MİMARİSİ -->
+  <!-- ============================================================ -->
+  <diagram id="p1-system" name="1 · Sistem mimarisi">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="s-title" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;MrHobist.AITeam — Sistem mimarisi&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Yapay zekâ ekibi üretim ofisi: brief girer, altı rol kod üretir, akış 2B piksel ofiste canlı izlenir. Tüm hostlar yalnız &lt;b&gt;127.0.0.1&lt;/b&gt; dinler." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1000" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Kullanıcı -->
+        <mxCell id="s-user" value="&lt;b&gt;Kullanıcı&lt;/b&gt;&lt;br&gt;tarayıcı&lt;br&gt;(admin/admin JWT)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#ffffff;strokeColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="60" y="180" width="60" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- UI -->
+        <mxCell id="s-ui" value="&lt;b&gt;ui/ — Nuxt 4 · Vue 3 · TypeScript · Canvas 2D&lt;/b&gt;&lt;br&gt;port 3000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=13;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="220" y="120" width="340" height="230" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-ui-1" value="&lt;b&gt;app.vue&lt;/b&gt; kabuk: üst bar, proje rayı, pusula, paneller" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="165" width="310" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-ui-2" value="&lt;b&gt;scene/&lt;/b&gt; piksel ofis (world, entities, board, feed, atlas, sky, nav)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="207" width="310" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-ui-3" value="&lt;b&gt;components/&lt;/b&gt; Run · Kanban · Jobs · Project · Team · Agent · Settings · Login · LimitsBar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="249" width="310" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-ui-4" value="&lt;b&gt;api/&lt;/b&gt; client (fetch+JWT), errorCode→TR metin, üretilen tipler (gen:api)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="297" width="310" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- API -->
+        <mxCell id="s-api" value="&lt;b&gt;src/ — .NET 10 Api (tek host, Onion)&lt;/b&gt;&lt;br&gt;port 5080 · orkestrasyon burada" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontSize=13;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="680" y="100" width="400" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-api-1" value="&lt;b&gt;Uçlar&lt;/b&gt; /api/v1: auth · agents · knowledge · workflows · projects · runs · scene · providers · limits · usage · settings · progress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="695" y="150" width="370" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-api-2" value="&lt;b&gt;İş kanalı&lt;/b&gt; JobChannel + JobWorker: uç 202 döner, uzun iş burada koşar; runs/ JSONL'e yazan &lt;b&gt;tek yazıcı&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="695" y="204" width="370" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-api-3" value="&lt;b&gt;Application&lt;/b&gt; RunService · Dispatcher · AgentCaller · LimitGuard · Prompts · ToolAccess (adım→araç)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="695" y="258" width="370" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-api-4" value="&lt;b&gt;Infrastructure&lt;/b&gt; Markdown/Json/Jsonl store'lar (atomik yazma) · PythonAgentRuntimeClient · WindowsProjectLauncher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="695" y="312" width="370" height="46" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-api-5" value="&lt;b&gt;SceneEventBus&lt;/b&gt; SSE yayını · JWT (tek şema, rol claim) · OpenAPI/Scalar · Serilog dosya" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="695" y="366" width="370" height="46" as="geometry"/>
+        </mxCell>
+
+        <!-- RUNTIME -->
+        <mxCell id="s-rt" value="&lt;b&gt;runtime/ — Python FastAPI&lt;/b&gt;&lt;br&gt;port 5090 · &lt;b&gt;yalnız LLM çağrısı&lt;/b&gt; · durumsuz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=13;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="100" width="340" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-rt-1" value="&lt;b&gt;POST /v1/turn&lt;/b&gt; {systemPrompt, messages, provider, model, schema?, tools?, cwd?, progressUrl?} → {text, structured, usage, costUsd, toolUses}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="150" width="310" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-rt-2" value="&lt;b&gt;/v1/models · /v1/auth · /v1/auth/login · /v1/auth/logout · /v1/limits · /health&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="218" width="310" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-rt-3" value="&lt;b&gt;providers/&lt;/b&gt; anthropic.py (Claude Agent SDK) · openai.py (Codex CLI ya da Responses API) · base.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="270" width="310" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-rt-4" value="&lt;b&gt;credentials.py&lt;/b&gt; öncelik: ortam değişkeni &amp;gt; credentials.json &amp;gt; CLI oturumu" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="322" width="310" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-rt-5" value="&lt;b&gt;YOK:&lt;/b&gt; rol dallanması, tur sayacı, faz, iş akışı, dosya yazma, DB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="374" width="310" height="44" as="geometry"/>
+        </mxCell>
+
+        <!-- Sağlayıcılar -->
+        <mxCell id="s-prov" value="&lt;b&gt;LLM sağlayıcıları (makine dışına çıkan tek yer)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontSize=13;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="480" width="340" height="244" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-prov-1" value="&lt;b&gt;Anthropic&lt;/b&gt; — Claude Code CLI oturumu (claude.exe, OAuth) &lt;i&gt;ya da&lt;/i&gt; ANTHROPIC_API_KEY&lt;br&gt;fable-5-1 · opus-5 (varsayılan) · sonnet-5 · haiku-4-5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="515" width="310" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-prov-2" value="&lt;b&gt;OpenAI&lt;/b&gt; — Codex CLI oturumu (codex exec --json, sandbox) &lt;i&gt;ya da&lt;/i&gt; OPENAI_API_KEY (Responses API; araçlı adım 501)&lt;br&gt;gpt-5.2 · gpt-5.2-codex · gpt-5.1 …" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="593" width="310" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-prov-3" value="nvidia · ollama → 501 (sözleşme hazır, üye sona eklenir)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="671" width="310" height="36" as="geometry"/>
+        </mxCell>
+
+        <!-- Depolar -->
+        <mxCell id="s-cfg" value="&lt;b&gt;config/ — tek doğru kaynak (git'te)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=13;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="220" y="480" width="300" height="244" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-cfg-1" value="agents/*.md — ajan (frontmatter + sistem promptu)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="515" width="270" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-cfg-2" value="knowledge/*.md — alt md'ler (includes)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="557" width="270" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-cfg-3" value="workflows/*.json — takım = iş akışı (adımlar)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="593" width="270" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-cfg-4" value="projects/*.json — proje kartları (workflow, targetDir)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="629" width="270" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-cfg-5" value="scene.json (ofis yerleşimi) · settings.json (limit eşiği %99)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="235" y="671" width="270" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s-runs" value="&lt;b&gt;runs/&amp;lt;id&amp;gt;/ — çalışma geçmişi (append-only JSONL, gitignore)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=13;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="560" y="480" width="300" height="244" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-runs-1" value="run.json — durum, step, plan, question, maliyet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="575" y="515" width="270" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-runs-2" value="workflow.json — başlarken dondurulan akış kopyası" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="575" y="551" width="270" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-runs-3" value="phases.jsonl — adım/ajan/tur: Started · Done · Rejected · Failed · Skipped (+cause)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="575" y="593" width="270" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-runs-4" value="messages.jsonl — handoff · ask · answer · review-feedback · error" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="575" y="639" width="270" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-runs-5" value="conversations/*.jsonl — her LLM turu: tam prompt, çıktı, token, maliyet, hedef, toolUses" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="575" y="681" width="270" height="34" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s-proj" value="&lt;b&gt;projects/&amp;lt;key&amp;gt;/ — hedef dizin&lt;/b&gt;&lt;br&gt;ajanların ürettiği kod; developer/testçi burada dosya yazar ve komut koşar (cwd sınırı, SDK izin geri çağrısı)&lt;br&gt;run.cmd varsa &quot;Başlat&quot; ile yeni konsolda açılır" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;spacingTop=4;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="900" y="480" width="230" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-cred" value="&lt;b&gt;%USERPROFILE%\.mrhobist-aiteam\credentials.json&lt;/b&gt;&lt;br&gt;API anahtarları (depo dışı, Windows kullanıcısına bağlı; runtime yazar — §1 istisnası)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;spacingTop=4;align=left;spacingLeft=8;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="614" width="230" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s-assets" value="&lt;b&gt;assets/raw/*.png&lt;/b&gt; → scripts/build-sprites.py → &lt;b&gt;ui/public/sprites/&lt;/b&gt; (atlas; elle düzenlenmez)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="220" y="740" width="640" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="s-ops" value="&lt;b&gt;scripts/verify.ps1&lt;/b&gt; — build + testler + Python sınır denetimi · &lt;b&gt;tests/&lt;/b&gt; UnitTests · ServiceTests (xunit, sahte runtime adaptörü)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="900" y="740" width="640" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Kenarlar -->
+        <mxCell id="e-user-ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="s-user" target="s-ui">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-ui-api" value="REST /api/v1&lt;br&gt;(Bearer JWT)&lt;br&gt;uzun iş → 202&lt;br&gt;yoklama 2 s / 5 s" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=1;exitY=0.26;exitDx=0;exitDy=0;entryX=0;entryY=0.24;entryDx=0;entryDy=0;" edge="1" parent="1" source="s-ui" target="s-api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-api-ui" value="SSE /scene/events&lt;br&gt;agent.state · meet&lt;br&gt;board.* · agent.tool&lt;br&gt;run.stage …" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;exitX=0;exitY=0.61;exitDx=0;exitDy=0;entryX=1;entryY=0.78;entryDx=0;entryDy=0;" edge="1" parent="1" source="s-api" target="s-ui">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-api-rt" value="HTTP&lt;br&gt;POST /v1/turn&lt;br&gt;GET /v1/models&lt;br&gt;auth · limits&lt;br&gt;kapalı → 503" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=1;exitY=0.24;exitDx=0;exitDy=0;entryX=0;entryY=0.24;entryDx=0;entryDy=0;" edge="1" parent="1" source="s-api" target="s-rt">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-rt-api" value="POST&lt;br&gt;/progress/{token}&lt;br&gt;canlı araç&lt;br&gt;(tek kullanımlık)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;exitX=0;exitY=0.79;exitDx=0;exitDy=0;entryX=1;entryY=0.79;entryDx=0;entryDy=0;" edge="1" parent="1" source="s-rt" target="s-api">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1165" y="360"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-rt-prov" value="Agent SDK / CLI / HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="s-rt" target="s-prov">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-prov-proj" value="ajan araçları&lt;br&gt;cwd içinde" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="s-prov-1" target="s-proj">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1215" y="550" as="sourcePoint"/>
+            <mxPoint x="1160" y="550" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-rt-cred" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="s-rt-4" target="s-cred">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e-api-cfg" value="okur + atomik yazar, değişince yeniden yükler" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="s-api-4" target="s-cfg">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="440"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-api-runs" value="tek yazıcı (JobWorker) · IRunReader okur" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="s-api-4" target="s-runs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="710" y="440"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-api-proj" value="launch run.cmd · dirs listesi" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="s-api-4" target="s-proj">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1030" y="440"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-assets-ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="s-assets" target="s-ui">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="180" y="760"/>
+              <mxPoint x="180" y="235"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================ -->
+  <!-- SAYFA 2 — TEKNOLOJİ YIĞINI -->
+  <!-- ============================================================ -->
+  <diagram id="p2-stack" name="2 · Teknoloji yığını">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="t-title" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;Teknoloji yığını&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Üç süreç, sıfır veritabanı, sıfır gateway. Kasıtlı sapmalar sağ altta." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="900" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t-ui" value="&lt;b&gt;Frontend — ui/&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="380" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-ui-l" value="&lt;b&gt;Nuxt 4.2&lt;/b&gt; (SPA kabuğu, tek sayfa app.vue)&lt;br&gt;&lt;b&gt;Vue 3.5&lt;/b&gt; Composition API, &amp;lt;script setup&amp;gt;&lt;br&gt;&lt;b&gt;TypeScript 5.9&lt;/b&gt; + vue-tsc typecheck&lt;br&gt;&lt;b&gt;Canvas 2D&lt;/b&gt; — sprite tabanlı piksel ofis, kendi oyun döngüsü (world.ts)&lt;br&gt;&lt;b&gt;openapi-typescript 7&lt;/b&gt; — /openapi/v1.json → shared/types/api.ts (elle yazılmaz)&lt;br&gt;&lt;b&gt;EventSource&lt;/b&gt; (SSE) + fetch yoklama&lt;br&gt;&lt;b&gt;Ico.vue&lt;/b&gt; tek renkli SVG ikon seti&lt;br&gt;Sprite hattı: Python Pillow script → PNG atlas" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="135" width="360" height="280" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t-net" value="&lt;b&gt;Backend — src/&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="450" y="100" width="380" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-net-l" value="&lt;b&gt;.NET 10&lt;/b&gt; · C# · Minimal API · Onion (Domain / Application / Infrastructure / Api)&lt;br&gt;&lt;b&gt;Microsoft.AspNetCore.OpenApi&lt;/b&gt; + &lt;b&gt;Scalar&lt;/b&gt; (sözleşme /openapi/v1.json)&lt;br&gt;&lt;b&gt;JwtBearer&lt;/b&gt; — tek şema, rol claim'i&lt;br&gt;&lt;b&gt;Microsoft.Extensions.Http(.Resilience)&lt;/b&gt; — runtime istemcisi&lt;br&gt;&lt;b&gt;Serilog&lt;/b&gt; → dosya (GenericLog sözleşmesi)&lt;br&gt;&lt;b&gt;System.Threading.Channels&lt;/b&gt; — JobChannel / JobWorker (süreç içi kuyruk)&lt;br&gt;&lt;b&gt;Server-Sent Events&lt;/b&gt; — SceneEventBus&lt;br&gt;&lt;b&gt;Problem Details&lt;/b&gt; + errorCode&lt;br&gt;&lt;b&gt;xunit 2.9&lt;/b&gt; + coverlet — UnitTests · ServiceTests&lt;br&gt;Central Package Management (Directory.Packages.props), slnx" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="460" y="135" width="360" height="290" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t-py" value="&lt;b&gt;LLM katmanı — runtime/&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="860" y="100" width="380" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-py-l" value="&lt;b&gt;Python 3.12&lt;/b&gt; (runtime/.venv)&lt;br&gt;&lt;b&gt;FastAPI ≥0.120&lt;/b&gt; + &lt;b&gt;uvicorn&lt;/b&gt;&lt;br&gt;&lt;b&gt;pydantic 2&lt;/b&gt; — TurnRequest / TurnResponse sözleşmesi (camelCase alias)&lt;br&gt;&lt;b&gt;httpx&lt;/b&gt; — progressUrl geri çağrısı, OpenAI Responses API, limit ucu&lt;br&gt;&lt;b&gt;claude-agent-sdk ≥0.2&lt;/b&gt; — claude.exe oturumu üstünden ajan döngüsü + araçlar&lt;br&gt;&lt;b&gt;Codex CLI&lt;/b&gt; (npm @openai/codex) — codex exec --json&lt;br&gt;&lt;b&gt;pytest&lt;/b&gt; + pytest-asyncio + respx&lt;br&gt;Kimlik: CLI oturumu (OAuth) &lt;i&gt;veya&lt;/i&gt; API anahtarı (credentials.json)" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="870" y="135" width="360" height="290" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t-store" value="&lt;b&gt;Depolama — dosya tabanlı&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="460" width="380" height="230" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-store-l" value="&lt;b&gt;Markdown + YAML frontmatter&lt;/b&gt; — ajanlar, bilgi dosyaları&lt;br&gt;&lt;b&gt;JSON&lt;/b&gt; — iş akışları, projeler, sahne, ayarlar&lt;br&gt;&lt;b&gt;JSONL (append-only)&lt;/b&gt; — çalışma, faz, mesaj, tur&lt;br&gt;&lt;b&gt;Atomik yazma&lt;/b&gt; — geçici dosya + File.Move(overwrite)&lt;br&gt;Bozuk son satır yok sayılır&lt;br&gt;Git versiyonlar config/; runs/ gitignore" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="495" width="360" height="190" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t-ops" value="&lt;b&gt;Araçlar ve süreç&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="450" y="460" width="380" height="230" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-ops-l" value="&lt;b&gt;PowerShell 5.1&lt;/b&gt; scripts/verify.ps1 (yalnız ASCII) — build, testler, Python sınır denetimi&lt;br&gt;&lt;b&gt;Windows 11&lt;/b&gt; — CLI oturumları Windows kullanıcısına bağlı; her kullanıcı ayrı giriş yapar&lt;br&gt;&lt;b&gt;Claude Code CLI&lt;/b&gt; (claude.exe) — Anthropic kimliği ve /usage ucu&lt;br&gt;&lt;b&gt;Git&lt;/b&gt; — config/ tek doğru kaynak&lt;br&gt;Sohbet Türkçe, kod İngilizce; kararlar belgeyle (docs/DOMAIN.md)" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="460" y="495" width="360" height="190" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="t-dev" value="&lt;b&gt;Referans mimariden kasıtlı sapmalar&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="860" y="460" width="380" height="230" as="geometry"/>
+        </mxCell>
+        <mxCell id="t-dev-l" value="✗ Veritabanı (EF, Npgsql, migration)&lt;br&gt;✗ Çok kiracılılık (tenant_id, filtre, guard)&lt;br&gt;✗ Gateway · ✗ Cache (FusionCache/Redis)&lt;br&gt;✗ Elastic / APM (Serilog dosyaya)&lt;br&gt;✗ Common projesi (Application'a sığıyor)&lt;br&gt;✗ Asp.Versioning (/api/v1 sabiti)&lt;br&gt;✗ Task.Api ayrı host → süreç içi JobWorker (202)&lt;br&gt;JWT tek şema, tek sınıf; hostlar yalnız loopback" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;spacingLeft=10;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="870" y="495" width="360" height="190" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================ -->
+  <!-- SAYFA 3 — .NET ONION KATMANLARI -->
+  <!-- ============================================================ -->
+  <diagram id="p3-onion" name="3 · .NET katmanları (Onion)">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="o-title" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;.NET ne yapıyor — Onion katmanları&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Bağımlılık yönü içe doğru: Api → Application ← Infrastructure; Application → Domain. Orkestrasyon döngüsü Application'dadır, Python'a sızmaz." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1100" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Api -->
+        <mxCell id="o-api" value="&lt;b&gt;MrHobist.AITeam.Api&lt;/b&gt; — host, port 5080 (dış halka)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="520" height="420" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-1" value="&lt;b&gt;Program.cs&lt;/b&gt; — DI, JWT, OpenAPI/Scalar, Serilog, 127.0.0.1 bağlaması, config izleyici" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="135" width="490" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-2" value="&lt;b&gt;Auth/&lt;/b&gt;AuthEndpoints — login (admin/admin), me" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="179" width="240" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-3" value="&lt;b&gt;Config/&lt;/b&gt;ConfigEndpoints — agents, knowledge, workflows, models, providers, limits, usage, settings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="305" y="179" width="240" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-4" value="&lt;b&gt;Projects/&lt;/b&gt;ProjectEndpoints — CRUD, dirs, reorder, launch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="237" width="240" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-5" value="&lt;b&gt;Runs/&lt;/b&gt;RunEndpoints — POST runs (202), approve, revise, answer, retry, cancel, turns, overview, progress/{token}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="305" y="237" width="240" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-6" value="&lt;b&gt;Scene/&lt;/b&gt;SceneEndpoints (GET scene, SSE events, commands) · &lt;b&gt;SceneEventBus&lt;/b&gt; (ISceneEventPublisher uygulaması)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="295" width="490" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-7" value="&lt;b&gt;Jobs/&lt;/b&gt;JobChannel (sıralı kuyruk, çalışma başına kilit) · JobWorker havuzu (çalışmalar arası paralel) · RunScheduler (IRunScheduler: limit sonrası uyandırma) · RunResumer (açılışta Running → Interrupted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="343" width="490" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-8" value="&lt;b&gt;Errors/&lt;/b&gt;ProblemMapping — DomainException / NotFound → Problem Details + errorCode (title/detail ekrana basılmaz)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="407" width="490" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-api-9" value="Uçlar &lt;b&gt;hızlı doğrulama&lt;/b&gt; yapar, uzun işi kanala bırakır, 202 döner. Okuma IRunReader." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontStyle=2;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="455" width="490" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Infrastructure -->
+        <mxCell id="o-inf" value="&lt;b&gt;MrHobist.AITeam.Infrastructure&lt;/b&gt; — adaptörler" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="600" y="100" width="520" height="420" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-inf-1" value="&lt;b&gt;Storage/&lt;/b&gt;&lt;br&gt;AtomicFile — geçici dosya + Move(overwrite)&lt;br&gt;Frontmatter — md ayrıştırma&lt;br&gt;MarkdownAgentStore — config/agents, knowledge&lt;br&gt;JsonWorkflowStore · JsonProjectStore · JsonSceneLayoutStore · JsonSettingsStore&lt;br&gt;JsonlRunStore — runs/ (IRunStore + IRunReader; bozuk son satırı atar)&lt;br&gt;StoragePaths — depo kökü çözümü&lt;br&gt;WindowsProjectLauncher — run.cmd yeni konsolda" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="615" y="135" width="490" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-inf-2" value="&lt;b&gt;Runtime/&lt;/b&gt;PythonAgentRuntimeClient — IAgentRuntimeService uygulaması; HttpClient (resilience) ile 127.0.0.1:5090'a POST /v1/turn, GET models/auth/limits; 503/502 eşlemesi" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="615" y="313" width="490" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-inf-3" value="&lt;b&gt;DependencyInjection.cs&lt;/b&gt; — AddInfrastructure(): store'lar + runtime istemcisi kaydı" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="615" y="377" width="490" height="36" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-inf-4" value="Python kapalıyken derleme ve ServiceTests bozulmaz: testler &lt;b&gt;sahte IAgentRuntimeService&lt;/b&gt; ile koşar." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontStyle=2;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="615" y="425" width="490" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Application -->
+        <mxCell id="o-app" value="&lt;b&gt;MrHobist.AITeam.Application&lt;/b&gt; — iş kuralları ve orkestrasyon" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=14;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="1080" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-app-1" value="&lt;b&gt;Abstractions/&lt;/b&gt; (portlar)&lt;br&gt;IAgentRuntimeService — LLM turu&lt;br&gt;IRunScheduler — limit sonrası uyandır&lt;br&gt;ISceneEventPublisher — sahne olayı&lt;br&gt;ISceneLayout — scene.json&lt;br&gt;IStores — IAgentStore, IWorkflowStore, IProjectStore, IRunStore, IRunReader, ISettingsStore" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="55" y="595" width="330" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-app-2" value="&lt;b&gt;Runs/&lt;/b&gt;&lt;br&gt;&lt;b&gt;RunService&lt;/b&gt; — yaşam döngüsü (start, approve, revise, answer, retry, cancel), BoardTarget&lt;br&gt;&lt;b&gt;Dispatcher&lt;/b&gt; — DispatchAsync: planla → adım koş → yeniden planla; NextStage (geri dönüş)&lt;br&gt;&lt;b&gt;AgentCaller&lt;/b&gt; — prompt kurar, ToolAccess.ForKind, progressUrl belirteci, turu kaydeder&lt;br&gt;&lt;b&gt;LimitGuard&lt;/b&gt; — kota eşiği; dolunca Paused + resumeAt&lt;br&gt;&lt;b&gt;ProgressRegistry&lt;/b&gt; — tek kullanımlık belirteç → agent.tool&lt;br&gt;&lt;b&gt;Prompts · SpecSchema · StepSchemas&lt;/b&gt; — adım şemaları (analyze/design/implement/review/ask)&lt;br&gt;&lt;b&gt;RunReader · UsageReader&lt;/b&gt; — özet, tur, maliyet toplamı · &lt;b&gt;RunModels&lt;/b&gt; DTO'lar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="400" y="595" width="705" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-app-3" value="&lt;b&gt;Agents/&lt;/b&gt;AgentService — CRUD, import, composedPrompt (gövde + includes), sahneye yerleştirme, in_use denetimi" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="55" y="755" width="330" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-app-4" value="&lt;b&gt;Workflows/&lt;/b&gt;WorkflowService (upsert, default korumalı, değişmezler) · WorkflowMapping · Workflow.ImplementBefore (geri dönüş kuralının tek kaynağı)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="400" y="755" width="340" height="56" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-app-5" value="&lt;b&gt;Projects/&lt;/b&gt;ProjectService — kart, targetDir, sıralama, silme (in_use 409) · &lt;b&gt;Common/&lt;/b&gt;NotFoundException" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="755" y="755" width="350" height="56" as="geometry"/>
+        </mxCell>
+
+        <!-- Domain -->
+        <mxCell id="o-dom" value="&lt;b&gt;MrHobist.AITeam.Domain&lt;/b&gt; — çekirdek (bağımlılığı yok)&lt;br&gt;Agents (AgentDefinition, frontmatter alanları) · Workflows (Workflow, Stage, StageKind: analyze/design/implement/review/handoff) · Runs (Run, RunStatus, Phase, Turn, Message, TaskGraph, Question) · Projects · Settings · ErrorCodes · DomainException · Identifiers (RunId, AgentKey…)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;verticalAlign=top;fontSize=13;spacingTop=6;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="920" width="1080" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Tests -->
+        <mxCell id="o-tests" value="&lt;b&gt;tests/&lt;/b&gt;&lt;br&gt;UnitTests (Domain + Application saf mantık)&lt;br&gt;ServiceTests (Api uçları, sahte runtime, geçici dosya deposu)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="100" width="300" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="o-legend" value="&lt;b&gt;Oklar&lt;/b&gt;: bağımlılık (referans)&lt;br&gt;Api → Application, Infrastructure&lt;br&gt;Infrastructure → Application (portları uygular)&lt;br&gt;Application → Domain" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="230" width="300" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="oe1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="o-api" target="o-app">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="520" as="sourcePoint"/>
+            <mxPoint x="300" y="560" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="oe2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="o-inf" target="o-app">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="520" as="sourcePoint"/>
+            <mxPoint x="860" y="560" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="oe3" value="DI" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="o-api" target="o-inf">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="560" y="120" as="sourcePoint"/>
+            <mxPoint x="600" y="120" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="oe4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="o-app" target="o-dom">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="580" y="890" as="sourcePoint"/>
+            <mxPoint x="580" y="920" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="oe5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="o-tests" target="o-api">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================ -->
+  <!-- SAYFA 4 — EKİP VE İŞ AKIŞLARI -->
+  <!-- ============================================================ -->
+  <diagram id="p4-team" name="4 · Ekip ve iş akışları">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="k-title" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;Ekip tanımı ve iş akışları&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Takım = iş akışı. Ajanlar tek havuzdur (config/agents/*.md); proje bir akış seçer, akış her adımda bir ajanı çağırır. Ekip açıktır: zorunlu rol yok, UI'daki Ekip panelinden ajan/akış eklenir." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1200" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Ajan havuzu -->
+        <mxCell id="k-pool" value="&lt;b&gt;Ajan havuzu — config/agents/*.md&lt;/b&gt; (frontmatter: name · summary · office_roles · provider · model · effort · includes · can_ask; gövde = sistem promptu)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="1000" height="230" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-a1" value="&lt;b&gt;Analist&lt;/b&gt; (analyst)&lt;br&gt;Brief'i çözer, mimariyi kurar, bağımlılık sıralı görev grafiği + kurallar (Spec)&lt;br&gt;ofis: pm, arch, res · effort low&lt;br&gt;includes: mimari-kurallar&lt;br&gt;can_ask: manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="55" y="150" width="155" height="175" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-a2" value="&lt;b&gt;Tasarımcı&lt;/b&gt; (designer)&lt;br&gt;Kullanıcıya dokunan yüzeyleri ve akışı belirler; kod yazmaz, rehberlik notu&lt;br&gt;ofis: designer&lt;br&gt;includes: tasarim-ilkeleri&lt;br&gt;can_ask: manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="218" y="150" width="155" height="175" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-a3" value="&lt;b&gt;Developer&lt;/b&gt; (developer)&lt;br&gt;Görevi kodlar: dosya yazar, build/test koşar; red gelirse düzeltir; takılırsa blocked&lt;br&gt;ofis: dev · araç: tam&lt;br&gt;includes: mimari-kurallar, kodlama-standartlari&lt;br&gt;can_ask: manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="381" y="150" width="155" height="175" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-a4" value="&lt;b&gt;Testçi&lt;/b&gt; (tester)&lt;br&gt;Kodu okur, testleri fiilen koşar (test dosyası yazabilir, uygulama kodunu değiştirmez); kabul / gerekçeli red&lt;br&gt;ofis: qa, gate · araç: tam&lt;br&gt;includes: kodlama-standartlari&lt;br&gt;can_ask: manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="544" y="150" width="155" height="175" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-a5" value="&lt;b&gt;Manager&lt;/b&gt; (manager)&lt;br&gt;Altı şapkalı karar verici: son onay kapısı; ajan sorularını cevaplar (escalate edebilir)&lt;br&gt;ofis: gate&lt;br&gt;includes: karar-ilkeleri" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="707" y="150" width="155" height="175" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-a6" value="&lt;b&gt;Organizatör&lt;/b&gt; (organizer)&lt;br&gt;Adım geçişinde devir notu yazar (yalnız implement atamasında); ucuz model&lt;br&gt;ofis: ops&lt;br&gt;anthropic · claude-haiku-4-5 · effort low" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="870" y="150" width="155" height="175" as="geometry"/>
+        </mxCell>
+
+        <!-- Bilgi dosyaları -->
+        <mxCell id="k-kn" value="&lt;b&gt;config/knowledge/*.md&lt;/b&gt; — alt md'ler; composedPrompt = ajan gövdesi + includes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=12;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="110" width="260" height="230" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-kn1" value="mimari-kurallar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1085" y="160" width="230" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-kn2" value="kodlama-standartlari" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1085" y="200" width="230" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-kn3" value="tasarim-ilkeleri" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1085" y="240" width="230" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-kn4" value="karar-ilkeleri" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1085" y="280" width="230" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Varsayılan akış -->
+        <mxCell id="k-wf1" value="&lt;b&gt;İş akışı: default (Varsayılan)&lt;/b&gt; — config/workflows/default.json · handoffRole: organizer · maxReviewRounds: 3 · silinemez" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="380" width="1290" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1s1" value="&lt;b&gt;Analiz&lt;/b&gt;&lt;br&gt;kind: analyze&lt;br&gt;role: analyst · pm&lt;br&gt;salt okuma araç&lt;br&gt;→ Spec (görev grafiği) → plan onayı" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="425" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1s2" value="&lt;b&gt;Geliştirme&lt;/b&gt;&lt;br&gt;kind: implement&lt;br&gt;role: developer · dev&lt;br&gt;tam araç, cwd = hedef dizin&lt;br&gt;→ summary, filesChanged, commandsRun, blocked" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="370" y="425" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1s3" value="&lt;b&gt;Test&lt;/b&gt;&lt;br&gt;kind: review&lt;br&gt;role: tester · qa&lt;br&gt;testleri fiilen koşar&lt;br&gt;→ verdict, findings, feedback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="670" y="425" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1s4" value="&lt;b&gt;Karar&lt;/b&gt;&lt;br&gt;kind: review&lt;br&gt;role: manager · gate&lt;br&gt;altı şapka: ölçüt, risk, maliyet, bakım, hız, kapsam&lt;br&gt;→ verdict" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="970" y="425" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1done" value="&lt;b&gt;done&lt;/b&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#82b366;strokeColor=#82b366;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="445" width="60" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1e1" value="onay" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="k-w1s1" target="k-w1s2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1e2" value="organizatör devir notu" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="k-w1s2" target="k-w1s3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1e3" value="kabul" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="k-w1s3" target="k-w1s4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1e4" value="kabul" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="k-w1s4" target="k-w1done">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w1r1" value="red → en yakın önceki implement (review-feedback notuyla)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;strokeColor=#b85450;fontColor=#b85450;" edge="1" parent="1" source="k-w1s3" target="k-w1s2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="770" y="535"/>
+              <mxPoint x="470" y="535"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="k-w1r2" value="red" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;strokeColor=#b85450;fontColor=#b85450;" edge="1" parent="1" source="k-w1s4" target="k-w1s2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1070" y="545"/>
+              <mxPoint x="420" y="545"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Tasarımlı akış -->
+        <mxCell id="k-wf2" value="&lt;b&gt;İş akışı: tasarimli (Tasarımlı)&lt;/b&gt; — kullanıcıya dokunan yüzeyi olan işler; analizden sonra tasarımcı girer · handoffRole: organizer · maxReviewRounds: 3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="580" width="1290" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w2s1" value="&lt;b&gt;Analiz&lt;/b&gt;&lt;br&gt;analyze · analyst" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="70" y="625" width="170" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w2s2" value="&lt;b&gt;Tasarım&lt;/b&gt;&lt;br&gt;design · designer&lt;br&gt;→ guidance, decisions[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="625" width="170" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w2s3" value="&lt;b&gt;Geliştirme&lt;/b&gt;&lt;br&gt;implement · developer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="530" y="625" width="170" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w2s4" value="&lt;b&gt;Test&lt;/b&gt;&lt;br&gt;review · tester" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="760" y="625" width="170" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w2s5" value="&lt;b&gt;Karar&lt;/b&gt;&lt;br&gt;review · manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="990" y="625" width="170" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w2done" value="&lt;b&gt;done&lt;/b&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#82b366;strokeColor=#82b366;fontColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="630" width="60" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-w2e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="k-w2s1" target="k-w2s2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="k-w2e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="k-w2s2" target="k-w2s3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="k-w2e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="k-w2s3" target="k-w2s4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="k-w2e4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="k-w2s4" target="k-w2s5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="k-w2e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="k-w2s5" target="k-w2done"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="k-w2r1" value="red" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;strokeColor=#b85450;fontColor=#b85450;" edge="1" parent="1" source="k-w2s4" target="k-w2s3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="845" y="710"/>
+              <mxPoint x="615" y="710"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Adım türleri tablosu -->
+        <mxCell id="k-kinds" value="&lt;b&gt;Adım türleri (StageKind) ve araç erişimi — ToolAccess.ForKind, .NET belirler&lt;/b&gt;&lt;br&gt;&lt;b&gt;analyze&lt;/b&gt; — salt okuma (Read/Glob/Grep), en çok 30 tur → SpecSchema; plan onay döngüsü&lt;br&gt;&lt;b&gt;design&lt;/b&gt; — salt okuma, en çok 30 tur → guidance + decisions; kod yazmaz&lt;br&gt;&lt;b&gt;implement&lt;/b&gt; — tam araç (Write/Edit/Bash, cwd içinde), en çok 120 tur → summary, filesChanged, commandsRun, blocked, question&lt;br&gt;&lt;b&gt;review&lt;/b&gt; — tam araç, en çok 80 tur; uygulama kodunu değiştirmez → verdict, testsRun, findings, feedback&lt;br&gt;&lt;b&gt;handoff&lt;/b&gt; — araç yok (ForKind null) → devir notu metni (organizatör)&lt;br&gt;&lt;b&gt;ask&lt;/b&gt; — StageKind DEĞİL: developer blocked olunca açılan yan çağrı; salt okuma, en çok 20 tur → answer, escalate, reason (can_ask hedefi, görev başına 1 kez)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="760" width="760" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="k-rules" value="&lt;b&gt;Dağıtım kuralları (Dispatcher)&lt;/b&gt;&lt;br&gt;• Hazır görev: dependsOn'daki görevler done (topolojik sıra, analist sırası korunur)&lt;br&gt;• Ajan başına tek iş; farklı ajanlar paralel (developer kodlarken testçi başka görevi denetler)&lt;br&gt;• Çalışma içinde sıralı, çalışmalar arası paralel (JobWorker havuzu)&lt;br&gt;• Red → en yakın önceki implement (Workflow.ImplementBefore, tek kaynak)&lt;br&gt;• maxReviewRounds kapı başına; aşılınca kullanıcıya soru (retry / skip / cancel)&lt;br&gt;• Sağlayıcı/model ajan frontmatter'ından; boşsa anthropic · claude-opus-5 · high&lt;br&gt;• Hassasiyet Anthropic olan çalışma OpenAI'ye çıkamaz (PolicyRejected)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="830" y="760" width="500" height="170" as="geometry"/>
+        </mxCell>
+
+        <!-- includes edges -->
+        <mxCell id="k-i1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="k-a1" target="k-kn1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="132" y="355"/><mxPoint x="1050" y="355"/><mxPoint x="1050" y="175"/></Array></mxGeometry></mxCell>
+        <mxCell id="k-i3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="k-a3" target="k-kn2"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="458" y="360"/><mxPoint x="1055" y="360"/><mxPoint x="1055" y="215"/></Array></mxGeometry></mxCell>
+        <mxCell id="k-i2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="k-a2" target="k-kn3"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="295" y="365"/><mxPoint x="1060" y="365"/><mxPoint x="1060" y="255"/></Array></mxGeometry></mxCell>
+        <mxCell id="k-i5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="k-a5" target="k-kn4"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="784" y="370"/><mxPoint x="1065" y="370"/><mxPoint x="1065" y="295"/></Array></mxGeometry></mxCell>
+        <mxCell id="k-ask" value="can_ask: blocked sorusu önce manager'a (meet: ask)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;strokeColor=#9673a6;fontColor=#9673a6;fontSize=11;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="k-a3" target="k-a5"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="458" y="334"/><mxPoint x="784" y="334"/></Array></mxGeometry></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================ -->
+  <!-- SAYFA 5 — ÇALIŞMA YAŞAM DÖNGÜSÜ -->
+  <!-- ============================================================ -->
+  <diagram id="p5-lifecycle" name="5 · Çalışma yaşam döngüsü">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="l-title" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;Çalışma (Run) yaşam döngüsü — RunStatus durum makinesi&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Enum adıyla taşınır, üye sona eklenir: Running · Completed · Failed · Interrupted · BudgetExceeded · PolicyRejected · AwaitingApproval · Paused · Cancelled · AwaitingInput. Her geçiş run.json'a yazılır, sahneye olay olur." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1300" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="l-start" value="POST /runs&lt;br&gt;{project, brief, workflow?, sensitivity?, maxCostUsd?}&lt;br&gt;202 → akış runs/&amp;lt;id&amp;gt;/workflow.json'a dondurulur" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="196" width="220" height="86" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-pol" value="&lt;b&gt;PolicyRejected&lt;/b&gt;&lt;br&gt;hassasiyete aykırı ajan; hiç başlamaz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="220" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-run1" value="&lt;b&gt;Running&lt;/b&gt; (step: analiz)&lt;br&gt;analist Spec üretir&lt;br&gt;sahne: agent.state analyst working, run.stage Analiz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="330" y="200" width="230" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-aa" value="&lt;b&gt;AwaitingApproval&lt;/b&gt;&lt;br&gt;plan (görev grafiği) kullanıcı onayı bekler&lt;br&gt;gelen kutusu · pano rozeti" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="640" y="200" width="230" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-run2" value="&lt;b&gt;Running&lt;/b&gt; (dağıtım)&lt;br&gt;Dispatcher: planla → adım koş → yeniden planla&lt;br&gt;board.set / meet handoff / board.move" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="640" y="360" width="230" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-done" value="&lt;b&gt;Completed&lt;/b&gt;&lt;br&gt;tüm görevler son kapıdan geçti" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="360" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-ai" value="&lt;b&gt;AwaitingInput&lt;/b&gt;&lt;br&gt;soru: developer blocked (manager cevaplayamadı), review tavanı, aynı adımda tekrar hata&lt;br&gt;seçenekler: retry · skip · cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="640" y="500" width="230" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-paused" value="&lt;b&gt;Paused&lt;/b&gt;&lt;br&gt;limit eşiği (%99) doldu · resumeAt&lt;br&gt;RunScheduler pencere sıfırlanınca uyandırır&lt;br&gt;(faz cause: limit, tur sayılmaz)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="330" y="500" width="230" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-fail" value="&lt;b&gt;Failed&lt;/b&gt; sağlayıcı/adım hatası&lt;br&gt;&lt;b&gt;Interrupted&lt;/b&gt; süreç yeniden başladı&lt;br&gt;&lt;b&gt;BudgetExceeded&lt;/b&gt; maxCostUsd aşıldı" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="500" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-cancel" value="&lt;b&gt;Cancelled&lt;/b&gt;&lt;br&gt;kullanıcı iptal/kapat; süren LLM çağrısının sonucu yazılmaz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="640" y="660" width="230" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="le1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="l-start" target="l-run1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="le1b" value="politika" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;strokeColor=#b85450;" edge="1" parent="1" source="l-start" target="l-pol"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="le2" value="Spec hazır" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="l-run1" target="l-aa"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="le3" value="revise {note} → analist yeniden" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="l-aa" target="l-run1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="755" y="150"/><mxPoint x="445" y="150"/></Array></mxGeometry></mxCell>
+        <mxCell id="le4" value="approve → board.set" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="l-aa" target="l-run2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="le5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="l-run2" target="l-done"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="le6" value="soru" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="l-run2" target="l-ai"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="le7" value="answer {choice} → retry/skip" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="l-ai" target="l-run2"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="600" y="545"/><mxPoint x="600" y="395"/></Array></mxGeometry></mxCell>
+        <mxCell id="le8" value="limit" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="l-run2" target="l-paused"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="445" y="395"/></Array></mxGeometry></mxCell>
+        <mxCell id="le9" value="pencere sıfırlandı / retry" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="l-paused" target="l-run2"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="500" y="470"/><mxPoint x="700" y="470"/></Array></mxGeometry></mxCell>
+        <mxCell id="le10" value="hata / çökme / bütçe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;strokeColor=#b85450;exitX=1;exitY=0.75;entryX=0;entryY=0.3;" edge="1" parent="1" source="l-run2" target="l-fail"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="960" y="412"/><mxPoint x="960" y="527"/></Array></mxGeometry></mxCell>
+        <mxCell id="le11" value="retry → kaldığı adımdan" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;exitX=0;exitY=0.8;entryX=1;entryY=0.5;" edge="1" parent="1" source="l-fail" target="l-run2"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="920" y="572"/><mxPoint x="920" y="395"/></Array></mxGeometry></mxCell>
+        <mxCell id="le12" value="cancel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;strokeColor=#b85450;" edge="1" parent="1" source="l-ai" target="l-cancel"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="le13" value="cancel (Running/AwaitingApproval/Paused/Failed/…)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;strokeColor=#b85450;" edge="1" parent="1" source="l-fail" target="l-cancel"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1100" y="695"/></Array></mxGeometry></mxCell>
+        <mxCell id="le14" value="retry → Running ya da AwaitingApproval" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="l-cancel" target="l-aa"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="300" y="695"/><mxPoint x="300" y="235"/></Array></mxGeometry></mxCell>
+
+        <!-- Adım döngüsü -->
+        <mxCell id="l-loop" value="&lt;b&gt;Bir adımın iç döngüsü (faz kayıtları — phases.jsonl)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="780" width="1300" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="l-p1" value="görev &lt;b&gt;queued&lt;/b&gt;&lt;br&gt;(dependsOn done, ajan dolu)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="850" width="170" height="60" as="geometry"/></mxCell>
+        <mxCell id="l-p2" value="&lt;b&gt;handoff&lt;/b&gt; (yalnız implement)&lt;br&gt;organizatör devir notu → messages.jsonl" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=11;" vertex="1" parent="1"><mxGeometry x="260" y="850" width="190" height="60" as="geometry"/></mxCell>
+        <mxCell id="l-p3" value="&lt;b&gt;Started&lt;/b&gt; (adım, ajan, tur)&lt;br&gt;AgentCaller → runtime /v1/turn&lt;br&gt;canlı: agent.tool balonları" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="480" y="850" width="200" height="60" as="geometry"/></mxCell>
+        <mxCell id="l-p4" value="&lt;b&gt;Done&lt;/b&gt; → sonraki adım" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1"><mxGeometry x="740" y="820" width="170" height="40" as="geometry"/></mxCell>
+        <mxCell id="l-p5" value="&lt;b&gt;Rejected&lt;/b&gt; → önceki implement (feedback notu)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="740" y="870" width="170" height="40" as="geometry"/></mxCell>
+        <mxCell id="l-p6" value="&lt;b&gt;Failed&lt;/b&gt; → aynı adım (cause: agent | limit | cancelled | interrupted)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="740" y="920" width="170" height="50" as="geometry"/></mxCell>
+        <mxCell id="l-p7" value="&lt;b&gt;Skipped&lt;/b&gt; (ajan: user) → sonraki adım; yalnız kullanıcı &quot;skip&quot; deyince" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1"><mxGeometry x="940" y="870" width="180" height="50" as="geometry"/></mxCell>
+        <mxCell id="l-p8" value="tur = adımda bitmiş deneme + 1&lt;br&gt;kapı başına maxReviewRounds (3) → aşınca AwaitingInput&lt;br&gt;limit/iptal/kesinti fazları sayılmaz" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=11;fontStyle=2;" vertex="1" parent="1"><mxGeometry x="60" y="925" width="600" height="70" as="geometry"/></mxCell>
+        <mxCell id="lp1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="l-p1" target="l-p2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="lp2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="l-p2" target="l-p3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="lp3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="l-p3" target="l-p4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="lp4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="l-p3" target="l-p5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="lp5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="l-p3" target="l-p6"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================ -->
+  <!-- SAYFA 6 — BİR TURUN YOLCULUĞU -->
+  <!-- ============================================================ -->
+  <diagram id="p6-turn" name="6 · Bir LLM turunun yolculuğu">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="q-title" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;Bir LLM turunun yolculuğu — developer &quot;implement&quot; adımı örneği&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Numaralı oklar sırayı verir. Düz ok = eşzamanlı HTTP; kesik ok = geri çağrı / yayın. .NET karar verir, Python yalnız çağırır, model dosyayı hedef dizinde kendisi yazar." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1400" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- 1. sira: istek Api'ye girer, kuyruga duser -->
+        <mxCell id="q-ui" value="&lt;b&gt;UI&lt;/b&gt;&lt;br&gt;RunPanel · OfficeScene" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="40" y="140" width="180" height="60" as="geometry"/></mxCell>
+        <mxCell id="q-ep" value="&lt;b&gt;RunEndpoints&lt;/b&gt;&lt;br&gt;doğrula, 202" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="360" y="140" width="180" height="60" as="geometry"/></mxCell>
+        <mxCell id="q-job" value="&lt;b&gt;JobChannel → JobWorker&lt;/b&gt;&lt;br&gt;çalışma başına kilit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="680" y="140" width="200" height="60" as="geometry"/></mxCell>
+        <mxCell id="q-disp" value="&lt;b&gt;Dispatcher&lt;/b&gt;&lt;br&gt;hazır görev + boş ajan → atama&lt;br&gt;LimitGuard eşiği kontrol" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1020" y="140" width="220" height="60" as="geometry"/></mxCell>
+
+        <!-- 2. sira: adimi kuran yer, gecmisin yazildigi yer -->
+        <mxCell id="q-runs" value="&lt;b&gt;runs/&amp;lt;id&amp;gt;/&lt;/b&gt;&lt;br&gt;phases.jsonl Started/Done · conversations/*.jsonl (prompt, çıktı, token, cost, hedef, toolUses) · run.json" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1"><mxGeometry x="360" y="250" width="240" height="110" as="geometry"/></mxCell>
+        <mxCell id="q-call" value="&lt;b&gt;AgentCaller&lt;/b&gt;&lt;br&gt;composedPrompt + görev + devir notu + feedback → messages&lt;br&gt;ToolAccess.ForKind(implement) = tam · cwd = projects/&amp;lt;key&amp;gt;&lt;br&gt;ProgressRegistry: tek kullanımlık progressUrl · StepSchemas.Implement" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="960" y="250" width="440" height="100" as="geometry"/></mxCell>
+
+        <!-- 3. sira: sahneye yayin, runtime'a cikis -->
+        <mxCell id="q-bus" value="&lt;b&gt;SceneEventBus (SSE)&lt;/b&gt;&lt;br&gt;agent.tool · agent.state · meet · board.move · run.stage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="360" y="430" width="260" height="60" as="geometry"/></mxCell>
+        <mxCell id="q-cli" value="&lt;b&gt;PythonAgentRuntimeClient&lt;/b&gt;&lt;br&gt;IAgentRuntimeService → HTTP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="960" y="430" width="220" height="60" as="geometry"/></mxCell>
+        <mxCell id="q-rt" value="&lt;b&gt;runtime POST /v1/turn&lt;/b&gt;&lt;br&gt;provider'a göre adaptör seç (anthropic.py)&lt;br&gt;kimlik: env &amp;gt; credentials.json &amp;gt; CLI oturumu" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1"><mxGeometry x="960" y="540" width="300" height="70" as="geometry"/></mxCell>
+
+        <!-- 4. sira: modelin arac dongusu, hedef dizin -->
+        <mxCell id="q-prog" value="&lt;b&gt;POST /progress/{token}&lt;/b&gt;&lt;br&gt;{tool, target} · 2 s zaman aşımı · hata yutulur" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="360" y="670" width="260" height="60" as="geometry"/></mxCell>
+        <mxCell id="q-sdk" value="&lt;b&gt;Claude Agent SDK → claude.exe&lt;/b&gt;&lt;br&gt;ajan döngüsü: model düşünür, araç çağırır, sonucu görür, tekrar…&lt;br&gt;can_use_tool: Write/Edit yalnız cwd içi; Bash'te mutlak yol/~/.. reddedilir" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="960" y="670" width="300" height="90" as="geometry"/></mxCell>
+        <mxCell id="q-dir" value="&lt;b&gt;projects/&amp;lt;key&amp;gt;/&lt;/b&gt;&lt;br&gt;dosyalar yazılır, build/test koşar" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1360" y="665" width="170" height="100" as="geometry"/></mxCell>
+
+        <mxCell id="qe1" value="1. POST /runs/{id}/&lt;br&gt;approve (JWT)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="q-ui" target="q-ep"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe2" value="2. kuyruğa iş, 202" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="q-ep" target="q-job"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe3" value="3. DispatchAsync" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="q-job" target="q-disp"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe4" value="4. adımı koş" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.34;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-disp" target="q-call"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe4b" value="4a. Started fazı + handoff mesajı" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-call" target="q-runs"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe13" value="13. tur + Done/Rejected/Failed fazı + maliyet" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=1;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-call" target="q-runs"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe4c" value="4b. meet handoff · board.move · agent.state working" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-disp" target="q-bus"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="930" y="170"/><mxPoint x="930" y="400"/><mxPoint x="490" y="400"/></Array></mxGeometry></mxCell>
+        <mxCell id="qe5" value="5. TurnRequest" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-call" target="q-cli"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe6" value="6. HTTP 127.0.0.1:5090" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.37;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-cli" target="q-rt"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe7" value="7. query(prompt, tools, cwd, schema)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-rt" target="q-sdk"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe8" value="8. Read/Write/&lt;br&gt;Edit/Bash" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-sdk" target="q-dir"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe9" value="9. her araç çağrısında" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-sdk" target="q-prog"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe10" value="10. agent.tool" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-prog" target="q-bus"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="qe11" value="11. SSE → balon, &quot;Şu an&quot; şeridi" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.33;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-bus" target="q-ui"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="100" y="460"/></Array></mxGeometry></mxCell>
+        <mxCell id="qe12" value="12. TurnResponse" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;strokeColor=#d6b656;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.8;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-rt" target="q-call"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1312" y="575"/></Array></mxGeometry></mxCell>
+        <mxCell id="qe14" value="14. yeniden planla (sonraki adım / geri dönüş / soru / bitti)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;exitX=0.9;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-call" target="q-disp"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1356" y="110"/><mxPoint x="1130" y="110"/></Array></mxGeometry></mxCell>
+        <mxCell id="qe15" value="yoklama: GET /runs/{id} 2 s" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;exitX=0.72;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="q-ui" target="q-runs"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="170" y="305"/></Array></mxGeometry></mxCell>
+
+        <mxCell id="q-note" value="&lt;b&gt;Sonuç şeması (implement):&lt;/b&gt; summary, filesChanged[], commandsRun[], blocked, question. blocked=true → önce can_ask hedefi (manager, salt okuma, görev başına 1 kez) → cevap notla aynı adım yeniden; manager escalate ederse kullanıcıya soru (AwaitingInput).&lt;br&gt;&lt;b&gt;OpenAI/Codex yolunda&lt;/b&gt; adım 7–9 yerine codex exec --json (sandbox workspace-write); araç olayları tur sonunda ayrıştırılır, canlı akış yok. &lt;b&gt;API anahtarıyla OpenAI&lt;/b&gt;: araçlı adım 501 runtime.tools_unsupported.&lt;br&gt;&lt;b&gt;12. TurnResponse&lt;/b&gt; = {text, structured, usage, costUsd, toolUses}." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="40" y="820" width="1490" height="90" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================ -->
+  <!-- SAYFA 7 — UI -->
+  <!-- ============================================================ -->
+  <diagram id="p7-ui" name="7 · UI nasıl çalışıyor">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="u-title" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;UI — Nuxt 4 + Canvas 2D piksel ofis&lt;/font&gt;&lt;/b&gt;&lt;br&gt;Tek sayfa (app.vue). Yerleşimin kopyasını tutmaz: sahne yerleşimi, pano sütunları ve olaylar Api'den gelir. Api kapalıysa sahne yüklenmez ve bunu söyler; SSE kopunca &quot;sahte yönetmen&quot; aynı şekildeki olayları üretir ve rozet gösterir." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1300" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Kabuk -->
+        <mxCell id="u-shell" value="&lt;b&gt;app.vue — kabuk&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="760" height="440" as="geometry"/>
+        </mxCell>
+        <mxCell id="u-top" value="&lt;b&gt;Üst bar&lt;/b&gt; — Ekip (E) · İşler · Kanban · Ayarlar · &lt;b&gt;LimitsBar&lt;/b&gt; (GET /limits: kalan kota yüzdesi, sağlayıcı başına) · bildirim zili (inbox)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="55" y="145" width="730" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="u-rail" value="&lt;b&gt;Proje rayı&lt;/b&gt; (sol, ahşap)&lt;br&gt;&lt;br&gt;Başlık: &quot;Projeler&quot; + proje sayısı + &lt;b&gt;+&lt;/b&gt; (yeni proje, kısayol N)&lt;br&gt;&lt;br&gt;Her proje bir kağıt kart (hafif eğik, raptiyeli):&lt;br&gt;• renk şeridi + baş harfler (project.color)&lt;br&gt;• kaç iş · kaç çalışıyor · kaç durakladı · ≈$ toplam&lt;br&gt;• &quot;N senden bekliyor&quot; (gelen kutusu) ya da son hareket zamanı&lt;br&gt;• sessiz proje soluk; açık olan işaretli&lt;br&gt;&lt;br&gt;Sıra POST /projects/reorder ile kalıcı.&lt;br&gt;Tık → ProjectPanel; panel açıkken ray 232 px'e daralır.&lt;br&gt;&lt;br&gt;Altta &lt;b&gt;Tüm işler&lt;/b&gt; → JobsPanel (overview.total)&lt;br&gt;Proje yoksa: &quot;+ ile ilk projeyi aç; işler onun içinde başlar.&quot;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="55" y="195" width="200" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="u-scene" value="&lt;b&gt;OfficeScene.vue&lt;/b&gt; — Canvas 2D&lt;br&gt;&lt;b&gt;scene/world.ts&lt;/b&gt; oyun döngüsü, HUD, ambient (kedi, kapı, ışık, ziyaretçi)&lt;br&gt;&lt;b&gt;entities.ts&lt;/b&gt; ajan sprite'ları, durum noktası, balonlar, yürüyüş&lt;br&gt;&lt;b&gt;board.ts&lt;/b&gt; pano: akış sütunları + görev notları, rozet&lt;br&gt;&lt;b&gt;nav.ts&lt;/b&gt; yol bulma (koltuklar, duraklar, engeller)&lt;br&gt;&lt;b&gt;atlas.ts&lt;/b&gt; sprite atlası · &lt;b&gt;sky.ts&lt;/b&gt; pencere manzarası (clock.set)&lt;br&gt;&lt;b&gt;feed.ts&lt;/b&gt; SSE bağlantısı + sahte yönetmen&lt;br&gt;&lt;b&gt;contract.ts&lt;/b&gt; olay tipleri (docs/SCENE.md ile aynı)&lt;br&gt;Tuvale tık: ajan seç (AgentPanel) · ışık aç/kapat (komut olarak Api'ye)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="265" y="195" width="520" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="u-compass" value="&lt;b&gt;Pusula&lt;/b&gt; — ekip halkası: ajanlar durum rengiyle; Yönet → TeamPanel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="265" y="405" width="250" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="u-login" value="&lt;b&gt;LoginPanel&lt;/b&gt; — POST /auth/login → JWT (useAuth composable saklar); giriş yoksa kabuk açılmaz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="525" y="405" width="260" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="u-boot" value="&lt;b&gt;İlk yükleme:&lt;/b&gt; GET /providers (giriş var mı? yoksa uyarı) · /agents · /projects · /scene · /workflows/{key} · /runs/overview; sonra SSE'ye bağlan" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="265" y="465" width="520" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Paneller -->
+        <mxCell id="u-panels" value="&lt;b&gt;Paneller (components/) — sahnenin üstünde açılır, aynı kapat düğmesi&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="830" y="110" width="520" height="440" as="geometry"/>
+        </mxCell>
+        <mxCell id="u-p1" value="&lt;b&gt;RunPanel&lt;/b&gt; — çalışma: durum, adım, plan onayı (approve/revise), soru düğmeleri (answer), retry/cancel, günlük (turns: tam prompt+çıktı), &quot;Şu an&quot; canlı araç şeridi; 2 s yoklama" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="845" y="145" width="490" height="56" as="geometry"/></mxCell>
+        <mxCell id="u-p2" value="&lt;b&gt;ProjectPanel&lt;/b&gt; — proje kartı, hedef dizin (DirPicker), akış seçimi, çalışmalar listesi, yeni brief, Başlat (launch run.cmd), silme" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="845" y="209" width="490" height="46" as="geometry"/></mxCell>
+        <mxCell id="u-p3" value="&lt;b&gt;KanbanPanel&lt;/b&gt; — proje × akış sütunu panosu; api/board.ts görev hedefini türetir (ImplementBefore kuralının TS kopyası)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="845" y="263" width="490" height="46" as="geometry"/></mxCell>
+        <mxCell id="u-p4" value="&lt;b&gt;JobsPanel&lt;/b&gt; — RunsOverview: kaç iş, hangi durumda, gelen kutusu (onay/soru/hata)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="845" y="317" width="490" height="40" as="geometry"/></mxCell>
+        <mxCell id="u-p5" value="&lt;b&gt;TeamPanel&lt;/b&gt; — Ajanlar (havuz, yeni/sil/import md) · Takımlar (akış düzenleyici: adım ekle/sil/sırala, PUT /workflows) · Bilgi dosyaları (knowledge CRUD)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="845" y="365" width="490" height="50" as="geometry"/></mxCell>
+        <mxCell id="u-p6" value="&lt;b&gt;AgentPanel&lt;/b&gt; — ajan kartı: frontmatter, composedPrompt, İşler sekmesi (GET /agents/{key}/work)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="845" y="423" width="490" height="40" as="geometry"/></mxCell>
+        <mxCell id="u-p7" value="&lt;b&gt;SettingsPanel&lt;/b&gt; — sağlayıcı girişi (claude/codex login, API anahtarı), çıkış, modeller, kullanım (usage), limit eşiği (settings)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="845" y="471" width="490" height="46" as="geometry"/></mxCell>
+
+        <!-- API katmanı -->
+        <mxCell id="u-api" value="&lt;b&gt;api/ — Api ile konuşma katmanı&lt;/b&gt;&lt;br&gt;&lt;b&gt;client.ts&lt;/b&gt; useApiClient: fetch + Bearer JWT, Problem Details → ApiError&lt;br&gt;&lt;b&gt;errors.ts&lt;/b&gt; errorCode → Türkçe metin (title/detail basılmaz)&lt;br&gt;&lt;b&gt;labels.ts&lt;/b&gt; RunStatus/InboxKind/provider etiketleri, maliyet biçimi&lt;br&gt;&lt;b&gt;types.ts&lt;/b&gt; → &lt;b&gt;shared/types/api.ts&lt;/b&gt; (npm run gen:api, openapi-typescript; elle yazılmaz)&lt;br&gt;&lt;b&gt;board.ts&lt;/b&gt; Kanban türetimi" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="580" width="620" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="u-data" value="&lt;b&gt;Veri akışları&lt;/b&gt;&lt;br&gt;&lt;b&gt;SSE&lt;/b&gt; GET /scene/events → feed.ts → world.ts (agent.state, agent.say, agent.goto/home, meet, board.set/move, run.stage, cat, door, clock.set, cafe.special, workflow.set, light, agent.tool, agent.leave/enter)&lt;br&gt;&lt;b&gt;Yoklama&lt;/b&gt; /runs/{id} 2 s (aktif çalışma) · /runs/overview 5 s (rozet, inbox) · /providers 5 s × 3 dk (giriş sonrası)&lt;br&gt;&lt;b&gt;Komut&lt;/b&gt; POST /scene/commands (ışık; ikinci tarayıcı da görür)&lt;br&gt;&lt;b&gt;Sprite&lt;/b&gt; public/sprites/*.png (build-sprites.py üretir)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="690" y="580" width="660" height="150" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="u-apibox" value="&lt;b&gt;.NET Api :5080&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="560" y="780" width="260" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="ue1" value="REST (JWT)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="u-api" target="u-apibox"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ue2" value="SSE + yoklama" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="u-apibox" target="u-data"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ue3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="u-panels" target="u-api"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1090" y="545"/><mxPoint x="350" y="545"/></Array></mxGeometry></mxCell>
+        <mxCell id="ue4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;strokeColor=#999999;" edge="1" parent="1" source="u-data" target="u-scene"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="815" y="540"/><mxPoint x="815" y="295"/></Array></mxGeometry></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================================ -->
+  <!-- SAYFA 8 — PYTHON RUNTIME -->
+  <!-- ============================================================ -->
+  <diagram id="p8-python" name="8 · Python ne yapıyor">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="y-title" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;Python runtime — yalnız LLM çağrı katmanı&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;b&gt;Durum tutmaz, veritabanı görmez, iş kuralı bilmez.&lt;/b&gt; Tek işi: {systemPrompt, messages, provider, model, schema?} alıp {text, structured, usage, costUsd} döndürmek. İki ardışık istek birbirini bilmez; geçmiş messages ile gelir. Python kapalıyken .NET derlenir ve ServiceTests koşar (sahte adaptör). scripts/verify.ps1 sınırı denetler." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1300" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="y-net" value="&lt;b&gt;.NET Api&lt;/b&gt;&lt;br&gt;PythonAgentRuntimeClient&lt;br&gt;(tek istemci; UI doğrudan konuşmaz)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="220" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="y-app" value="&lt;b&gt;runtime/app — FastAPI (127.0.0.1:5090, uvicorn)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="340" y="120" width="620" height="560" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-main" value="&lt;b&gt;main.py&lt;/b&gt; — uçlar; iş mantığı yok: isteği adaptöre verir, sonucu olduğu gibi döner&lt;br&gt;PROVIDERS = {anthropic, openai}; bilinmeyen → 501 runtime.provider_unsupported" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="155" width="590" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-e1" value="&lt;b&gt;POST /v1/turn&lt;/b&gt; — tek LLM çağrısı. Girdi: systemPrompt, messages[], provider, model, effort, schema?, tools?, cwd?, progressUrl?. Çıktı: text, structured (şemaya göre JSON), usage {input/output token}, costUsd, toolUses[]" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="215" width="590" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-e2" value="&lt;b&gt;GET /v1/models?provider=&lt;/b&gt; — sabit katalog; reachable = giriş var (gerçek çağrı yapılmaz)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="283" width="590" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-e3" value="&lt;b&gt;GET /v1/auth?provider=&lt;/b&gt; — kimlik durumu {loggedIn, account, method: session|apikey|null}; 60 s önbellek" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="325" width="590" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-e4" value="&lt;b&gt;POST /v1/auth/login&lt;/b&gt; {provider, mode, email?, apiKey?} — CLI giriş akışını yeni konsolda başlatır (claude auth login / codex login; OAuth tarayıcıda) &lt;i&gt;ya da&lt;/i&gt; apikey: anahtarı sağlayıcıda doğrular (GET /v1/models) ve credentials.json'a yazar" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="367" width="590" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-e5" value="&lt;b&gt;POST /v1/auth/logout&lt;/b&gt; — önce kayıtlı anahtar silinir; yoksa claude auth logout / codex logout" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="425" width="590" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-e6" value="&lt;b&gt;GET /v1/limits?provider=&lt;/b&gt; — kalan kota pencereleri (Anthropic: Claude Code'un /usage ucu, CLI oturumuyla); 90 s önbellek; veremeyen sağlayıcı available=false (5xx dönmez)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="467" width="590" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-e7" value="&lt;b&gt;GET /health&lt;/b&gt; — süreç ayakta mı" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="519" width="290" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-contracts" value="&lt;b&gt;contracts.py&lt;/b&gt; — pydantic modeller (camelCase alias): TurnRequest, TurnResponse, ModelInfo, AuthStatus, LoginRequest, ProviderLimits" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="557" width="590" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-errors" value="&lt;b&gt;Hatalar&lt;/b&gt; (detail.errorCode): runtime.cli_missing 503 · runtime.not_logged_in 503 · runtime.provider_error 502 · runtime.provider_unsupported 501 · runtime.tools_unsupported 501" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="355" y="605" width="590" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Sağlayıcı adaptörleri -->
+        <mxCell id="y-prov" value="&lt;b&gt;providers/ — adaptörler (LlmProvider tabanı)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontSize=13;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="120" width="420" height="560" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-anth" value="&lt;b&gt;anthropic.py&lt;/b&gt;&lt;br&gt;• Claude Agent SDK (claude_agent_sdk) → makinedeki &lt;b&gt;claude.exe&lt;/b&gt; oturumu&lt;br&gt;• claude.exe arama: CLAUDE_CLI_PATH → %APPDATA%\Claude\claude-code\&amp;lt;sürüm&amp;gt; → PATH&lt;br&gt;• tools + cwd .NET'ten gelir; SDK &lt;b&gt;can_use_tool&lt;/b&gt; geri çağrısı: Write/Edit yalnız cwd içi, Bash'te mutlak yol/~/.. ret&lt;br&gt;• her araç çağrısında progressUrl'e POST {tool, target} (2 s, hata yutulur)&lt;br&gt;• schema → yapısal çıktı; effort low|medium|high|max&lt;br&gt;• API anahtarı kayıtlıysa ANTHROPIC_API_KEY ortamla SDK'ya gider (fatura Console'a, kota penceresi yok)&lt;br&gt;• usage + costUsd sağlayıcının bildirdiğinden" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1015" y="155" width="390" height="230" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-oai" value="&lt;b&gt;openai.py&lt;/b&gt; — iki yol, öncelik sırasıyla&lt;br&gt;1. &lt;b&gt;API anahtarı&lt;/b&gt;: Responses API doğrudan (httpx); araçlı istek → 501 tools_unsupported (runtime araç uygulamaz)&lt;br&gt;2. &lt;b&gt;ChatGPT aboneliği&lt;/b&gt;: Codex CLI &lt;code&gt;codex exec --json --ephemeral -C cwd&lt;/code&gt;; araçlıysa --sandbox workspace-write, değilse read-only + boş geçici dizin; --output-schema; sistem promptu metnin başına &quot;# Sistem talimatı&quot;&lt;br&gt;• efor max → xhigh · kalan kullanım yok (available=false)&lt;br&gt;• maliyet liste fiyatından eşdeğer (PRICE_PER_M)&lt;br&gt;• katalog OPENAI_MODELS ile değişir" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;verticalAlign=top;spacingTop=4;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1015" y="395" width="390" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="y-base" value="&lt;b&gt;base.py&lt;/b&gt; LlmProvider: complete(), models(), auth(), login(), logout(), limits() · nvidia/ollama sonra" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;align=left;spacingLeft=6;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1015" y="605" width="390" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Kimlik -->
+        <mxCell id="y-cred" value="&lt;b&gt;credentials.py — kimlik önceliği&lt;/b&gt;&lt;br&gt;1. ortam değişkeni ANTHROPIC_API_KEY / OPENAI_API_KEY&lt;br&gt;2. %USERPROFILE%\.mrhobist-aiteam\credentials.json (AITEAM_CREDENTIALS_FILE ile değişir)&lt;br&gt;3. CLI oturumu (claude login / codex login) — Windows kullanıcısına bağlı&lt;br&gt;Anahtar hiçbir yanıta ve günlüğe yazılmaz; UI maskeli sonu görür. Bu dosyayı runtime yazar: iş durumu değil kimlik bilgisi (§1 istisnası, bilinçli)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="260" height="220" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="y-not" value="&lt;b&gt;Burada OLMAYAN şeyler (pazarlıksız)&lt;/b&gt;&lt;br&gt;✗ if role == … dallanması&lt;br&gt;✗ tur sayacı, faz, iş akışı, görev kavramı&lt;br&gt;✗ dosya yazma (kod yazan modeldir, cwd içinde; runtime yazmaz)&lt;br&gt;✗ veritabanı, durum&lt;br&gt;✗ araç seçimi (ToolAccess .NET'te)&lt;br&gt;Sızarsa: mantık iki dile bölünür, döngü Python'suz test edilemez." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacingLeft=10;verticalAlign=top;spacingTop=6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="260" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- Dış -->
+        <mxCell id="y-claude" value="&lt;b&gt;claude.exe&lt;/b&gt; (Claude Code CLI)&lt;br&gt;OAuth oturumu · /usage ucu" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1000" y="720" width="200" height="60" as="geometry"/></mxCell>
+        <mxCell id="y-codex" value="&lt;b&gt;codex&lt;/b&gt; (Codex CLI)&lt;br&gt;ChatGPT oturumu" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1220" y="720" width="200" height="60" as="geometry"/></mxCell>
+        <mxCell id="y-cloud" value="&lt;b&gt;Anthropic API · OpenAI API&lt;/b&gt; (makine dışına çıkan tek çağrı; hedef runs/'a yazılır: anthropic | openai)" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="1000" y="810" width="420" height="100" as="geometry"/></mxCell>
+        <mxCell id="y-tests" value="&lt;b&gt;tests/&lt;/b&gt; test_contracts · test_anthropic_provider · test_openai_provider (pytest, respx ile HTTP sahteleme)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;align=left;spacingLeft=10;fontSize=11;" vertex="1" parent="1"><mxGeometry x="340" y="720" width="620" height="40" as="geometry"/></mxCell>
+
+        <mxCell id="ye1" value="HTTP /v1/*" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="y-net" target="y-app"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ye2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.1;" edge="1" parent="1" source="y-main" target="y-prov"><mxGeometry relative="1" as="geometry"><mxPoint x="960" y="180" as="sourcePoint"/><mxPoint x="1000" y="180" as="targetPoint"/></mxGeometry></mxCell>
+        <mxCell id="ye3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="y-cred" target="y-app"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ye4" value="Agent SDK" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="y-anth" target="y-claude"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="985" y="270"/><mxPoint x="985" y="750"/></Array></mxGeometry></mxCell>
+        <mxCell id="ye5" value="exec --json" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;" edge="1" parent="1" source="y-oai" target="y-codex"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1440" y="495"/><mxPoint x="1440" y="750"/></Array></mxGeometry></mxCell>
+        <mxCell id="ye6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="y-claude" target="y-cloud"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ye7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;" edge="1" parent="1" source="y-codex" target="y-cloud"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ye8" value="progressUrl POST (canlı araç)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;fontSize=11;dashed=1;" edge="1" parent="1" source="y-anth" target="y-net"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1210" y="110"/><mxPoint x="150" y="110"/></Array></mxGeometry></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+</mxfile>
