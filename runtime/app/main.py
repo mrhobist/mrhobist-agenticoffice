@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 
 from .contracts import AuthStatus, LoginRequest, LoginStarted, LogoutRequest, ModelInfo, ProviderLimits, TurnRequest, TurnResponse
 from .providers.anthropic import AnthropicProvider
+from .providers.openai import OpenAiProvider
 from .providers.base import LlmProvider
 
 app = FastAPI(
@@ -18,8 +19,8 @@ app = FastAPI(
     description="LLM cagri katmani. Durumsuz.",
 )
 
-#: Bugun yalniz anthropic. NVIDIA / Ollama eklenince buraya girer.
-PROVIDERS: dict[str, LlmProvider] = {"anthropic": AnthropicProvider()}
+#: Bagli saglayicilar. NVIDIA / Ollama eklenince buraya girer.
+PROVIDERS: dict[str, LlmProvider] = {"anthropic": AnthropicProvider(), "openai": OpenAiProvider()}
 
 
 def _provider(name: str) -> LlmProvider:

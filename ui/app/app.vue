@@ -290,8 +290,8 @@ async function loadProviders(refresh = false) {
       ? {
           kind: 'warn',
           title: `${missing.map(p => providerLabel(p.provider)).join(', ')}: giriş yok.`,
-          text: 'Modeller Claude Code oturumunu kullanır; oturum Windows kullanıcısına bağlıdır. Runtime\'ı çalıştıran kullanıcıyla bir terminalde giriş yapın, sonra yeniden kontrol edin.',
-          command: 'claude login',
+          text: 'Modeller CLI oturumunu kullanır (Anthropic: Claude Code, OpenAI: Codex); oturum Windows kullanıcısına bağlıdır. Ayarlar\'dan giriş yapın ya da runtime\'ı çalıştıran kullanıcıyla bir terminalde giriş yapıp yeniden kontrol edin. Kullanmadığınız sağlayıcıda giriş gerekmez.',
+          command: missing.map(p => p.provider === 'openai' ? 'codex login' : p.provider === 'anthropic' ? 'claude login' : `${p.provider}: giriş`).join('  ·  '),
         }
       : null
   } catch (e) {

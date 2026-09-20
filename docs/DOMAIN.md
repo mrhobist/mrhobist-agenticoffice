@@ -253,9 +253,35 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   runtime, CLI'nin makinede sakladığı oturumla aynı ucu sorgular. Belirteç hiçbir yanıta ve günlüğe
   yazılmaz. Uç belgesiz olduğu için şekli değişebilir; değişirse bar "kalan kullanım yok" der, akış
   etkilenmez — bilinçli risk.
-- Model listesi (bugün yalnız Anthropic): `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`,
-  `claude-haiku-4-5-20251001`. NVIDIA, OpenAI, Ollama sonra eklenir; sözleşme (`provider` enum'u)
+- Model listesi (Anthropic): `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`,
+  `claude-haiku-4-5-20251001`. NVIDIA, Ollama sonra eklenir; sözleşme (`provider` enum'u)
   buna hazır, üye **sona** eklenir.
+- **OpenAI (2026-09-20, kullanıcı isteği):** `provider: openai`, hedef `openai` (hassasiyet `Anthropic` olan
+  çalışma OpenAI'ye çıkamaz; `Open` çıkar). İki kimlik yolu, öncelik sırasıyla:
+  1. **API anahtarı** kayıtlıysa: OpenAI Responses API doğrudan; fatura OpenAI hesabına. Bu yolda ajan
+     döngüsü yoktur (runtime araç uygulamaz, CLAUDE.md §1): araçlı adım (developer/testçi) `501
+     runtime.tools_unsupported` ile **açıkça** düşer, sessizce araçsız koşmaz.
+  2. **ChatGPT aboneliği** (kullanıcının ilk denediği yol): makinedeki **Codex CLI** oturumu
+     (`npm i -g @openai/codex`, `codex login`; Windows kullanıcısına bağlı, Claude Code ile aynı mantık). Tur
+     `codex exec --json` ile koşar; sistem promptu Codex'te ayrı alan olmadığı için metnin başına
+     "# Sistem talimatı" olarak gider (varsayımla ilerlenir). Araçlı adımda Codex **kendi** araçlarıyla
+     (komut, dosya değişikliği) `cwd` içinde çalışır, `--sandbox workspace-write` dizin dışına yazmayı keser;
+     araçsız adım `read-only` + boş geçici dizin. Yapısal çıktı `--output-schema`. Efor `low|medium|high|max`
+     → `low|medium|high|xhigh`. Kalan kullanım: Codex CLI dışa vermiyor → `available=false`, limit koruması
+     sessizce geçer (bilinçli; ChatGPT ayarlarından bakılır). Maliyet liste fiyatına göre **eşdeğer**
+     (`PRICE_PER_M`, yaklaşık; bilinmeyen model → boş).
+  Katalog sabit (`gpt-5.2`, `gpt-5.2-codex`, `gpt-5.1`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5-mini`);
+  `OPENAI_MODELS` ortam değişkeniyle değişir. `reachable = giriş var` (Anthropic'le aynı gevşetme).
+- **API anahtarı girişi (2026-09-20, kullanıcı isteği; Anthropic ve OpenAI):** Ayarlar → "API anahtarı ile
+  kullan". Anahtar runtime'a gider, sağlayıcıda doğrulanır (`GET /v1/models`, token harcamaz), kullanıcı
+  profiline yazılır: `%USERPROFILE%\.mrhobist-aiteam\credentials.json` — depo dışı, git'e girmez, Windows
+  kullanıcısına bağlı (CLI oturumlarıyla aynı davranış). Bu bir **iş durumu değil kimlik bilgisidir**; §1
+  "runtime dosya yazmaz" kuralının kapsamı dışında (bilinçli). Öncelik: ortam değişkeni
+  (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) > dosya > CLI oturumu. Anahtar kayıtlıyken CLI oturumu
+  kullanılmaz; Anthropic'te SDK'ya `ANTHROPIC_API_KEY` ortamla gider (fatura Console'a), kota penceresi yok
+  → limit koruması geçer, üst bar "kalan hak alınamadı · API anahtarı" der. "Anahtarı sil" oturuma döndürür.
+  Anahtar hiçbir yanıta ve günlüğe yazılmaz; UI maskeli sonu (`sk-…ab12`) görür. `method` alanı hangi yolun
+  aktif olduğunu söyler (`session | apikey | null`).
 - `reachable` yorumu: runtime katalog için gerçek çağrı yapmaz (her model için bir tur token
   harcar); `reachable = giriş var`. `detail` alanı bunu söyler. LESSONS'taki "katalogda görünmek
   erişilebilir olmak değildir" dersi burada bilinçli olarak gevşetildi — varsayımla ilerlenir.

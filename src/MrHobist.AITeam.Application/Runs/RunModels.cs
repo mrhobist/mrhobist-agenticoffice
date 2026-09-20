@@ -69,6 +69,7 @@ public static class RunDefaults
         Domain.Agents.Provider.Anthropic => Destination.Anthropic,
         Domain.Agents.Provider.Nvidia => Destination.Nvidia,
         Domain.Agents.Provider.Ollama => Destination.Local,
+        Domain.Agents.Provider.Openai => Destination.Openai,
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "bilinmeyen saglayici"),
     };
 }

@@ -50,10 +50,13 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `project.target_dir_invalid` | 400 | Hedef dizin depo içinde göreli bir yol değil (`..`, `/`, sürücü harfi) |
 | `project.launch_missing` | 404 | `launch`: proje kökünde `run.cmd` yok |
 | `project.launch_failed` | 400 | `launch`: başlatıcı süreç açılamadı |
+| `project.invalid_color` | 400 | `color` `#rrggbb` değil |
 | `config.file_missing` | 404/500 | Yapılandırma dosyası yok |
 | `config.file_invalid` | 500 | Yapılandırma dosyası geçersiz JSON |
 | `runtime.unavailable` | 503 | Python runtime'a ulaşılamıyor |
 | `runtime.error` | 502 | Runtime ayakta ama istenen uç 5xx döndü (kapalı değil, uç bozuk) |
+
+Runtime'ın kendi kodları (`runtime/README.md`) Api'ye `runtime <kod>: mesaj` metniyle gelir, ayrı `errorCode` olmaz: `runtime.cli_missing`, `runtime.not_logged_in`, `runtime.provider_error`, `runtime.provider_unsupported`, `runtime.tools_unsupported` (OpenAI API anahtarı yolunda araçlı adım yok).
 | `scene.command.type_missing` | 400 | Sahne komutunda `type` yok |
 | `scene.command.type_unknown` | 400 | Bilinmeyen sahne olayı türü |
 | `scene.command.data_missing` | 400 | Sahne komutunda `data` nesnesi yok |

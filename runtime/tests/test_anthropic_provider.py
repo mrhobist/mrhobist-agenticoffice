@@ -11,12 +11,26 @@ import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 from fastapi.testclient import TestClient
 
-from app import main
+import httpx
+import respx
+
+from app import credentials, main
 from app.contracts import TurnRequest
 from app.providers import anthropic as mod
+from app.providers import openai as openai_mod
 from app.providers.anthropic import ANTHROPIC_MODELS, AnthropicProvider
 
 FAKE_CLI = "C:/fake/claude.exe"
+
+
+@pytest.fixture(autouse=True)
+def isolated_credentials(monkeypatch, tmp_path):
+    """Testler kullanicinin gercek anahtar dosyasina, ortam degiskenine ve Codex CLI'ya DOKUNMAZ."""
+    monkeypatch.setenv("AITEAM_CREDENTIALS_FILE", str(tmp_path / "credentials.json"))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(openai_mod, "find_codex_cli", lambda: None)
+    main.PROVIDERS["openai"]._auth_cache = None
 
 
 def _result(**kw) -> ResultMessage:
@@ -39,7 +53,7 @@ def _fake_query(captured: dict, *, messages):
 
 def _fake_auth_run(payload: dict):
     def fake(cmd, **kw):
-        assert cmd[1:] == ["auth", "status"]
+        assert cmd[1:] == ["auth", "status"], "yalniz claude sorgulanir; codex bu testlerde yok"
         return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
     return fake
 
@@ -193,8 +207,9 @@ def test_http_auth_ve_models(monkeypatch, cli_present):
     client = TestClient(main.app)
 
     auth = client.get("/v1/auth").json()
-    assert auth == [{"provider": "anthropic", "loggedIn": True, "account": "a@b.c",
-                     "detail": mod.DETAIL_LOGGED_IN}]
+    assert [a["provider"] for a in auth] == ["anthropic", "openai"], "tum bagli saglayicilar"
+    assert auth[0] == {"provider": "anthropic", "loggedIn": True, "account": "a@b.c",
+                       "detail": mod.DETAIL_LOGGED_IN, "method": "session"}
 
     models = client.get("/v1/models", params={"provider": "anthropic"}).json()
     assert len(models) == 4 and all(m["reachable"] for m in models)
@@ -347,3 +362,39 @@ def test_limits_epoch_resets_at_cevrilir_ve_beklenmedik_govde_500_vermez(tmp_pat
     body = r.json()[0]
     assert body["available"] is False and "AttributeError" in body["detail"]
     provider._limits_cache = None
+
+
+# ---------------------------------------------------------------- API anahtari (Console faturasi)
+
+@respx.mock
+def test_apikey_girisi_dogrular_saklar_ve_oturumun_onune_gecer(monkeypatch, cli_present):
+    """Anahtar kaydedilince kimlik 'apikey' olur, SDK'ya ANTHROPIC_API_KEY ortamla gider, kota penceresi yoktur."""
+    respx.get(f"{mod.API_BASE}/v1/models").mock(return_value=httpx.Response(200, json={"data": []}))
+    p = AnthropicProvider()
+
+    r = p.login(mod.LoginRequest(provider="anthropic", mode="apikey", apiKey="sk-ant-test-1234wxyz"))
+
+    assert r.started and "wxyz" in r.detail and "sk-ant-test-1234wxyz" not in r.detail
+    st = p.auth(refresh=True)
+    assert st.logged_in and st.method == "apikey" and st.account == "sk-…wxyz"
+    opts = p._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m"}))
+    assert opts.env == {"ANTHROPIC_API_KEY": "sk-ant-test-1234wxyz"}
+    lim = p.limits(refresh=True)
+    assert not lim.available and "fatura" in lim.detail
+
+    # cikis anahtari siler ve CLI oturumuna doner
+    monkeypatch.setattr(subprocess, "run", _fake_auth_run({"loggedIn": True, "email": "a@b.c"}))
+    st = p.logout()
+    assert st.method == "session" and st.account == "a@b.c" and credentials.api_key("anthropic") is None
+
+
+@respx.mock
+def test_apikey_reddedilirse_saklanmaz(cli_present):
+    respx.get(f"{mod.API_BASE}/v1/models").mock(return_value=httpx.Response(401, json={"error": {"message": "bad"}}))
+    r = AnthropicProvider().login(mod.LoginRequest(provider="anthropic", mode="apikey", apiKey="sk-ant-bad"))
+    assert not r.started and credentials.api_key("anthropic") is None
+
+
+def test_apikey_yokken_options_env_tasimaz(cli_present):
+    opts = AnthropicProvider()._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m"}))
+    assert not opts.env

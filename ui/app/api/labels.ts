@@ -5,6 +5,7 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
   anthropic: 'Anthropic',
   nvidia: 'NVIDIA',
   ollama: 'Ollama',
+  openai: 'OpenAI (ChatGPT)',
 }
 
 export const PROVIDERS = Object.keys(PROVIDER_LABEL) as Provider[]

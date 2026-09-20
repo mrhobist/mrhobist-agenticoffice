@@ -7,8 +7,8 @@ using MrHobist.AITeam.Domain.Agents;
 
 namespace MrHobist.AITeam.Api.Config;
 
-/// <summary><c>GET /api/v1/providers</c> ogesi: kimlik + o saglayicinin modelleri.</summary>
-public sealed record ProviderStatus(Provider Provider, bool LoggedIn, string? Account, string Detail, IReadOnlyList<RuntimeModelInfo> Models);
+/// <summary><c>GET /api/v1/providers</c> ogesi: kimlik + o saglayicinin modelleri. <see cref="Method"/>: <c>session | apikey | null</c>.</summary>
+public sealed record ProviderStatus(Provider Provider, bool LoggedIn, string? Account, string Detail, IReadOnlyList<RuntimeModelInfo> Models, string? Method = null);
 
 /// <summary>Ajan, bilgi, model ve is akisi uclari (docs/API.md). Ince adaptor: is kurali Application'da.</summary>
 public static class ConfigEndpoints
@@ -44,13 +44,14 @@ public static class ConfigEndpoints
             var models = await runtime.ListModelsAsync(null, ct).ConfigureAwait(false);
             return auth.Select(a => new ProviderStatus(
                 a.Provider, a.LoggedIn, a.Account, a.Detail,
-                models.Where(m => m.Provider == a.Provider).ToList())).ToList();
+                models.Where(m => m.Provider == a.Provider).ToList(), a.Method)).ToList();
         });
 
         // Tek tikla giris: runtime, saglayicinin kendi giris akisini kullanicinin makinesinde baslatir (yeni konsol + tarayici).
-        // Sifre/token bu uclardan GECMEZ (docs/DOMAIN.md → Model, efor ve kimlik).
-        g.MapPost("/providers/{provider}/login", (string provider, LoginRequest? body, IAgentRuntimeService runtime, CancellationToken ct)
-            => runtime.LoginAsync(RequireProvider(provider), body?.Mode ?? "claudeai", body?.Email, ct));
+        // Sifre/token bu uclardan GECMEZ (docs/DOMAIN.md → Model, efor ve kimlik). Istisna `apikey` modu: anahtar runtime'a
+        // iletilir, runtime dogrulayip kullanici profiline yazar; Api saklamaz, gunluklemez, yanita yazmaz.
+        g.MapPost("/providers/{provider}/login", (string provider, ProviderLoginRequest? body, IAgentRuntimeService runtime, CancellationToken ct)
+            => runtime.LoginAsync(RequireProvider(provider), body?.Mode ?? "claudeai", body?.Email, body?.ApiKey, ct));
         g.MapPost("/providers/{provider}/logout", (string provider, IAgentRuntimeService runtime, CancellationToken ct)
             => runtime.LogoutAsync(RequireProvider(provider), ct));
 
@@ -86,8 +87,12 @@ public static class ConfigEndpoints
         => Providers.Parse(text) ?? throw new DomainException(ErrorCodes.AgentInvalidProvider, "provider bos.");
 }
 
-/// <summary><c>POST /providers/{provider}/login</c> govdesi. <c>mode</c>: <c>claudeai</c> (abonelik) | <c>console</c> (API faturasi).</summary>
-public sealed record LoginRequest(string? Mode, string? Email);
+/// <summary>
+/// <c>POST /providers/{provider}/login</c> govdesi. <c>mode</c>: Anthropic <c>claudeai</c> (abonelik) | <c>console</c> (Console OAuth) | <c>apikey</c>;
+/// OpenAI <c>chatgpt</c> (Codex CLI oturumu) | <c>apikey</c>. <c>apiKey</c> yalniz <c>apikey</c> modunda.
+/// </summary>
+// Ad `ProviderLoginRequest`: Auth/LoginRequest (kullanici adi + sifre) ile OpenAPI semasinda cakismasin (gen:api).
+public sealed record ProviderLoginRequest(string? Mode, string? Email, string? ApiKey = null);
 
 /// <summary><c>GET/PUT /settings</c> govdesi: <c>{ limitGuards: { anthropic: 99 } }</c>. Sozlesmede saglayici adi kucuk harf.</summary>
 public sealed record SettingsDto(Dictionary<string, int> LimitGuards)

@@ -25,8 +25,28 @@ Testler (`runtime/` içinden):
 
 ## Sağlayıcılar
 
-Bugün yalnız **`anthropic`** bağlıdır (Claude Agent SDK, paket `claude_agent_sdk`).
-`nvidia` ve `ollama` istekleri `501 runtime.provider_unsupported` döner.
+Bağlı olanlar: **`anthropic`** (Claude Agent SDK, paket `claude_agent_sdk`) ve **`openai`**
+(Codex CLI ya da Responses API). `nvidia` ve `ollama` istekleri `501 runtime.provider_unsupported` döner.
+
+### API anahtarı (her iki sağlayıcı)
+
+Varsayılan kimlik CLI oturumudur; kullanıcı isterse Ayarlar'dan API anahtarı girer. Anahtar sağlayıcıda
+doğrulanır (`GET /v1/models`) ve `%USERPROFILE%\.mrhobist-aiteam\credentials.json` dosyasına yazılır
+(`app/credentials.py`; `AITEAM_CREDENTIALS_FILE` ile yer değişir — testler bunu kullanır). Öncelik:
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` ortam değişkeni > dosya > CLI oturumu. Anahtar hiçbir yanıta yazılmaz.
+
+### OpenAI: ChatGPT aboneliği = Codex CLI oturumu
+
+```bash
+npm i -g @openai/codex
+codex login
+```
+
+`codex` arama sırası: `CODEX_CLI_PATH` → `PATH` → `%APPDATA%
+pm\codex.cmd`. Tur `codex exec --json`
+ile koşar (`--ephemeral`, `-C cwd`, araçlıysa `--sandbox workspace-write`, değilse `read-only` + boş geçici
+dizin, yapısal çıktı `--output-schema`). Kayıtlı API anahtarı varsa CLI yerine Responses API kullanılır;
+o yolda araçlı istek `501 runtime.tools_unsupported` döner. Katalog `OPENAI_MODELS="a,b"` ile değişir.
 
 ### Anthropic kimliği = Claude Code oturumu
 
@@ -56,14 +76,18 @@ Model kataloğu sabittir (`claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`
 |---|---|
 | `POST /v1/turn` | Tek bir LLM çağrısı yürütür ve sonucu döner |
 | `GET /v1/models?provider=` | Modeller; `provider` yoksa tüm bağlı sağlayıcılar |
-| `GET /v1/auth?provider=` | Kimlik durumu `[{provider, loggedIn, account, detail}]`; 60 sn önbellekli |
+| `GET /v1/auth?provider=` | Kimlik durumu `[{provider, loggedIn, account, detail, method}]`; 60 sn önbellekli |
+| `POST /v1/auth/login` | `{provider, mode, email?, apiKey?}` — CLI giriş akışını başlatır ya da (`apikey`) anahtarı doğrulayıp kaydeder |
+| `POST /v1/auth/logout` | Kayıtlı anahtarı siler, yoksa CLI oturumunu kapatır |
+| `GET /v1/limits?provider=` | Kalan kullanım (kota pencereleri); vermeyen sağlayıcıda `available=false` |
 | `GET /health` | Süreç ayakta mı |
 
 Hata gövdesi `detail` içinde `{"errorCode": ..., "message": ...}` taşır:
 
 | Kod | HTTP | Anlam |
 |---|---|---|
-| `runtime.cli_missing` | 503 | `claude.exe` bulunamadı |
-| `runtime.not_logged_in` | 503 | Claude Code oturumu yok — `claude login` |
+| `runtime.cli_missing` | 503 | `claude.exe` / `codex` bulunamadı |
+| `runtime.not_logged_in` | 503 | CLI oturumu yok (`claude login` / `codex login`) ya da API anahtarı geçersiz |
 | `runtime.provider_error` | 502 | Sağlayıcı/SDK hatası |
 | `runtime.provider_unsupported` | 501 | Sağlayıcı henüz bağlı değil |
+| `runtime.tools_unsupported` | 501 | Bu kimlik yolunda araçlı adım yok (OpenAI API anahtarı) |

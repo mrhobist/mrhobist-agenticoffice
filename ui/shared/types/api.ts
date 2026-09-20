@@ -416,7 +416,7 @@ export interface paths {
             };
             requestBody?: {
                 content: {
-                    "application/json": null | components["schemas"]["LoginRequest"];
+                    "application/json": null | components["schemas"]["ProviderLoginRequest"];
                 };
             };
             responses: {
@@ -1352,6 +1352,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{key}/launch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1410,7 +1445,7 @@ export interface components {
             targetDir: null | string;
         };
         /** @enum {unknown} */
-        Destination: "local" | "anthropic" | "nvidia";
+        Destination: "local" | "anthropic" | "nvidia" | "openai";
         InboxItem: {
             runId: string;
             label: string;
@@ -1496,6 +1531,8 @@ export interface components {
             totalCostUsd: number | string;
             /** Format: date-time */
             lastActivityAt: null | string;
+            /** @default false */
+            launchable: boolean;
         };
         ProjectModel: {
             title: string;
@@ -1504,13 +1541,19 @@ export interface components {
             targetDir: null | string;
         };
         /** @enum {unknown} */
-        Provider: "anthropic" | "nvidia" | "ollama" | null;
+        Provider: "anthropic" | "nvidia" | "ollama" | "openai" | null;
+        ProviderLoginRequest: {
+            mode: null | string;
+            email: null | string;
+            apiKey?: null | string;
+        };
         ProviderStatus: {
             provider: components["schemas"]["Provider"];
             loggedIn: boolean;
             account: null | string;
             detail: string;
             models: components["schemas"]["RuntimeModelInfo"][];
+            method?: null | string;
         };
         QuestionOption: {
             id: string;
@@ -1621,12 +1664,18 @@ export interface components {
             /** Format: int32 */
             cancelled: number | string;
             inbox: components["schemas"]["InboxItem"][];
+            /**
+             * Format: int32
+             * @default 0
+             */
+            awaitingInput: number | string;
         };
         RuntimeAuthStatus: {
             provider: components["schemas"]["Provider"];
             loggedIn: boolean;
             account: null | string;
             detail: string;
+            method?: null | string;
         };
         RuntimeLoginStarted: {
             provider: components["schemas"]["Provider"];

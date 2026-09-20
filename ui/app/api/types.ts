@@ -66,12 +66,19 @@ export interface ModelInfo {
 export interface ProviderStatus {
   provider: Provider
   loggedIn: boolean
+  /** Oturumda hesap e-postasi; API anahtarinda maskeli son (`sk-…ab12`). */
   account: string | null
   detail: string
   models: ModelInfo[]
+  /** `session` (CLI oturumu: Claude Code / Codex) | `apikey` (kayitli anahtar) | null (giris yok). */
+  method: 'session' | 'apikey' | null
 }
 
-/** POST /api/v1/providers/{provider}/login — giris akisi kullanicinin makinesinde basladi. */
+/** POST /api/v1/providers/{provider}/login govdesi. Anthropic: claudeai | console | apikey; OpenAI: chatgpt | apikey. */
+export type LoginMode = 'claudeai' | 'console' | 'chatgpt' | 'apikey'
+export interface ProviderLoginRequest { mode: LoginMode; email?: string | null; apiKey?: string | null }
+
+/** POST /api/v1/providers/{provider}/login — giris akisi kullanicinin makinesinde basladi (apikey: anahtar dogrulandi ve kaydedildi). */
 export interface LoginStarted {
   provider: Provider
   started: boolean

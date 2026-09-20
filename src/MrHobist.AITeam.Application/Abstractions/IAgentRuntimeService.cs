@@ -40,8 +40,11 @@ public sealed record RuntimeTurnResponse(
 /// <summary>Katalogda gorunmek erisilebilir olmak DEGILDIR; <see cref="Reachable"/> fiilen cagirarak dogrulanir.</summary>
 public sealed record RuntimeModelInfo(Provider Provider, string Model, bool Reachable, string Detail);
 
-/// <summary>Saglayici kimligi: Anthropic icin Claude Code oturumu (docs/DOMAIN.md → Model, efor ve kimlik).</summary>
-public sealed record RuntimeAuthStatus(Provider Provider, bool LoggedIn, string? Account, string Detail);
+/// <summary>
+/// Saglayici kimligi (docs/DOMAIN.md → Model, efor ve kimlik). <see cref="Method"/>: <c>session</c> (CLI oturumu: Claude Code / Codex)
+/// | <c>apikey</c> (kayitli API anahtari; <see cref="Account"/> maskeli son) | null (giris yok).
+/// </summary>
+public sealed record RuntimeAuthStatus(Provider Provider, bool LoggedIn, string? Account, string Detail, string? Method = null);
 
 /// <summary>Giris akisi kullanicinin makinesinde basladi (konsol + tarayici); tamamlanmasi kullanicida. Kimlik bilgisi tasinmaz.</summary>
 public sealed record RuntimeLoginStarted(Provider Provider, bool Started, string Detail);
@@ -65,8 +68,12 @@ public interface IAgentRuntimeService
     /// <summary>Saglayici basina giris durumu; UI ilk yuklemede bakar. <paramref name="refresh"/> runtime'in kimlik onbellegini atlatir ("Yeniden kontrol et").</summary>
     Task<IReadOnlyList<RuntimeAuthStatus>> ListAuthAsync(Provider? provider, bool refresh, CancellationToken ct);
 
-    /// <summary>Saglayicinin kendi giris akisini baslatir (Anthropic: <c>claude auth login</c>, yeni konsol). <paramref name="mode"/>: <c>claudeai | console</c>.</summary>
-    Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, CancellationToken ct);
+    /// <summary>
+    /// Saglayicinin kendi giris akisini baslatir (Anthropic: <c>claude auth login</c>, OpenAI: <c>codex login</c>; yeni konsol).
+    /// <paramref name="mode"/>: <c>claudeai | console | chatgpt | apikey</c>. <paramref name="apiKey"/> yalniz <c>apikey</c> modunda: runtime
+    /// dogrular ve kullanici profiline yazar; Api ne saklar ne gunlukler.
+    /// </summary>
+    Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, string? apiKey, CancellationToken ct);
 
     Task<RuntimeAuthStatus> LogoutAsync(Provider provider, CancellationToken ct);
 

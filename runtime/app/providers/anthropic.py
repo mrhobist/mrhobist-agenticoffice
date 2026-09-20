@@ -36,6 +36,7 @@ from claude_agent_sdk import (
 )
 from fastapi import HTTPException
 
+from .. import credentials
 from ..contracts import (
     DESTINATION_OF,
     AuthStatus,
@@ -65,6 +66,8 @@ AUTH_CACHE_TTL_S = 60.0
 LIMITS_CACHE_TTL_S = 90.0
 #: Claude Code'un kendi /usage ekraninin okudugu uc; oturum belirteci CLI'nin dosyasindan alinir, hicbir yere yazilmaz.
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+#: API anahtari dogrulamasi icin (GET /v1/models: token harcamaz).
+API_BASE = "https://api.anthropic.com"
 
 
 def _credentials_path() -> Path:
@@ -188,6 +191,10 @@ class AnthropicProvider:
             opts["max_turns"] = request.max_turns or 4
         if request.schema_ is not None:
             opts["output_format"] = {"type": "json_schema", "schema": request.schema_}
+        key = credentials.api_key(PROVIDER_NAME)
+        if key:
+            # Kayitli API anahtari varsa CLI onu kullanir: fatura Anthropic Console'a, Claude Code oturumu devre disi.
+            opts["env"] = {"ANTHROPIC_API_KEY": key}
         return ClaudeAgentOptions(**opts)
 
     #: Dosya degistiren araclar: hedef yol cwd disindaysa reddedilir.
@@ -331,6 +338,11 @@ class AnthropicProvider:
         return status
 
     def _probe_auth(self) -> AuthStatus:
+        key = credentials.api_key(PROVIDER_NAME)
+        if key:
+            src = "ortam değişkeni" if credentials.key_source(PROVIDER_NAME) == "env" else "kayıtlı"
+            return AuthStatus(provider=PROVIDER_NAME, logged_in=True, account=credentials.mask(key), method="apikey",
+                              detail=f"API anahtarı ({src}): çağrılar Anthropic Console faturasına yazılır.")
         cli = self.cli
         if not cli or not Path(cli).is_file():
             where = cli or "CLAUDE_CLI_PATH ve %APPDATA%\\Claude\\claude-code boş"
@@ -361,6 +373,7 @@ class AnthropicProvider:
             provider=PROVIDER_NAME,
             logged_in=logged_in,
             account=str(account) if account else None,
+            method="session" if logged_in else None,
             detail=DETAIL_LOGGED_IN if logged_in else DETAIL_LOGGED_OUT,
         )
 
@@ -370,7 +383,10 @@ class AnthropicProvider:
         """`claude auth login` yeni bir konsol penceresinde acilir; tarayicida onay kullanicinin isidir.
 
         Kimlik bilgisi (sifre, token) bu surecten GECMEZ: CLI kendi OAuth akisini yurutur.
+        `apikey` modu istisna: anahtar dogrulanir, kullanici profiline yazilir, yanita yazilmaz.
         """
+        if request.mode == "apikey":
+            return self._login_api_key(request.api_key)
         cli = self.cli
         if not cli or not Path(cli).is_file():
             return LoginStarted(provider=PROVIDER_NAME, started=False, detail="claude.exe bulunamadı; CLAUDE_CLI_PATH verin.")
@@ -391,7 +407,34 @@ class AnthropicProvider:
             detail="Konsol penceresi açıldı; tarayıcıda Anthropic hesabınla onayla, sonra 'Yeniden kontrol et'.",
         )
 
+    def _login_api_key(self, key: str | None) -> LoginStarted:
+        key = (key or "").strip()
+        if not key:
+            return LoginStarted(provider=PROVIDER_NAME, started=False, detail="API anahtarı boş.")
+        try:
+            r = httpx.get(f"{API_BASE}/v1/models", headers={"x-api-key": key, "anthropic-version": "2023-06-01"}, timeout=15)
+        except httpx.HTTPError as exc:
+            return LoginStarted(provider=PROVIDER_NAME, started=False, detail=f"Anthropic'e ulaşılamadı, anahtar doğrulanamadı: {exc.__class__.__name__}")
+        if r.status_code == 401:
+            return LoginStarted(provider=PROVIDER_NAME, started=False, detail="Anahtar reddedildi (401); kaydedilmedi.")
+        if r.status_code >= 400:
+            return LoginStarted(provider=PROVIDER_NAME, started=False, detail=f"Doğrulama HTTP {r.status_code}; kaydedilmedi.")
+        credentials.store_api_key(PROVIDER_NAME, key)
+        self._auth_cache = None
+        self._limits_cache = None
+        return LoginStarted(provider=PROVIDER_NAME, started=True, detail=f"API anahtarı doğrulandı ve kaydedildi ({credentials.mask(key)}). Claude Code oturumu artık kullanılmaz; anahtarı silince oturuma dönülür.")
+
     def logout(self) -> AuthStatus:
+        """Kayitli API anahtari varsa once o silinir (oturuma donulur); yoksa CLI oturumu kapatilir."""
+        source = credentials.key_source(PROVIDER_NAME)
+        if source == "env":
+            st = self.auth(refresh=True)
+            return st.model_copy(update={"detail": "API anahtarı ortam değişkeninden (ANTHROPIC_API_KEY) geliyor; buradan silinemez."})
+        if source == "file":
+            credentials.delete_api_key(PROVIDER_NAME)
+            self._auth_cache = None
+            self._limits_cache = None
+            return self.auth(refresh=True)
         cli = self.cli
         if cli and Path(cli).is_file():
             try:
@@ -426,6 +469,8 @@ class AnthropicProvider:
         def unavailable(detail: str) -> ProviderLimits:
             return ProviderLimits(provider=PROVIDER_NAME, available=False, detail=detail)
 
+        if credentials.api_key(PROVIDER_NAME):
+            return unavailable("API anahtarı: kota penceresi yok; kullanım Anthropic Console faturasına yazılır.")
         try:
             data = json.loads(_credentials_path().read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):

@@ -32,7 +32,9 @@ public sealed class RunTests
     [InlineData(Sensitivity.Local, Destination.Anthropic, false)]
     [InlineData(Sensitivity.Anthropic, Destination.Anthropic, true)]
     [InlineData(Sensitivity.Anthropic, Destination.Nvidia, false)]
+    [InlineData(Sensitivity.Anthropic, Destination.Openai, false)]
     [InlineData(Sensitivity.Open, Destination.Nvidia, true)]
+    [InlineData(Sensitivity.Open, Destination.Openai, true)]
     public void Hassasiyet_politikasi(Sensitivity s, Destination d, bool allowed)
     {
         Assert.Equal(allowed, SensitivityPolicy.Allows(s, d));

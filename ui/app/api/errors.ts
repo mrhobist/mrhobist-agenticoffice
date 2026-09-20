@@ -9,7 +9,7 @@ const MESSAGES: Record<string, string> = {
   'agent.invalid_key': 'Ajan anahtarı geçersiz: yalnız küçük harf, rakam, tire ve alt çizgi kullanılabilir.',
   'agent.not_found': 'Ajan bulunamadı.',
   'agent.prompt_empty': 'Sistem promptu boş olamaz.',
-  'agent.invalid_provider': 'Sağlayıcı geçersiz: anthropic, nvidia ya da ollama olmalı.',
+  'agent.invalid_provider': 'Sağlayıcı geçersiz: anthropic, openai, nvidia ya da ollama olmalı.',
   'agent.unknown_include': 'Seçilen bilgi dosyalarından biri config/knowledge içinde yok.',
   'agent.unknown_can_ask': '"Sorabilir" alanındaki ajan tanımlı değil.',
   'agent.invalid_effort': 'Efor geçersiz: low, medium, high ya da max olmalı.',

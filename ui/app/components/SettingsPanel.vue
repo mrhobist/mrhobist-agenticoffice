@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import type { AppSettings, LoginStarted, Provider, ProviderStatus, UsageItem } from '~/api/types'
+import type { AppSettings, LoginMode, LoginStarted, Provider, ProviderLoginRequest, ProviderStatus, UsageItem } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { providerLabel, fmtCost as fmtCostLabel, COST_TITLE } from '~/api/labels'
 
 /**
  * Ayarlar: LLM baglantilari (giris durumu, tek tikla giris/cikis, modeller) ve kullanim.
- * Giris: runtime, saglayicinin kendi akisini kullanicinin makinesinde baslatir (yeni konsol + tarayici);
- * sifre/token bu ekrandan GECMEZ (docs/DOMAIN.md → Model, efor ve kimlik).
+ * Giris: runtime, saglayicinin kendi akisini kullanicinin makinesinde baslatir (yeni konsol + tarayici):
+ * Anthropic → Claude Code (`claude auth login`), OpenAI → Codex CLI (`codex login`). Sifre/token bu ekrandan GECMEZ.
+ * Istisna API anahtari: kullanici yapistirir, runtime dogrulayip kullanici profiline yazar; ekranda yalniz maskeli sonu
+ * gorunur. Anahtar kayitliyken CLI oturumu kullanilmaz; "Anahtari sil" oturuma dondurur (docs/DOMAIN.md → Model, efor ve kimlik).
  * Kullanim: bizim kayitlarimiz (runs/ turlari). Saglayici abonelik limitini/kalan kotayi CLI'dan vermiyor.
  */
 const emit = defineEmits<{ close: []; changed: [] }>()
@@ -18,6 +20,8 @@ const loadError = ref<string | null>(null)
 const busy = ref<string | null>(null)
 const notice = ref<{ provider: Provider; kind: 'info' | 'err'; text: string } | null>(null)
 const email = ref('')
+/** Yalniz `apikey` modunda gonderilir; basarili giristen sonra silinir, hicbir yerde tutulmaz. */
+const apiKey = ref<Record<string, string>>({})
 
 const usage = ref<UsageItem[] | null>(null)
 const usageError = ref<string | null>(null)
@@ -97,14 +101,23 @@ function watchLogin(p: Provider) {
   }, 5000)
 }
 
-async function login(p: Provider, mode: 'claudeai' | 'console') {
+async function login(p: Provider, mode: LoginMode) {
   if (busy.value) return
+  const body: ProviderLoginRequest = { mode, email: email.value.trim() || null }
+  if (mode === 'apikey') {
+    body.apiKey = (apiKey.value[p] ?? '').trim()
+    if (!body.apiKey) { notice.value = { provider: p, kind: 'err', text: 'API anahtarı boş.' }; return }
+  }
   busy.value = `${p}:${mode}`
   notice.value = null
   try {
-    const r = await api.post<LoginStarted>(`/api/v1/providers/${p}/login`, { mode, email: email.value.trim() || null })
+    const r = await api.post<LoginStarted>(`/api/v1/providers/${p}/login`, body)
     notice.value = { provider: p, kind: r.started ? 'info' : 'err', text: r.detail }
-    if (r.started) watchLogin(p)
+    if (mode === 'apikey') {
+      if (r.started) { apiKey.value = { ...apiKey.value, [p]: '' }; await load(true) }
+    } else if (r.started) {
+      watchLogin(p)
+    }
   } catch (e) {
     notice.value = { provider: p, kind: 'err', text: errorText(e) }
   } finally {
@@ -112,14 +125,25 @@ async function login(p: Provider, mode: 'claudeai' | 'console') {
   }
 }
 
+/** Saglayici basina giris secenekleri: hangi CLI oturumu, hangi etiket. `apikey` ikisinde de var. */
+const SESSION_LOGIN: Record<string, { mode: LoginMode; label: string; alt?: { mode: LoginMode; label: string } }> = {
+  anthropic: { mode: 'claudeai', label: 'Giriş yap (Claude aboneliği)', alt: { mode: 'console', label: 'Konsol ile giriş (API faturası)' } },
+  openai: { mode: 'chatgpt', label: 'ChatGPT ile giriş (Codex)' },
+}
+function keyLabel(p: Provider): string { return p === 'openai' ? 'OpenAI API anahtarı' : 'Anthropic API anahtarı' }
+
 async function logout(p: Provider) {
-  if (busy.value || !window.confirm(`${providerLabel(p)} oturumu kapatılsın mı? Çalışmalar model çağıramaz.`)) return
+  const st = providers.value?.find(x => x.provider === p)
+  const q = st?.method === 'apikey'
+    ? `${providerLabel(p)} API anahtarı silinsin mi? Varsa CLI oturumuna dönülür.`
+    : `${providerLabel(p)} oturumu kapatılsın mı? Çalışmalar model çağıramaz.`
+  if (busy.value || !window.confirm(q)) return
   busy.value = `${p}:logout`
   notice.value = null
   try {
     await api.post(`/api/v1/providers/${p}/logout`)
     await load(true)
-    notice.value = { provider: p, kind: 'info', text: 'Oturum kapatıldı.' }
+    notice.value = { provider: p, kind: 'info', text: st?.method === 'apikey' ? 'API anahtarı silindi.' : 'Oturum kapatıldı.' }
   } catch (e) {
     notice.value = { provider: p, kind: 'err', text: errorText(e) }
   } finally {
@@ -150,7 +174,7 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
           <h3>LLM bağlantıları</h3>
           <button type="button" class="small" :disabled="!!busy" @click="load(true)">Yeniden kontrol et</button>
         </div>
-        <p class="sub">Modeller Claude Code oturumunu kullanır; oturum bu makinedeki Windows kullanıcısına bağlıdır. Giriş düğmesi kendi konsol penceresinde <code>claude auth login</code> başlatır; onayı tarayıcıda sen verirsin. Bu ekrandan şifre ya da anahtar geçmez.</p>
+        <p class="sub">Varsayılan kimlik CLI oturumudur: Anthropic için Claude Code (<code>claude auth login</code>), OpenAI için Codex (<code>codex login</code>); kota aboneliğinden düşer. Oturum bu makinedeki Windows kullanıcısına bağlıdır; giriş düğmesi kendi konsol penceresinde başlar, onayı tarayıcıda sen verirsin. İstersen API anahtarı da girebilirsin: doğrulanıp kullanıcı profiline yazılır, burada yalnız maskeli sonu görünür ve o sürede CLI oturumu kullanılmaz.</p>
 
         <p v-if="loadError" class="err" role="alert">{{ loadError }}</p>
         <p v-else-if="!providers" class="sub">Yükleniyor…</p>
@@ -158,22 +182,36 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
         <article v-for="p in providers" :key="p.provider" class="card">
           <div class="card-head">
             <strong>{{ providerLabel(p.provider) }}</strong>
-            <span class="badge" :class="p.loggedIn ? 'ok' : 'off'">{{ p.loggedIn ? 'giriş var' : 'giriş yok' }}</span>
+            <span class="badge" :class="p.loggedIn ? 'ok' : 'off'">{{ !p.loggedIn ? 'giriş yok' : p.method === 'apikey' ? 'API anahtarı' : 'giriş var' }}</span>
             <span v-if="p.account" class="sub">{{ p.account }}</span>
           </div>
           <p class="sub">{{ p.detail }}</p>
 
-          <div v-if="!p.loggedIn" class="login">
-            <label class="lbl" :for="`email-${p.provider}`">E-posta <span class="sub">(isteğe bağlı, giriş sayfasını doldurur)</span></label>
-            <input :id="`email-${p.provider}`" v-model="email" type="email" autocomplete="off" placeholder="ad@ornek.com">
+          <div v-if="!p.loggedIn && SESSION_LOGIN[p.provider]" class="login">
+            <template v-if="p.provider === 'anthropic'">
+              <label class="lbl" :for="`email-${p.provider}`">E-posta <span class="sub">(isteğe bağlı, giriş sayfasını doldurur)</span></label>
+              <input :id="`email-${p.provider}`" v-model="email" type="email" autocomplete="off" placeholder="ad@ornek.com">
+            </template>
             <div class="actions">
-              <button class="primary" type="button" :disabled="!!busy" @click="login(p.provider, 'claudeai')">Giriş yap (Claude aboneliği)</button>
-              <button type="button" :disabled="!!busy" @click="login(p.provider, 'console')">Konsol ile giriş (API faturası)</button>
+              <button class="primary" type="button" :disabled="!!busy" @click="login(p.provider, SESSION_LOGIN[p.provider]!.mode)">{{ SESSION_LOGIN[p.provider]!.label }}</button>
+              <button v-if="SESSION_LOGIN[p.provider]!.alt" type="button" :disabled="!!busy" @click="login(p.provider, SESSION_LOGIN[p.provider]!.alt!.mode)">{{ SESSION_LOGIN[p.provider]!.alt!.label }}</button>
             </div>
           </div>
-          <div v-else class="actions">
-            <button type="button" class="ghost" :disabled="!!busy" @click="logout(p.provider)">Oturumu kapat</button>
+          <div v-else-if="p.loggedIn" class="actions">
+            <button type="button" class="ghost" :disabled="!!busy" @click="logout(p.provider)">{{ p.method === 'apikey' ? 'Anahtarı sil' : 'Oturumu kapat' }}</button>
           </div>
+
+          <!-- API anahtari: oturum olsa da girilebilir (anahtar one gecer). Alan gonderimden sonra bosaltilir. -->
+          <details v-if="p.provider === 'anthropic' || p.provider === 'openai'" class="keybox" :open="!p.loggedIn && !SESSION_LOGIN[p.provider]">
+            <summary>{{ p.method === 'apikey' ? 'Anahtarı değiştir' : 'API anahtarı ile kullan' }}</summary>
+            <div class="login">
+              <label class="lbl" :for="`key-${p.provider}`">{{ keyLabel(p.provider) }} <span class="sub">(doğrulanır, kullanıcı profiline yazılır; fatura sağlayıcı hesabına)</span></label>
+              <div class="keyrow">
+                <input :id="`key-${p.provider}`" :value="apiKey[p.provider] ?? ''" type="password" autocomplete="off" spellcheck="false" :placeholder="p.provider === 'openai' ? 'sk-…' : 'sk-ant-…'" @input="apiKey = { ...apiKey, [p.provider]: ($event.target as HTMLInputElement).value }">
+                <button type="button" :disabled="!!busy || !(apiKey[p.provider] ?? '').trim()" @click="login(p.provider, 'apikey')">Kaydet</button>
+              </div>
+            </div>
+          </details>
 
           <p v-if="notice && notice.provider === p.provider" :class="notice.kind === 'err' ? 'err' : 'ok'" role="status">{{ notice.text }}</p>
 
@@ -254,7 +292,11 @@ h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06
 .badge.off { background: #f3c34a; }
 .login { display: flex; flex-direction: column; gap: 4px; }
 .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #4a5068; }
-input[type="email"] { font: inherit; font-size: 13px; background: #fff; color: #23283a; border: 1px solid #c9c3b3; border-radius: 4px; padding: 6px 8px; width: 100%; }
+input[type="email"], input[type="password"] { font: inherit; font-size: 13px; background: #fff; color: #23283a; border: 1px solid #c9c3b3; border-radius: 4px; padding: 6px 8px; width: 100%; }
+.keybox summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #4a5068; }
+.keybox .login { margin-top: 6px; }
+.keyrow { display: flex; gap: 6px; }
+.keyrow input { flex: 1; min-width: 0; }
 input:focus { outline: 2px solid #4f8ef7; outline-offset: 0; }
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 button { font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px; border: 1px solid #c9c3b3; background: #fff; color: #23283a; }

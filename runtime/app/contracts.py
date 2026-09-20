@@ -10,15 +10,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-Provider = Literal["nvidia", "anthropic", "ollama"]
+Provider = Literal["nvidia", "anthropic", "ollama", "openai"]
 
 #: Icerigin fiilen ulastigi yer. .NET tarafi bunu denetim kaydina yazar.
-Destination = Literal["local", "anthropic", "nvidia"]
+Destination = Literal["local", "anthropic", "nvidia", "openai"]
 
 DESTINATION_OF: dict[str, Destination] = {
     "ollama": "local",
     "anthropic": "anthropic",
     "nvidia": "nvidia",
+    "openai": "openai",
 }
 
 
@@ -102,16 +103,26 @@ class AuthStatus(BaseModel):
     logged_in: bool = Field(alias="loggedIn")
     account: str | None = None
     detail: str = ""
+    #: Kimligin kaynagi: `session` (CLI oturumu: Claude Code / Codex) | `apikey` (kayitli API anahtari) | None (giris yok).
+    method: str | None = None
 
     model_config = {"populate_by_name": True}
 
 
 class LoginRequest(BaseModel):
-    """Saglayici oturumunu baslat. `claudeai` = Claude aboneligi, `console` = Anthropic Console (API faturasi)."""
+    """Saglayici oturumunu baslat.
+
+    Anthropic: `claudeai` = Claude aboneligi, `console` = Anthropic Console (API faturasi), `apikey` = API anahtari.
+    OpenAI:    `chatgpt` = ChatGPT aboneligi (Codex CLI oturumu), `apikey` = API anahtari.
+    `apiKey` yalniz `apikey` modunda gelir; dogrulanir, kullanici profiline yazilir, HICBIR yanita ve gunluge yazilmaz.
+    """
 
     provider: Provider
-    mode: Literal["claudeai", "console"] = "claudeai"
+    mode: Literal["claudeai", "console", "chatgpt", "apikey"] = "claudeai"
     email: str | None = None
+    api_key: str | None = Field(default=None, alias="apiKey")
+
+    model_config = {"populate_by_name": True}
 
 
 class LoginStarted(BaseModel):

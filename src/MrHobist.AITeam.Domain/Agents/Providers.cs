@@ -2,7 +2,7 @@ namespace MrHobist.AITeam.Domain.Agents;
 
 /// <summary>
 /// <see cref="Provider"/> ile tel bicimi (md frontmatter, sorgu parametresi, Python istegi) arasindaki
-/// TEK cevrim yeri. Tel adi kucuk harftir: <c>anthropic | nvidia | ollama</c>. 'claude' sessizce cevrilmez.
+/// TEK cevrim yeri. Tel adi kucuk harftir: <c>anthropic | nvidia | ollama | openai</c>. 'claude' sessizce cevrilmez.
 /// </summary>
 public static class Providers
 {
@@ -22,6 +22,6 @@ public static class Providers
         }
 
         var prefix = context is null ? "" : context + ": ";
-        throw new DomainException(ErrorCodes.AgentInvalidProvider, $"{prefix}bilinmeyen provider '{text}' (anthropic | nvidia | ollama).");
+        throw new DomainException(ErrorCodes.AgentInvalidProvider, $"{prefix}bilinmeyen provider '{text}' (anthropic | nvidia | ollama | openai).");
     }
 }

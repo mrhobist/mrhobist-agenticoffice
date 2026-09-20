@@ -52,9 +52,9 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
 
     private sealed record ModelDto(string Provider, string Model, bool Reachable, string? Detail);
 
-    private sealed record AuthDto(string Provider, bool LoggedIn, string? Account, string? Detail);
+    private sealed record AuthDto(string Provider, bool LoggedIn, string? Account, string? Detail, string? Method);
 
-    private sealed record LoginDto(string Provider, string Mode, string? Email);
+    private sealed record LoginDto(string Provider, string Mode, string? Email, string? ApiKey);
 
     private sealed record LoginStartedDto(string Provider, bool Started, string? Detail);
 
@@ -98,16 +98,16 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             (l.Limits ?? []).Select(x => new RuntimeUsageLimit(x.Kind, x.Group, x.Percent, x.Severity, x.ResetsAt, x.Scope, x.IsActive)).ToList())).ToList();
     }
 
-    public async Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, CancellationToken ct)
+    public async Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, string? apiKey, CancellationToken ct)
     {
-        var result = await PostAsync<LoginDto, LoginStartedDto>("/v1/auth/login", new LoginDto(Providers.Wire(provider), mode, email), ct).ConfigureAwait(false);
+        var result = await PostAsync<LoginDto, LoginStartedDto>("/v1/auth/login", new LoginDto(Providers.Wire(provider), mode, email, apiKey), ct).ConfigureAwait(false);
         return new RuntimeLoginStarted(ParseProvider(result.Provider), result.Started, result.Detail ?? "");
     }
 
     public async Task<RuntimeAuthStatus> LogoutAsync(Provider provider, CancellationToken ct)
     {
         var result = await PostAsync<LogoutDto, AuthDto>("/v1/auth/logout", new LogoutDto(Providers.Wire(provider)), ct).ConfigureAwait(false);
-        return new RuntimeAuthStatus(ParseProvider(result.Provider), result.LoggedIn, result.Account, result.Detail ?? "");
+        return new RuntimeAuthStatus(ParseProvider(result.Provider), result.LoggedIn, result.Account, result.Detail ?? "", result.Method);
     }
 
     private async Task<TResult> PostAsync<TBody, TResult>(string path, TBody body, CancellationToken ct)
@@ -159,7 +159,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             throw new RuntimeUnavailableException($"runtime'a ulasilamadi: {ex.Message}");
         }
 
-        return (items ?? []).Select(a => new RuntimeAuthStatus(ParseProvider(a.Provider), a.LoggedIn, a.Account, a.Detail ?? "")).ToList();
+        return (items ?? []).Select(a => new RuntimeAuthStatus(ParseProvider(a.Provider), a.LoggedIn, a.Account, a.Detail ?? "", a.Method)).ToList();
     }
 
     public async Task<RuntimeTurnResponse> TurnAsync(RuntimeTurnRequest request, CancellationToken ct)

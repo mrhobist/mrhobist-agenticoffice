@@ -6,6 +6,7 @@ public enum Destination
     Local,
     Anthropic,
     Nvidia,
+    Openai,
 }
 
 /// <summary>Bir calismanin hassasiyeti: icerik hangi hedeflere cikabilir.</summary>
@@ -13,7 +14,7 @@ public enum Sensitivity
 {
     /// <summary>Yalniz bu makine; hicbir LLM'e cikmaz.</summary>
     Local,
-    /// <summary>Anthropic'e cikabilir, NVIDIA'ya cikmaz.</summary>
+    /// <summary>Anthropic'e cikabilir; NVIDIA'ya ve OpenAI'ye cikmaz.</summary>
     Anthropic,
     /// <summary>Ucuncu taraflara da cikabilir.</summary>
     Open,

@@ -531,7 +531,7 @@ public sealed class RunServiceTests : IDisposable
         public Task<IReadOnlyList<RuntimeAuthStatus>> ListAuthAsync(Provider? provider, bool refresh, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<RuntimeAuthStatus>>([]);
 
-        public Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, CancellationToken ct)
+        public Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, string? apiKey, CancellationToken ct)
             => Task.FromResult(new RuntimeLoginStarted(provider, false, "sahte"));
 
         public Task<RuntimeAuthStatus> LogoutAsync(Provider provider, CancellationToken ct)

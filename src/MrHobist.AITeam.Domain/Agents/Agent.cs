@@ -6,6 +6,11 @@ public enum Provider
     Anthropic,
     Nvidia,
     Ollama,
+    /// <summary>
+    /// OpenAI: ChatGPT aboneligi (Codex CLI oturumu) ya da API anahtari (docs/DOMAIN.md → Model, efor ve kimlik).
+    /// Ad tek kelime (<c>Openai</c>, <c>OpenAi</c> degil): JSON camelCase donusumu <c>openai</c> versin, runtime/UI tel adiyla ayni kalsin.
+    /// </summary>
+    Openai,
 }
 
 /// <summary>Akil yurutme eforu. Tel adi kucuk harf; bos = varsayilan (<see cref="Efforts.Default"/>).</summary>

@@ -60,6 +60,39 @@
       "env": {
         "NUXT_PUBLIC_API_BASE": "http://127.0.0.1:5083"
       }
+    },
+    {
+      "name": "runtime-5091",
+      "runtimeExecutable": "runtime/.venv-semihai/Scripts/python.exe",
+      "runtimeArgs": [
+        "-u",
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5091",
+        "--app-dir",
+        "runtime"
+      ],
+      "port": 5091,
+      "url": "http://127.0.0.1:5091"
+    },
+    {
+      "name": "api-rt5091",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "src/MrHobist.AITeam.Api",
+        "--no-launch-profile"
+      ],
+      "port": 5080,
+      "url": "http://127.0.0.1:5080",
+      "env": {
+        "AITeam__RuntimeUrl": "http://127.0.0.1:5091"
+      }
     }
   ]
 }

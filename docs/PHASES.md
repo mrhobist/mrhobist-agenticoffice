@@ -277,8 +277,21 @@ maliyet **eşdeğer** (≈$), asıl koruma **limit eşiği %99** platform bazın
 4. **Tasarım artıkları**: ray daralması (proje açıkken 72 px), pano için çalışma düzeyinde analiz kartı.
 5. **Açık kararlar** (DOMAIN §Açık kararlar 4–7): `canAsk` hedefi, `officeRole` çakışması, `kind: handoff` ikiliği.
 6. **`ownerId`** JWT claim'inden; LDAP / kullanıcı deposu `IUserDirectory`.
-7. **Sağlayıcılar**: NVIDIA / Ollama runtime adaptörleri (sözleşme hazır).
+7. **Sağlayıcılar**: NVIDIA / Ollama runtime adaptörleri (sözleşme hazır). OpenAI eklendi (2026-09-20, aşağıda).
 8. **Emülatör / tarayıcı testleri** için MCP araçları (testçi kararı).
+
+## Sağlayıcı: OpenAI + API anahtarı (2026-09-20, kullanıcı isteği) ✅
+
+- `openai` sağlayıcısı (`runtime/app/providers/openai.py`), iki kimlik yolu: **ChatGPT aboneliği** = Codex CLI
+  oturumu (`codex login`, tur `codex exec --json`, araçlı adımda `workspace-write` sandbox) ve **API anahtarı**
+  (Responses API, araçsız). Anthropic'e de API anahtarı girişi eklendi (SDK'ya `ANTHROPIC_API_KEY` ortamla gider).
+- Anahtar deposu `%USERPROFILE%\.mrhobist-aiteam\credentials.json` (`runtime/app/credentials.py`); ortam
+  değişkeni önde. Yanıtlarda yalnız maskeli son. `AuthStatus.method`: `session | apikey | null`.
+- Sözleşme: `Provider.Openai`, `Destination.Openai` (sona eklendi); `POST /providers/{p}/login` gövdesi
+  `ProviderLoginRequest { mode: claudeai|console|chatgpt|apikey, email?, apiKey? }`.
+- Ayarlar ekranı: sağlayıcı başına oturum düğmesi + "API anahtarı ile kullan" kutusu; rozet `API anahtarı`.
+- Kota: OpenAI için `available=false` (Codex CLI kalan hakkı dışa vermiyor) → limit koruması sessizce geçer.
+- Testler: runtime 43 (OpenAI 20 yeni), birim 34, servis 41.
 
 ## Faz 4c — Ofis odağı ve giriş (2026-09-19, kullanıcı istekleri) ✅
 

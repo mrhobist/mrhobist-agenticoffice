@@ -70,7 +70,7 @@ Kimlik doğrulama tek şemalı ve basit olduğu için **hostlar yalnız `127.0.0
 ### 4. Sağlayıcı ve maliyet
 
 - Bir ajanın sağlayıcı/modeli **md frontmatter'ında** belirlenir; boşsa varsayılan kullanılır.
-- Her tur `runs/` içine **hedefiyle** kaydedilir (`local` | `anthropic` | `nvidia`).
+- Her tur `runs/` içine **hedefiyle** kaydedilir (`local` | `anthropic` | `nvidia` | `openai`).
   Çalışma sonunda makineden çıkan çağrılar tek tek raporlanır.
 - Bütçe aşımı çalışmayı **durdurur**, uyarıyla geçmez. Maliyet **eşdeğerdir** (abonelikle ücret kesilmez);
   asıl koruma **limit eşiği** (`config/settings.json`, varsayılan %99): kota dolunca yeni tur başlamaz,
