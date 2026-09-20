@@ -199,15 +199,27 @@ public sealed class RunServiceTests : IDisposable
         var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.BeginAnswerAsync(run.Id, new AnswerRequest("retry"), Ct));
         Assert.Equal(ErrorCodes.RunNoteEmpty, ex.ErrorCode);
 
+        // can_ask: soru ONCE manager'a gitti (bir kez), developer manager'in cevabiyla yine takildi → kullaniciya.
+        var messages = await _store.ReadMessagesAsync(run.Id, Ct);
+        var ask = Assert.Single(messages, m => m.Kind == MessageKind.Ask && m.To == "manager");
+        var managerAnswer = Assert.Single(messages, m => m.Kind == MessageKind.Answer && m.From == "manager");
+        Assert.Equal(("developer", "developer", "t1"), (ask.From, managerAnswer.To, managerAnswer.Task));
+        Assert.Equal(ask.Ref, managerAnswer.Ref);
+        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.Meet && e.Json.Contains("\"ask\"", StringComparison.Ordinal) && e.Json.Contains("\"manager\"", StringComparison.Ordinal));
+        Assert.Single(_runtime.Calls, c => c.SchemaJson?.Contains("escalate", StringComparison.Ordinal) == true);
+
         _runtime.BlockImplement = false;
         run = await _svc.BeginAnswerAsync(run.Id, new AnswerRequest("retry", "küçük i kullan"), Ct);
         run = await _svc.DispatchAsync(run.Id, Ct);
         Assert.Equal(RunStatus.Completed, run.Status);
-        // Cevap developer'in ikinci turunda notlar arasinda; engel fazi Failed, ayni adim 2. tur.
-        var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).ToList();
-        Assert.Contains("küçük i kullan", devCalls[1].Messages[0].Content, StringComparison.Ordinal);
+        // Manager cevabi developer'in 2. turunda, kullanici cevabi 3. turunda notlar arasinda; engel fazlari Failed, ayni adim.
+        var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true && c.Messages[0].Content.Contains("# Görev t1", StringComparison.Ordinal)).ToList();
+        Assert.Equal(3, devCalls.Count); // t1: engel, manager cevabiyla engel, kullanici cevabiyla bitti
+        Assert.Contains("Küçük i kullan; Türkçe", devCalls[1].Messages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("küçük i kullan", devCalls[2].Messages[0].Content, StringComparison.Ordinal);
         var t1 = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
-        Assert.Equal(PhaseStatus.Failed, t1[1].Status);
+        Assert.Equal([PhaseStatus.Started, PhaseStatus.Failed, PhaseStatus.Started, PhaseStatus.Failed, PhaseStatus.Started, PhaseStatus.Done], t1.Take(6).Select(p => p.Status));
+        Assert.StartsWith("soru → manager", t1[1].Detail, StringComparison.Ordinal);
         Assert.Equal(2, t1[3].Round);
     }
 
@@ -446,6 +458,55 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal((a.Id, InboxKind.Approval), (only.RunId, only.Kind));
     }
 
+    [Fact]
+    public async Task Developer_engellenince_manager_cevaplar_kullanici_gormez()
+    {
+        _runtime.BlockImplementTimes = 1;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Null(run.Question);
+        var messages = await _store.ReadMessagesAsync(run.Id, Ct);
+        Assert.DoesNotContain(messages, m => m.Kind == MessageKind.Ask && m.To == "user");
+        Assert.Single(messages, m => m.Kind == MessageKind.Ask && m.From == "developer" && m.To == "manager" && m.Subject == "ask");
+        Assert.Single(messages, m => m.Kind == MessageKind.Answer && m.From == "manager" && m.To == "developer" && m.Subject == "answer");
+        Assert.Empty((await _reader.GetOverviewAsync(Ct)).Inbox);
+
+        // Manager yalniz okuma araciyla cagrildi; cevap developer'in 2. turunda; manager turu conversations'ta.
+        var managerCall = Assert.Single(_runtime.Calls, c => c.SchemaJson?.Contains("escalate", StringComparison.Ordinal) == true);
+        Assert.Equal(["Read", "Glob", "Grep"], managerCall.Tools!);
+        Assert.Contains("i mi I mı", managerCall.Messages[0].Content, StringComparison.Ordinal);
+        var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).ToList();
+        Assert.Contains("manager → developer · answer", devCalls[1].Messages[0].Content, StringComparison.Ordinal);
+        Assert.NotEmpty(await _store.ReadTurnsAsync(run.Id, "manager", Ct));
+    }
+
+    [Fact]
+    public async Task Manager_yukseltince_soru_kullaniciya_sebebiyle_duser()
+    {
+        _runtime.BlockImplementTimes = 1;
+        _runtime.ManagerEscalates = true;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.AwaitingInput, run.Status);
+        Assert.Equal("developer", run.Question!.Agent);
+        Assert.Contains("müşteri tercihi", run.Question.Context, StringComparison.Ordinal);
+        var messages = await _store.ReadMessagesAsync(run.Id, Ct);
+        Assert.Single(messages, m => m.Subject == "escalate" && m.From == "manager");
+        Assert.DoesNotContain(messages, m => m.Kind == MessageKind.Answer);
+
+        run = await _svc.BeginAnswerAsync(run.Id, new AnswerRequest("retry", "büyük I olsun"), Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Single(_runtime.Calls, c => c.SchemaJson?.Contains("escalate", StringComparison.Ordinal) == true); // manager'a bir daha sorulmadi
+    }
+
     // ------------------------------------------------------------------ sahteler
 
     /// <summary>Python yerine: sema istenirse plan JSON'u, yoksa devir notu metni. Cagrilari kaydeder.</summary>
@@ -479,6 +540,12 @@ public sealed class RunServiceTests : IDisposable
         /// <summary>Developer engellensin (blocked + soru).</summary>
         public bool BlockImplement { get; set; }
 
+        /// <summary>Developer yalniz ilk N implement cagrisinda engellensin (manager cevabi sonrasi devam etsin).</summary>
+        public int BlockImplementTimes { get; set; }
+
+        /// <summary>Manager (can_ask hedefi) cevap vermesin, kullaniciya yukseltsin.</summary>
+        public bool ManagerEscalates { get; set; }
+
         /// <summary>Kota penceresi yuzdesi (limit korumasi testi); null = kota bilgisi yok.</summary>
         public double? LimitPercent { get; set; }
 
@@ -497,9 +564,23 @@ public sealed class RunServiceTests : IDisposable
                 return Task.FromResult(new RuntimeTurnResponse("Devir notu: t1 developer'a.", null, request.Provider, request.Model, destination, new RuntimeUsage(10, 5, 0), 0.001m, 0.2, 1));
             }
 
+            if (request.SchemaJson.Contains("escalate", StringComparison.Ordinal))
+            {
+                var ask = ManagerEscalates
+                    ? """{"answer":null,"escalate":true,"reason":"müşteri tercihi, ben karar veremem"}"""
+                    : """{"answer":"Küçük i kullan; Türkçe kurala göre I→ı, İ→i.","escalate":false,"reason":null}""";
+                return Task.FromResult(new RuntimeTurnResponse("", ask, request.Provider, request.Model, destination, new RuntimeUsage(30, 10, 0), 0.004m, 1.0, 1));
+            }
+
             if (request.SchemaJson.Contains("filesChanged", StringComparison.Ordinal))
             {
-                var report = BlockImplement
+                var blockNow = BlockImplement || BlockImplementTimes > 0;
+                if (BlockImplementTimes > 0)
+                {
+                    BlockImplementTimes--;
+                }
+
+                var report = blockNow
                     ? """{"summary":"takildim","filesChanged":[],"commandsRun":[],"blocked":true,"question":"Türkçe karakter: i mi I mı?"}"""
                     : """{"summary":"slug.py yazildi","filesChanged":["slug.py"],"commandsRun":["python -m pytest: 3 passed"],"blocked":false,"question":null}""";
                 return Task.FromResult(new RuntimeTurnResponse("", report, request.Provider, request.Model, destination, new RuntimeUsage(50, 20, 0), 0.01m, 2.0, 1, [new RuntimeToolUse("Write", "slug.py")], 5));

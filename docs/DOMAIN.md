@@ -238,6 +238,15 @@ Bildirim zilinde ve gelen kutusunda **soru** olarak görünür; çalışma panel
 | Ne zaman | Soran | Seçenekler |
 |---|---|---|
 | Developer `blocked=true` (eksik/çelişkili bilgi) | developer | **retry** (not zorunlu: cevap developer'a gider, aynı adım yeniden) · **skip** (elle hallettim: sonraki adım) · **cancel** |
+
+**Ajan → ajan sorusu (`can_ask`, 2026-09-20):** developer `blocked=true` dediğinde soru **önce** md'sindeki `can_ask`
+hedefine (bugün `manager`) gider: 1 LLM turu, yalnız okuma aracı, şema `{ answer, escalate, reason }`. Kayıt
+`messages.jsonl`'de `ask` (developer → manager) + `answer` (manager → developer, aynı `ref`); faz `Failed` ("soru → manager")
+olur, aynı adım yeniden koşar ve cevap notlar arasında gider. **Kullanıcı hiçbir şey görmez.** Kullanıcıya düşen hâller:
+`can_ask` yok · manager `escalate=true` (sebep soru bağlamına eklenir, günlükte `escalate`) · manager hata verdi (günlükte
+`error`) · **aynı görevde ikinci takılma** (varsayımla: manager görev başına bir kez sorulur; sonrası kullanıcıya). Limit
+manager turunda dolarsa adım limit fazı olur, sürdürmede developer yeniden koşar. Sahnede developer manager'a `?` balonuyla
+yürür (`meet: ask`); üst üste hata tavanı (`maxReviewRounds`) bu fazları da sayar.
 | Review tavanı aşıldı | testçi / manager | **retry** (notla bir tur daha) · **skip** = olduğu gibi kabul et (adım `Skipped`, sonraki adım) · **cancel** |
 | Aynı adımda `maxReviewRounds` kez hata | ilgili ajan | **retry** · **skip** · **cancel** |
 
@@ -349,7 +358,7 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
 1. ~~Red geri dönüşü~~ → kapı başına, aradakiler yeniden koşar (yukarıda, varsayımla).
 2. `design` adımı görev başına çalışıyor (varsayımla); çalışma başına tek rehber istenirse akışa `design` görevi eklenir.
 3. ~~`implement`~~ → araçlarla, hedef dizinde; test komutu ajanın kendi kararı, kabul ölçütleri yol gösterir.
-4. `canAsk` hedefi akışta olmayan bir ajan olabilir mi (bugün: evet, denetlenmez).
+4. `canAsk` hedefi akışta olmayan bir ajan olabilir mi (bugün: evet, denetlenmez; yürütücü 2026-09-20'de geldi, hedef ekipte olmalı — `agent.unknown_can_ask`).
 5. `stage.officeRole` ile ajanın `office_roles` çakışması denetlenecek mi.
 6. `kind: handoff` adımı ile `handoffRole` ikiliği; birinin kaldırılması.
 7. Pano: çalışma düzeyindeki analiz için ayrı kart mı (bugün: analiz sütunu boş kalır, görevler

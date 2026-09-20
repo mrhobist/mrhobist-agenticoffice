@@ -59,7 +59,8 @@ export const RUN_CANCELLABLE: ReadonlySet<RunStatus> = new Set<RunStatus>(['runn
 export const SUBJECT_LABEL: Record<string, string> = {
   handoff: 'devir', 'plan-revision': 'revize notu', retry: 'tekrar', error: 'hata', cancel: 'iptal', limit: 'limit',
   'implement-report': 'developer raporu', 'review-feedback': 'red · geri bildirim', 'review-accept': 'kabul', design: 'tasarım rehberi',
-  question: 'soru', answer: 'kullanıcı cevabı',
+  ask: 'soru', escalate: 'kullanıcıya yükseltti',
+  question: 'soru', answer: 'cevap', // answer: kullanıcı ya da can_ask hedefi (manager) cevabı; kimden geldiği satırda yazar
 }
 export function subjectLabel(s: string): string { return SUBJECT_LABEL[s] ?? 'not' }
 

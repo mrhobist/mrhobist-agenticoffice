@@ -26,6 +26,15 @@ public sealed record ReviewReport(
 public sealed record DesignReport(string Guidance, IReadOnlyList<string> Decisions);
 
 /// <summary>
+/// <c>can_ask</c> hedefinin (manager) takilan ajana cevabi: tek net karar ya da kullaniciya yukseltme
+/// (<see cref="Escalate"/>: yetki disi — kapsam, butce, dis erisim). Yukseltmede <see cref="Reason"/> kullaniciya baglam olur.
+/// </summary>
+public sealed record AskReport(string? Answer, bool Escalate, string? Reason)
+{
+    public bool Answered => !Escalate && !string.IsNullOrWhiteSpace(Answer);
+}
+
+/// <summary>
 /// Adim yurutuculerinin yapisal cikti semalari (runtime'a <c>schema</c> olarak gider) ve cozumleme.
 /// Sema ile C# kaydi birebir; alan eklenirse ikisi birden degisir (<see cref="SpecSchema"/> ile ayni kural).
 /// </summary>
@@ -73,6 +82,19 @@ public static class StepSchemas
         }
         """;
 
+    public const string Ask = """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["answer", "escalate", "reason"],
+          "properties": {
+            "answer": { "type": ["string", "null"], "description": "Soran ajanin hemen uygulayacagi TEK net karar + bir iki cumle gerekce; escalate=true ise null" },
+            "escalate": { "type": "boolean", "description": "Karar senin yetkinin disinda (kapsam/butce/dis sistem/kullanici tercihi): kullaniciya sorulsun" },
+            "reason": { "type": ["string", "null"], "description": "escalate=true ise neden karar veremedigin (kullaniciya gosterilir); aksi halde null" }
+          }
+        }
+        """;
+
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() },
@@ -88,6 +110,11 @@ public static class StepSchemas
 
     public static DesignReport ParseDesign(string? structuredJson, string text)
         => Parse<DesignReport>(structuredJson, text) ?? new DesignReport(text.Trim(), []);
+
+    /// <summary>Sema tutmadiysa serbest metin cevap sayilir (manager md'si zaten "tek karar" ister); bos metin yukseltmedir.</summary>
+    public static AskReport ParseAsk(string? structuredJson, string text)
+        => Parse<AskReport>(structuredJson, text)
+            ?? (string.IsNullOrWhiteSpace(text) ? new AskReport(null, true, "cevap bos") : new AskReport(text.Trim(), false, null));
 
     private static T? Parse<T>(string? structuredJson, string text)
         where T : class

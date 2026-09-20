@@ -271,7 +271,7 @@ maliyet **eşdeğer** (≈$), asıl koruma **limit eşiği %99** platform bazın
 
 ## Kalan işler (2026-09-20 itibarıyla, öncelik sırasıyla)
 
-1. **`canAsk`**: ajan → manager sorusu (`ask`/`answer` mesajları var, yürütücü yok; bugün developer yalnız kullanıcıya sorar).
+1. ~~**`canAsk`**~~ → geldi (2026-09-20): developer takılınca soru önce `can_ask` hedefine (manager, 1 tur, okuma aracı); cevaplarsa kullanıcı görmez, yükseltirse/ikinci takılmada kullanıcıya (DOMAIN → Takılma). Servis testi 46.
 2. **Faz 5 SSE** `GET /runs/{id}/events`: UI 2 s yoklamayla idare ediyor; çok çalışma açıkken yük artar.
 3. ~~İş Akışı paneli~~ → Ekip paneli "Takımlar" sekmesi (2026-09-20): adım ekle/sil/sırala, ajan/tür/ofis rolü; yeni ajan ekleme ve sahneye otomatik yerleşim (ziyaretçi dahil) da geldi.
 4. **Tasarım artıkları**: ray daralması (proje açıkken 72 px), pano için çalışma düzeyinde analiz kartı.

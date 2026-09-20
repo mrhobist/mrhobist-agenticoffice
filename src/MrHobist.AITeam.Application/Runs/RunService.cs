@@ -498,8 +498,24 @@ public sealed class RunService(
                     {
                         // Developer tahmin etmedi, sordu (kullanici karari: soru + mudahale). Faz Failed: cevap gelince ayni adim yeniden kosar.
                         var q = string.IsNullOrWhiteSpace(report.Question) ? "Görev bitirilemedi; ne yapılmalı?" : report.Question.Trim();
+
+                        // can_ask: soru once ekipteki hedefe (manager) gider; o cevaplarsa kullanici hic gormez (docs/DOMAIN.md → Takilma, ajan → ajan sorusu).
+                        var asked = await AskColleagueAsync(run, spec, a, q, body, notes, root, round, ct).ConfigureAwait(false);
+                        run = asked.Run;
+                        if (run.Status != RunStatus.Running)
+                        {
+                            return run;
+                        }
+
+                        if (asked.Answered)
+                        {
+                            await ClosePhaseAsync(run, a, round, PhaseStatus.Failed, started, Ellipsis($"soru → {asked.Target}: {q}", 200), ct).ConfigureAwait(false);
+                            break; // dagitici Failed → ayni adim; cevap notlar arasinda gider. Ust uste hata tavani asagida korur.
+                        }
+
                         await ClosePhaseAsync(run, a, round, PhaseStatus.Failed, started, Ellipsis("soru: " + q, 200), ct).ConfigureAwait(false);
-                        return await AskUserAsync(run, a.Agent, q, Options("Cevapla ve yeniden dene", "Cevabın developer'a not olarak gider; görev aynı adımdan sürer.", "Bu adımı geç", "Elle hallettim ya da gerekmiyor: görev bir sonraki adıma geçer.", retryNeedsNote: true), a, body, ct).ConfigureAwait(false);
+                        var context = asked.EscalateReason is null ? body : $"{body}\n\n{asked.Target}: {asked.EscalateReason}";
+                        return await AskUserAsync(run, a.Agent, q, Options("Cevapla ve yeniden dene", "Cevabın developer'a not olarak gider; görev aynı adımdan sürer.", "Bu adımı geç", "Elle hallettim ya da gerekmiyor: görev bir sonraki adıma geçer.", retryNeedsNote: true), a, context, ct).ConfigureAwait(false);
                     }
 
                     await ClosePhaseAsync(run, a, round, PhaseStatus.Done, started, Ellipsis(report.Summary, 200), ct).ConfigureAwait(false);
@@ -653,6 +669,82 @@ public sealed class RunService(
     }
 
     // ------------------------------------------------------------------ takilma: soru ve cevap (docs/DOMAIN.md → Takilma)
+
+    /// <summary>Ajan → ajan sorusunun sonucu: cevaplandi (not yazildi) · yukseltildi (sebep kullaniciya) · hedef yok (kullaniciya).</summary>
+    private sealed record ColleagueAsk(Run Run, bool Answered, string? Target, string? EscalateReason);
+
+    /// <summary>
+    /// Takilan ajanin sorusu <c>can_ask</c> hedefine (ajan md'si; bugun manager): 1 LLM turu, yalniz okuma araci. Kayit
+    /// messages.jsonl'de <c>ask</c> (soran → hedef) + <c>answer</c> (hedef → soran, ayni ref); sonraki turda notlar arasinda gider.
+    /// Kural (varsayimla): hedef ayni gorevde BIR kez sorulur — ikinci takilma kullaniciya gider. Yukseltme (escalate) ya da
+    /// hedefin hatasi kullaniciya duser; limit dogrudan yukari cikar (adim limit fazi olur).
+    /// </summary>
+    private async Task<ColleagueAsk> AskColleagueAsync(Run run, Spec spec, Assignment a, string question, string report, IReadOnlyList<Message> notes, string root, int round, CancellationToken ct)
+    {
+        var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
+        var target = team.Agents.TryGetValue(a.Agent, out var asker) ? asker.CanAsk : null;
+        if (target is null || asker is null || !team.Agents.TryGetValue(target, out var colleague))
+        {
+            return new ColleagueAsk(run, false, null, null);
+        }
+
+        if (notes.Any(m => m.Kind == MessageKind.Ask && m.From == a.Agent && m.To == target))
+        {
+            return new ColleagueAsk(run, false, target, null); // bir kez soruldu; yine takildi → kullanici
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var reference = $"q-{now.UtcTicks}";
+        await runs.AppendMessageAsync(run.Id, new Message(now, MessageKind.Ask, a.Agent, target, question, a.Task.Id, a.Stage.Id, Ref: reference, Subject: "ask"), ct).ConfigureAwait(false);
+        Publish(SceneEventTypes.Meet, new { from = a.Agent, to = target, kind = "ask", run = run.Id });
+        PublishAgent(run, a.Agent, "waiting", $"{colleague.Name} → soru", a.Task.Id);
+        PublishAgent(run, target, "working", $"{asker.Name} soruyor", a.Task.Id);
+
+        try
+        {
+            var prompt = Prompts.AskColleague(spec, a, root, notes, asker.Name, question, report);
+            var reply = await caller.CallAsync(run, target, [new RuntimeMessage("user", prompt)], StepSchemas.Ask, a.Stage.Id, a.Task.Id, round, ct, new ToolAccess(ToolAccess.ReadOnly, root, 20)).ConfigureAwait(false);
+            if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
+            {
+                return new ColleagueAsk(await reader.GetAsync(run.Id, ct).ConfigureAwait(false), false, target, null);
+            }
+
+            run = await AddCostAsync(run, reply.CostUsd, ct).ConfigureAwait(false);
+            if (OverBudget(run))
+            {
+                return new ColleagueAsk(await StopForBudgetAsync(run, target, ct).ConfigureAwait(false), false, target, null);
+            }
+
+            var answer = StepSchemas.ParseAsk(reply.StructuredJson, reply.Text);
+            if (answer.Answered)
+            {
+                await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Answer, target, a.Agent, answer.Answer!.Trim(), a.Task.Id, a.Stage.Id, Ref: reference, Subject: "answer"), ct).ConfigureAwait(false);
+                Publish(SceneEventTypes.Meet, new { from = target, to = a.Agent, kind = "handoff", run = run.Id });
+                PublishAgent(run, target, "done", "cevapladı", a.Task.Id);
+                return new ColleagueAsk(run, true, target, null);
+            }
+
+            var reason = string.IsNullOrWhiteSpace(answer.Reason) ? "karar yetkisi dışında" : answer.Reason.Trim();
+            await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, target, "user", $"{asker.Name} sorusunu kullanıcıya yükseltti: {reason}", a.Task.Id, a.Stage.Id, Ref: reference, Subject: "escalate"), ct).ConfigureAwait(false);
+            PublishAgent(run, target, "idle", null, null);
+            return new ColleagueAsk(run, false, target, reason);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (LimitReachedException)
+        {
+            throw; // adim limit fazi olur; surdurmede developer yeniden kosar (soru kaydi durur, ikinci takilma kullaniciya)
+        }
+        catch (Exception ex)
+        {
+            // Hedef cevaplayamadi (sema, saglayici): akis durmaz, soru kullaniciya duser; hata gunlukte.
+            await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, target, "user", ex.Message, a.Task.Id, a.Stage.Id, Subject: "error"), ct).ConfigureAwait(false);
+            PublishAgent(run, target, "idle", null, null);
+            return new ColleagueAsk(run, false, target, $"cevaplayamadı ({Ellipsis(ex.Message, 120)})");
+        }
+    }
 
     /// <summary>Akis takildi: calisma <c>AwaitingInput</c>, soru run.json'da, kayit messages.jsonl'de (ask, ref). Bildirim zili bunu gosterir.</summary>
     private async Task<Run> AskUserAsync(Run run, string agent, string text, IReadOnlyList<QuestionOption> options, Assignment a, string? context, CancellationToken ct)

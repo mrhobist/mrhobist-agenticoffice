@@ -122,6 +122,25 @@ public static class Prompts
         return sb.ToString();
     }
 
+    /// <summary>
+    /// <c>can_ask</c> hedefine (manager) giden soru: gorev baglami + takilan ajanin raporu + sorusu. Hedef kod yazmaz;
+    /// dizini okuyabilir. Tek karar ister; yetki disiysa yukseltir (docs/DOMAIN.md → Takilma, ajan → ajan sorusu).
+    /// </summary>
+    public static string AskColleague(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, string askerName, string question, string report)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(a);
+        var sb = TaskContext(spec, a, projectRoot, notes);
+        sb.AppendLine($"# Soru — {askerName} ({a.Agent}) takıldı");
+        sb.AppendLine("## Raporu").AppendLine(report).AppendLine();
+        sb.AppendLine("## Sorusu").AppendLine(question).AppendLine();
+        sb.AppendLine("# Yapılacak");
+        sb.AppendLine($"Sen bu ajanın sorabileceği kişisin; kararı SEN verirsin, kullanıcı rahatsız edilmez. TEK net karar ver: {askerName} cevabınla hemen devam edebilmeli. Bilgi eksikse en makul varsayımı seç ve varsayımı açıkça yaz. Kod yazma, dosya değiştirme; dizini okuyabilirsin.");
+        sb.AppendLine("Karar yetkinin dışındaysa (kapsam daralması/genişlemesi, bütçe, dış sistem erişimi, kullanıcının kişisel tercihi) tahmin ETME: escalate=true ve reason ile kullanıcıya bırak.");
+        sb.AppendLine("Verilen JSON şemasına uyan cevabı ver: answer, escalate, reason.");
+        return sb.ToString();
+    }
+
     /// <summary>Kullanicinin takilma cevabi (retry notu): ilgili ajana bir sonraki turda notlar arasinda gider.</summary>
     public static string UserAnswer(string choice, string? note)
         => string.IsNullOrWhiteSpace(note) ? $"Kullanıcı kararı: {choice}." : $"Kullanıcı kararı: {choice}.\n{note.Trim()}";
