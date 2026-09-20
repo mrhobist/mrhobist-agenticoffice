@@ -302,6 +302,16 @@ onu üreten ~90 satır `build-sprites.py`'den kalktı. Tasarımcı (ponytail) i�
 ve arka yazma kareleri katalogdan alındı (%5 altı ölçek farkında yeniden boyutlama yok, taban
 keskin kalır).
 
+**Sanal ortam artık cihaza göre kuruluyor (2026-09-20).** `runtime/.venv/Scripts/python.exe` bir
+shim'dir ve onu kuran makinenin/Windows kullanıcısının `python.exe`'sini **mutlak yolla** çağırır;
+aynı çalışma dizinini başka bir kullanıcı açınca dosya durur ama çalışmaz (`No Python at '...'`,
+çıkış kodu 103). `verify.ps1` yalnız dosyanın varlığına baktığı için bunu "kurulu" sanıyordu ve
+yukarıdaki üç ortam notunun hepsi bu yüzden yazıldı. Artık yorumlayıcı **fiilen koşturularak**
+yoklanıyor; bozuksa adım onarım komutunu söyleyerek duruyor. `-SetupRuntime` anahtarı bu cihazın
+Python'unu bulup (`py -3` → `python` → `python3`, `sys.executable` sorulur, Store kısayolu elenir)
+`.venv`'i siler ve yeniden kurar. Kapı kendiliğinden kurulum yapmaz — sessiz onarım, `verify.ps1`'in
+"eksik altyapıda sessizce geçme" kuralına aykırı olurdu.
+
 **UI ikon ve düğme tutarlılığı.** Emoji/glif karışımı bitti: tek renkli SVG ikon seti
 `Ico.vue` (`bell · gear · folder · trash · refresh · clock · check · exit`). Kapat düğmeleri
 tüm panellerde aynı (28×28, ortalı, hover); "+" ortalandı; proje silmede çöp kutusu ikonu;

@@ -1,9 +1,11 @@
 # Tek dogrulama kapisi. Eksik altyapida SESSIZCE GECMEZ, hata verir.
 # Kullanim: powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
+#           ... -SetupRuntime   runtime/.venv'i BU cihazin Python'u ile (yeniden) kurar
 [CmdletBinding()]
 param(
     [switch]$SkipUi,
-    [switch]$SkipRuntime
+    [switch]$SkipRuntime,
+    [switch]$SetupRuntime
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +28,43 @@ function Step {
         Write-Host "   BASARISIZ: $_" -ForegroundColor Red
         $script:failed += $Name
     }
+}
+
+# Python yorumlayicisi CIHAZA baglidir: .venv icindeki shim, onu kuran makinenin
+# (ve Windows kullanicisinin) python.exe'sini mutlak yolla cagirir. Ayni calisma
+# dizinini baska bir kullanici actiginda shim DURUYOR ama calismiyor -- bu yuzden
+# "dosya var mi" yetmez, yorumlayici fiilen kosturularak yoklanir.
+function Test-PythonRuns {
+    param([string]$Exe)
+    if (-not $Exe -or -not (Test-Path $Exe)) { return $false }
+    try { & $Exe -c "pass" 2>&1 | Out-Null } catch { return $false }
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Get-VenvPython {
+    param([string]$Root)
+    foreach ($rel in @("runtime/.venv/Scripts/python.exe", "runtime/.venv/bin/python")) {
+        $p = Join-Path $Root $rel
+        if (Test-Path $p) { return $p }
+    }
+    return $null
+}
+
+# Bu cihazdaki yorumlayici: once Windows launcher (py -3), sonra PATH.
+# sys.executable sorulur ki "py" shim'i degil gercek exe yolu donsun.
+function Get-SystemPython {
+    foreach ($cand in @(@("py", "-3"), @("python"), @("python3"))) {
+        $exe = $cand[0]
+        if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
+        $pyArgs = @()
+        if ($cand.Count -gt 1) { $pyArgs += $cand[1] }
+        $pyArgs += @("-c", "import sys; print(sys.executable)")
+        $out = $null
+        try { $out = & $exe @pyArgs 2>$null | Select-Object -Last 1 } catch { continue }
+        # Microsoft Store kisayolu sifirdan farkli doner ya da bos yol basar.
+        if ($LASTEXITCODE -eq 0 -and $out -and (Test-Path $out)) { return $out }
+    }
+    return $null
 }
 
 Step "dotnet restore" { dotnet restore MrHobist.AITeam.slnx --nologo }
@@ -61,14 +100,43 @@ Step "kural: Python sinirinda is mantigi yok" {
 
 if (-not $SkipRuntime -and (Test-Path "runtime/pyproject.toml")) {
     # Sistem Python'inda pytest yok; runtime kendi sanal ortamini kullanir.
-    $venvPy = Join-Path $root "runtime/.venv/Scripts/python.exe"
-    if (-not (Test-Path $venvPy)) { $venvPy = Join-Path $root "runtime/.venv/bin/python" }
-    if (Test-Path $venvPy) {
+    $venvDir = Join-Path $root "runtime/.venv"
+    $venvPy = Get-VenvPython $root
+    $venvOk = Test-PythonRuns $venvPy
+
+    if ($SetupRuntime -and -not $venvOk) {
+        Step "runtime sanal ortami (bu cihaz)" {
+            $sysPy = Get-SystemPython
+            if (-not $sysPy) { throw "Bu cihazda Python bulunamadi. Python 3.12+ kurun (py launcher ya da PATH)." }
+            Write-Host "   bu cihazin Python'u: $sysPy"
+            if (Test-Path $venvDir) {
+                Write-Host "   var olan runtime/.venv bu cihazda calismiyor; siliniyor"
+                Remove-Item $venvDir -Recurse -Force
+            }
+            & $sysPy -m venv $venvDir
+            if ($LASTEXITCODE -ne 0) { throw "venv kurulamadi" }
+            $newPy = Get-VenvPython $root
+            if (-not $newPy) { throw "venv kuruldu ama yorumlayici bulunamadi" }
+            & $newPy -m pip install --quiet --upgrade pip
+            & $newPy -m pip install --quiet -e (Join-Path $root "runtime[dev]")
+            if ($LASTEXITCODE -ne 0) { throw "runtime bagimliliklari kurulamadi" }
+        }
+        $venvPy = Get-VenvPython $root
+        $venvOk = Test-PythonRuns $venvPy
+    }
+
+    if ($venvOk) {
         Step "python testleri" { Push-Location "runtime"; & $venvPy -m pytest -q; Pop-Location }
     }
     else {
         Step "python testleri" {
-            throw "runtime/.venv yok. Kurulum: python -m venv runtime/.venv; runtime/.venv/Scripts/pip install -e 'runtime[dev]'"
+            $sysPy = Get-SystemPython
+            $hint = if ($sysPy) { "Bu cihazdaki Python: $sysPy." } else { "Bu cihazda Python bulunamadi; Python 3.12+ kurun." }
+            $fix = "Onarim: powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -SetupRuntime"
+            if ($venvPy) {
+                throw "runtime/.venv var ama bu cihazda calismiyor (baska bir makine ya da Windows kullanicisi kurmus; shim mutlak yol cagiriyor). $hint $fix"
+            }
+            throw "runtime/.venv yok. $hint $fix"
         }
     }
 }

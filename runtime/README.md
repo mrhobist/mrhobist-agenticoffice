@@ -13,7 +13,7 @@ veritabanı, görev kavramı, role göre dallanma. `scripts/verify.ps1` bunu den
 
 ## Çalıştırma
 
-Depo kökünden (sanal ortam `runtime/.venv`, Python 3.12):
+Depo kökünden (sanal ortam `runtime/.venv`, Python 3.12+):
 
 ```bash
 runtime/.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5090 --app-dir runtime
@@ -24,6 +24,22 @@ Testler (`runtime/` içinden):
 ```bash
 .venv/Scripts/python.exe -m pytest -q
 ```
+
+### Sanal ortam cihaza bağlıdır
+
+`.venv/Scripts/python.exe` bir **shim**'dir: onu kuran makinenin (ve Windows kullanıcısının)
+`python.exe`'sini mutlak yolla çağırır. Aynı çalışma dizinini başka bir kullanıcı açtığında
+dosya **durur ama çalışmaz** — `No Python at '...'`, çıkış kodu 103. `.venv` zaten
+`.gitignore`'da; taşınabilir değildir, her cihazda yeniden kurulur:
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -SetupRuntime
+```
+
+Bu komut sırayla `py -3`, `python`, `python3` deneyerek **bu cihazın** yorumlayıcısını bulur
+(`sys.executable` sorulur, Microsoft Store kısayolu elenir), bozuk `.venv`'i siler ve
+`pip install -e "runtime[dev]"` ile yeniden kurar. `verify.ps1` anahtarsız çalıştırıldığında
+kurmaz; yorumlayıcıyı fiilen koşturarak yoklar ve bozuksa onarım komutunu söyleyerek durur.
 
 ## Sağlayıcılar
 

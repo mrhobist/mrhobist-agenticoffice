@@ -43,8 +43,12 @@ npm --prefix ui install && npm --prefix ui run dev
 | Runtime (LLM çağrı katmanı) | `127.0.0.1:5090` |
 | UI (piksel ofis) | `127.0.0.1:3000` |
 
-Python sanal ortamı yoksa: `python -m venv runtime/.venv` ardından
-`runtime/.venv/Scripts/python.exe -m pip install -e "runtime[dev]"`.
+Python sanal ortamı yoksa (ya da başka bir makinede/Windows kullanıcısında kurulduğu için
+çalışmıyorsa) tek komut, bu cihazın Python'unu bulup kurar:
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -SetupRuntime
+```
 
 ## İlk giriş
 
