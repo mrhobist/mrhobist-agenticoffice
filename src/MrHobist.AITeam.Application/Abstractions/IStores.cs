@@ -15,6 +15,18 @@ public interface IAgentStore
 
     /// <summary>Md dosyasini siler. Referans denetimi (akislar, can_ask) cagiranin isidir.</summary>
     Task DeleteAgentAsync(string key, CancellationToken ct);
+
+    /// <summary><c>config/knowledge/{key}.md</c> olusturur ya da uzerine yazar (frontmatter <c>title</c> + govde); atomik.</summary>
+    Task SaveKnowledgeAsync(Knowledge knowledge, CancellationToken ct);
+
+    /// <summary>Bilgi md'sini siler. Referans denetimi (includes) cagiranin isidir.</summary>
+    Task DeleteKnowledgeAsync(string key, CancellationToken ct);
+
+    /// <summary>Kullanicinin yukledigi ajan md'sini (frontmatter + prompt) cozer; bicim hatasi <c>agent.markdown_invalid</c>. Dosya yazmaz.</summary>
+    Agent ParseAgentMarkdown(string key, string markdown);
+
+    /// <summary>Kullanicinin yukledigi bilgi md'sini cozer (<c>title</c> yoksa anahtar). Dosya yazmaz.</summary>
+    Knowledge ParseKnowledgeMarkdown(string key, string markdown);
 }
 
 /// <summary><c>config/projects/{key}.json</c>; is yalniz bir projenin icinde baslar (docs/DOMAIN.md → Projeler).</summary>

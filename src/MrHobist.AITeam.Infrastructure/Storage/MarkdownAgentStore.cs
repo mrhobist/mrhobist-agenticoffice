@@ -74,6 +74,60 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
         return Task.CompletedTask;
     }
 
+    public Task SaveKnowledgeAsync(Knowledge knowledge, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(knowledge);
+        Identifiers.Require(knowledge.Key, ErrorCodes.KnowledgeInvalidKey, "bilgi");
+        Directory.CreateDirectory(paths.KnowledgeDir);
+        var meta = new List<KeyValuePair<string, object?>> { new("title", knowledge.Title) };
+        return AtomicFile.WriteAsync(Path.Combine(paths.KnowledgeDir, knowledge.Key + ".md"), Frontmatter.Render(meta, knowledge.Body), ct);
+    }
+
+    public Task DeleteKnowledgeAsync(string key, CancellationToken ct)
+    {
+        var target = Path.Combine(paths.KnowledgeDir, Identifiers.Require(key, ErrorCodes.KnowledgeInvalidKey, "bilgi") + ".md");
+        if (!File.Exists(target))
+        {
+            throw new NotFoundException(ErrorCodes.KnowledgeNotFound, $"Bilgi dosyasi yok: '{key}'.");
+        }
+
+        File.Delete(target);
+        return Task.CompletedTask;
+    }
+
+    public Agent ParseAgentMarkdown(string key, string markdown)
+    {
+        ArgumentNullException.ThrowIfNull(markdown);
+        try
+        {
+            return ParseAgent(key, markdown);
+        }
+        catch (DomainException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException or ArgumentException)
+        {
+            throw new DomainException(ErrorCodes.AgentMarkdownInvalid, $"Ajan md'si cozulemedi: {ex.Message}");
+        }
+    }
+
+    public Knowledge ParseKnowledgeMarkdown(string key, string markdown)
+    {
+        ArgumentNullException.ThrowIfNull(markdown);
+        Identifiers.Require(key, ErrorCodes.KnowledgeInvalidKey, "bilgi");
+        var doc = Frontmatter.Parse(markdown);
+        var title = Frontmatter.GetString(doc.Meta, "title");
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            // Frontmatter yoksa ilk "# Baslik" satiri, o da yoksa anahtar.
+            var heading = doc.Body.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith("# ", StringComparison.Ordinal));
+            title = heading is null ? key.Replace('-', ' ') : heading[2..].Trim();
+        }
+
+        return new Knowledge(key, title, doc.Body);
+    }
+
     internal static Agent ParseAgent(string key, string text)
     {
         var doc = Frontmatter.Parse(text);

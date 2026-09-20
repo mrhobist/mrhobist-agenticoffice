@@ -28,6 +28,17 @@ public static class ConfigEndpoints
             return Results.NoContent();
         });
         g.MapGet("/knowledge", (IAgentService s, CancellationToken ct) => s.ListKnowledgeAsync(ct));
+        // Bilgi dosyalari ve md yukleme (kullanici istegi 2026-09-20): govde metin olarak gelir, dosya Api'de yazilir (config tek dogru kaynak).
+        g.MapPut("/knowledge/{key}", (string key, KnowledgeModel body, IAgentService s, CancellationToken ct) => s.UpsertKnowledgeAsync(key, body, ct));
+        g.MapPost("/knowledge/import", async (ImportMarkdownRequest body, IAgentService s, CancellationToken ct)
+            => Results.Created($"/api/v1/knowledge/{body.Key}", await s.ImportKnowledgeAsync(body, ct).ConfigureAwait(false)));
+        g.MapDelete("/knowledge/{key}", async (string key, IAgentService s, CancellationToken ct) =>
+        {
+            await s.DeleteKnowledgeAsync(key, ct).ConfigureAwait(false);
+            return Results.NoContent();
+        });
+        g.MapPost("/agents/import", async (ImportMarkdownRequest body, IAgentService s, CancellationToken ct)
+            => Results.Created($"/api/v1/agents/{body.Key}", await s.ImportAsync(body, ct).ConfigureAwait(false)));
 
         // Ajan paneli "Isler" sekmesi: bu ajanin calisma basina turlari (tam prompt/cikti, o anki model), mesajlari, fazlari.
         g.MapGet("/agents/{key}/work", (string key, int? runs, IRunReader reader, CancellationToken ct)

@@ -15,7 +15,16 @@ const props = defineProps<{ agents: AgentListItem[] | null }>()
 const emit = defineEmits<{ close: []; select: [key: string]; changed: [] }>()
 const api = useApiClient()
 
-const tab = ref<'agents' | 'teams'>('agents')
+const tab = ref<'agents' | 'teams' | 'knowledge'>('agents')
+
+/** Dosya secicisinden metin oku (UTF-8). Yalniz .md; icerik Api'ye metin olarak gider, dosya Api'de yazilir. */
+function readText(ev: Event): Promise<{ name: string; text: string } | null> {
+  const input = ev.target as HTMLInputElement
+  const f = input.files?.[0]
+  input.value = ''
+  if (!f) return Promise.resolve(null)
+  return f.text().then(text => ({ name: f.name.replace(/\.md$/i, ''), text }))
+}
 
 // ------------------------------------------------------------------ ajanlar
 
@@ -53,6 +62,31 @@ async function addAgent() {
   }
 }
 
+// Hazir ajan md'si yukle: frontmatter (name, summary, office_roles, provider, model, effort, includes, can_ask) + prompt govdesi.
+const importing = ref<{ key: string; markdown: string; name: string } | null>(null)
+const importBusy = ref(false)
+const importError = ref<string | null>(null)
+async function pickAgentMd(ev: Event) {
+  const f = await readText(ev)
+  if (!f) return
+  importError.value = null
+  importing.value = { key: slug(f.name), markdown: f.text, name: f.name }
+}
+async function importAgent() {
+  if (!importing.value || importBusy.value) return
+  importBusy.value = true
+  importError.value = null
+  try {
+    await api.post('/api/v1/agents/import', { key: importing.value.key.trim(), markdown: importing.value.markdown })
+    importing.value = null
+    emit('changed')
+  } catch (e) {
+    importError.value = errorText(e)
+  } finally {
+    importBusy.value = false
+  }
+}
+
 const delError = ref<string | null>(null)
 async function removeAgent(a: AgentListItem) {
   if (!window.confirm(`"${a.name}" ekipten silinsin mi? md dosyası silinir; bir akışta kullanılıyorsa reddedilir.`)) return
@@ -62,6 +96,70 @@ async function removeAgent(a: AgentListItem) {
     emit('changed')
   } catch (e) {
     delError.value = errorText(e)
+  }
+}
+
+// ------------------------------------------------------------------ bilgi dosyalari (config/knowledge/*.md)
+
+const kEdit = ref<{ key: string; title: string; body: string; isNew: boolean } | null>(null)
+const kBusy = ref(false)
+const kError = ref<string | null>(null)
+const kSaved = ref(false)
+const usedBy = computed(() => {
+  const m: Record<string, string[]> = {}
+  for (const a of props.agents ?? []) for (const k of a.includes) (m[k] ??= []).push(a.name)
+  return m
+})
+function openKnowledge(k: KnowledgeItem) { kError.value = null; kEdit.value = { key: k.key, title: k.title, body: k.body, isNew: false } }
+function newKnowledge() { kError.value = null; kEdit.value = { key: '', title: '', body: '', isNew: true } }
+async function pickKnowledgeMd(ev: Event) {
+  const f = await readText(ev)
+  if (!f) return
+  kError.value = null
+  kBusy.value = true
+  try {
+    await api.post('/api/v1/knowledge/import', { key: slug(f.name), markdown: f.text })
+    await loadKnowledge()
+    const item = knowledge.value.find(k => k.key === slug(f.name))
+    if (item) openKnowledge(item)
+    emit('changed')
+  } catch (e) {
+    kError.value = errorText(e)
+  } finally {
+    kBusy.value = false
+  }
+}
+async function saveKnowledge() {
+  const k = kEdit.value
+  if (!k || kBusy.value) return
+  kBusy.value = true
+  kError.value = null
+  kSaved.value = false
+  try {
+    const key = k.isNew ? slug(k.key || k.title) : k.key
+    await api.put(`/api/v1/knowledge/${encodeURIComponent(key)}`, { title: k.title.trim() || null, body: k.body })
+    await loadKnowledge()
+    kEdit.value = { ...k, key, isNew: false }
+    kSaved.value = true
+    setTimeout(() => { kSaved.value = false }, 2500)
+    emit('changed')
+  } catch (e) {
+    kError.value = errorText(e)
+  } finally {
+    kBusy.value = false
+  }
+}
+async function deleteKnowledge() {
+  const k = kEdit.value
+  if (!k || k.isNew || !window.confirm(`"${k.title}" bilgi dosyası silinsin mi? Bir ajanın listesindeyse reddedilir.`)) return
+  kError.value = null
+  try {
+    await api.del(`/api/v1/knowledge/${encodeURIComponent(k.key)}`)
+    kEdit.value = null
+    await loadKnowledge()
+    emit('changed')
+  } catch (e) {
+    kError.value = errorText(e)
   }
 }
 
@@ -172,6 +270,7 @@ onMounted(() => { void loadKnowledge(); void loadWorkflows() })
         <nav class="tabs" role="tablist">
           <button type="button" role="tab" :class="{ on: tab === 'agents' }" :aria-selected="tab === 'agents'" @click="tab = 'agents'">Ajanlar <b v-if="agents">{{ agents.length }}</b></button>
           <button type="button" role="tab" :class="{ on: tab === 'teams' }" :aria-selected="tab === 'teams'" @click="tab = 'teams'">Takımlar <b v-if="workflows">{{ workflows.length }}</b></button>
+          <button type="button" role="tab" :class="{ on: tab === 'knowledge' }" :aria-selected="tab === 'knowledge'" @click="tab = 'knowledge'">Bilgi dosyaları <b>{{ knowledge.length }}</b></button>
         </nav>
         <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
       </header>
@@ -191,8 +290,22 @@ onMounted(() => { void loadKnowledge(); void loadWorkflows() })
           </li>
         </ul>
 
-        <button v-if="!adding" type="button" class="primary" @click="adding = true">+ Yeni ajan</button>
-        <form v-else class="form" @submit.prevent="addAgent">
+        <div v-if="!adding && !importing" class="actions">
+          <button type="button" class="primary" @click="adding = true">+ Yeni ajan</button>
+          <label class="upload"><input type="file" accept=".md,text/markdown" @change="pickAgentMd"> md yükle</label>
+          <span class="sub">Hazır ajan md'si: <code>---</code> frontmatter (name, summary, office_roles, provider, model, effort, includes, can_ask) + sistem promptu gövdesi. Dosya adı anahtar olur.</span>
+        </div>
+        <form v-if="importing" class="form" @submit.prevent="importAgent">
+          <h3>md'den ajan ekle · <code>{{ importing.name }}.md</code></h3>
+          <div class="field"><label class="lbl" for="i-key">Anahtar</label><input id="i-key" v-model="importing.key" type="text" required pattern="[a-z0-9][a-z0-9_\-]*"></div>
+          <div class="field"><label class="lbl" for="i-md">İçerik <span class="sub">(düzenleyebilirsin)</span></label><textarea id="i-md" v-model="importing.markdown" rows="12" spellcheck="false" /></div>
+          <div class="actions">
+            <button class="primary" type="submit" :disabled="importBusy">{{ importBusy ? 'Ekleniyor…' : 'Ekibe ekle' }}</button>
+            <button type="button" class="ghost" :disabled="importBusy" @click="importing = null">Vazgeç</button>
+            <span v-if="importError" class="err" role="alert">{{ importError }}</span>
+          </div>
+        </form>
+        <form v-if="adding" class="form" @submit.prevent="addAgent">
           <h3>Yeni ajan</h3>
           <div class="row">
             <div class="field"><label class="lbl" for="n-name">Ad</label><input id="n-name" v-model="nName" type="text" required placeholder="Örn. Veri Mühendisi"></div>
@@ -222,6 +335,41 @@ onMounted(() => { void loadKnowledge(); void loadWorkflows() })
             <span v-if="addError" class="err" role="alert">{{ addError }}</span>
           </div>
         </form>
+      </template>
+
+      <!-- ------------------------------------------------------------ bilgi dosyalari -->
+      <template v-else-if="tab === 'knowledge'">
+        <p class="sub">Alt md'ler (<code>config/knowledge/</code>): ajanın <em>bilgi dosyaları</em> listesine eklenince sistem promptunun sonuna gider. Burada oluştur, düzenle, md yükle ya da sil; bir ajanın listesindeyken silinemez.</p>
+        <p v-if="kError" class="err" role="alert">{{ kError }}</p>
+        <div class="teams">
+          <ul class="teamlist">
+            <li v-for="k in knowledge" :key="k.key">
+              <button type="button" class="team" :class="{ on: kEdit?.key === k.key }" @click="openKnowledge(k)">
+                <strong>{{ k.title }}</strong> <code>{{ k.key }}</code>
+                <span class="sub">{{ k.body.length }} kr<template v-if="usedBy[k.key]?.length"> · {{ usedBy[k.key]!.join(', ') }}</template><template v-else> · kullanan yok</template></span>
+              </button>
+            </li>
+            <li class="actions">
+              <button type="button" class="primary small" @click="newKnowledge">+ Yeni</button>
+              <label class="upload small"><input type="file" accept=".md,text/markdown" :disabled="kBusy" @change="pickKnowledgeMd"> md yükle</label>
+            </li>
+          </ul>
+
+          <form v-if="kEdit" class="form editor" @submit.prevent="saveKnowledge">
+            <div class="row">
+              <div class="field"><label class="lbl" for="k-title">Başlık</label><input id="k-title" v-model="kEdit.title" type="text" placeholder="boşsa anahtar"></div>
+              <div v-if="kEdit.isNew" class="field"><label class="lbl" for="k-key">Anahtar</label><input id="k-key" v-model="kEdit.key" type="text" pattern="[a-z0-9][a-z0-9_\-]*" placeholder="boşsa başlıktan üretilir"></div>
+              <div v-else class="field"><span class="lbl">Anahtar</span><code class="keyval">{{ kEdit.key }}</code></div>
+            </div>
+            <div class="field"><label class="lbl" for="k-body">Gövde (Markdown)</label><textarea id="k-body" v-model="kEdit.body" rows="16" required spellcheck="false" /></div>
+            <div class="actions">
+              <button class="primary" type="submit" :disabled="kBusy">{{ kBusy ? 'Kaydediliyor…' : kSaved ? 'Kaydedildi ✓' : (kEdit.isNew ? 'Oluştur' : 'Kaydet') }}</button>
+              <button v-if="!kEdit.isNew" type="button" class="danger" :disabled="kBusy" @click="deleteKnowledge">Sil</button>
+              <button type="button" class="ghost" @click="kEdit = null">Kapat</button>
+            </div>
+          </form>
+          <p v-else class="sub empty">Soldan bir dosya seç, yeni oluştur ya da md yükle.</p>
+        </div>
       </template>
 
       <!-- ------------------------------------------------------------ takimlar -->
@@ -347,4 +495,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 .stage .desc { grid-column: 2 / -1; font-size: 11px; }
 .empty { padding: 20px 0; text-align: center; font-style: italic; }
 @media (max-width: 720px) { .teams { grid-template-columns: 1fr; } .row, .row.three { grid-template-columns: 1fr; } }
+.upload { font: inherit; font-size: 12px; cursor: pointer; border-radius: 4px; padding: 6px 12px; border: 1px dashed #6b4a2b; background: #fff; color: #23283a; display: inline-flex; align-items: center; }
+.upload.small { padding: 3px 8px; font-size: 11px; }
+.upload input { display: none; }
+.upload:hover { background: #f3efe3; }
 </style>

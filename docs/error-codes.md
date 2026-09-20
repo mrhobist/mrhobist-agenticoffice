@@ -15,6 +15,10 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `agent.exists` | 409 | `POST /agents`: bu anahtarla md zaten var |
 | `agent.in_use` | 409 | `DELETE /agents`: ajan bir iş akışında (`role`/`handoffRole`) ya da bir `canAsk`'ta geçiyor |
 | `knowledge.invalid_key` | 500 | `config/knowledge/` altında dosya adı `[a-z0-9][a-z0-9_-]*` değil (config bozuk) |
+| `knowledge.not_found` | 404 | Böyle bir bilgi dosyası yok |
+| `knowledge.in_use` | 409 | `DELETE /knowledge`: bir ajanın `includes`'inde geçiyor |
+| `knowledge.body_empty` | 400 | Bilgi dosyası gövdesi boş |
+| `agent.markdown_invalid` | 400 | `POST /agents/import`: md frontmatter/gövde çözülemedi |
 | `workflow.analyze_count` | 400 | Tam olarak bir `analyze` adımı olmalı |
 | `workflow.analyze_first` | 400 | `analyze` ilk sırada olmalı |
 | `workflow.no_implement` | 400 | En az bir `implement` adımı olmalı |

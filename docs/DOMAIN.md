@@ -17,7 +17,10 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 - **Ekip paneli** (üst bar "Ekip", kısayol E, pusulada "Yönet"): Ajanlar sekmesi = havuz, yeni ajan (ad, anahtar,
   özet, ofis rolleri, sağlayıcı/model/efor, sorabilir, bilgi dosyaları, sistem promptu), silme (akışta ya da
   `can_ask`'ta kullanılıyorsa 409). Takımlar sekmesi = akış düzenleyici (adım ekle/sil/sırala, tür, ajan, ofis rolü;
-  ilk adım analiz kilitli; `PUT /workflows/{key}`, `default` silinemez).
+  ilk adım analiz kilitli; `PUT /workflows/{key}`, `default` silinemez). **md yükleme (2026-09-20):** hazır ajan
+  md'si (frontmatter + prompt) dosya seçiciden içe aktarılır (`POST /agents/import`); **Bilgi dosyaları** sekmesi
+  `config/knowledge/*.md`'yi yönetir: oluştur, düzenle, md yükle, sil (bir ajanın listesindeyken 409). Dosyalar
+  Api tarafından yazılır; tarayıcı yalnız metni gönderir.
 - **Sahne yerleşimi.** Yeni ajan `config/scene.json → agents[]`'e otomatik yazılır: kullanılmayan ilk karakter
   sprite'ı (`sprites[]`, 8 karakter; bitince tekrar) + boş ilk masa (`seats`). Masa kalmadıysa `home: {}` →
   **ziyaretçi**: ofiste evi yoktur, arada kapıdan girip panoya bakar, çıkar; iş alınca panonun önünde çalışır.

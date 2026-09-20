@@ -17,6 +17,10 @@ public static class ErrorCodes
     public const string AgentInvalidEffort = "agent.invalid_effort";
 
     public const string KnowledgeInvalidKey = "knowledge.invalid_key";
+    public const string KnowledgeNotFound = "knowledge.not_found";
+    public const string KnowledgeInUse = "knowledge.in_use";
+    public const string KnowledgeBodyEmpty = "knowledge.body_empty";
+    public const string AgentMarkdownInvalid = "agent.markdown_invalid";
 
     public const string WorkflowNotFound = "workflow.not_found";
     public const string WorkflowUnknownRole = "workflow.unknown_role";

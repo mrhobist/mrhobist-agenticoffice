@@ -62,6 +62,12 @@ public sealed record CreateAgentRequest(
 
 public sealed record KnowledgeItem(string Key, string Title, string Body);
 
+/// <summary><c>PUT /knowledge/{key}</c> govdesi. <see cref="Title"/> bos → anahtar.</summary>
+public sealed record KnowledgeModel(string? Title, string Body);
+
+/// <summary><c>POST /agents/import</c> ve <c>POST /knowledge/import</c> govdesi: kullanicinin yukledigi md metni.</summary>
+public sealed record ImportMarkdownRequest(string Key, string Markdown);
+
 public interface IAgentService
 {
     Task<IReadOnlyList<AgentListItem>> ListAsync(CancellationToken ct);
@@ -78,6 +84,18 @@ public interface IAgentService
     Task DeleteAsync(string key, CancellationToken ct);
 
     Task<IReadOnlyList<KnowledgeItem>> ListKnowledgeAsync(CancellationToken ct);
+
+    /// <summary>Hazir ajan md'sini (frontmatter + prompt) ekibe ekler; var olan anahtar <c>agent.exists</c>.</summary>
+    Task<AgentDetail> ImportAsync(ImportMarkdownRequest request, CancellationToken ct);
+
+    /// <summary>Bilgi dosyasi olusturur ya da uzerine yazar (baslik + govde).</summary>
+    Task<KnowledgeItem> UpsertKnowledgeAsync(string key, KnowledgeModel model, CancellationToken ct);
+
+    /// <summary>Yuklenen bilgi md'sini (frontmatter title? + govde) yazar.</summary>
+    Task<KnowledgeItem> ImportKnowledgeAsync(ImportMarkdownRequest request, CancellationToken ct);
+
+    /// <summary>Bir ajanin <c>includes</c>'inde geciyorsa <c>knowledge.in_use</c>.</summary>
+    Task DeleteKnowledgeAsync(string key, CancellationToken ct);
 
     /// <summary>Modele fiilen giden metin: govde + alt md'ler. RunService bunu kullanir.</summary>
     Task<string> ComposePromptAsync(string key, CancellationToken ct);
@@ -160,6 +178,62 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         await store.DeleteAgentAsync(agent.Key, ct).ConfigureAwait(false);
         await scene.RemoveAgentAsync(agent.Key, ct).ConfigureAwait(false);
         PublishReload($"ajan silindi: {agent.Key}");
+    }
+
+    public async Task<AgentDetail> ImportAsync(ImportMarkdownRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var key = Identifiers.Require(request.Key, ErrorCodes.AgentInvalidKey, "ajan");
+        var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
+        if (team.Agents.ContainsKey(key))
+        {
+            throw new DomainException(ErrorCodes.AgentExists, $"'{key}' anahtarli ajan zaten var.");
+        }
+
+        var agent = store.ParseAgentMarkdown(key, request.Markdown ?? "");
+        var detail = await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
+        await scene.UpsertAgentAsync(agent.Key, agent.Name, ct).ConfigureAwait(false);
+        PublishReload($"ajan md'den eklendi: {agent.Key}");
+        return detail;
+    }
+
+    public async Task<KnowledgeItem> UpsertKnowledgeAsync(string key, KnowledgeModel model, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        var k = Identifiers.Require(key, ErrorCodes.KnowledgeInvalidKey, "bilgi");
+        if (string.IsNullOrWhiteSpace(model.Body))
+        {
+            throw new DomainException(ErrorCodes.KnowledgeBodyEmpty, $"{k}: govde bos; bos bilgi dosyasi prompt'a bir sey katmaz.");
+        }
+
+        var item = new Knowledge(k, string.IsNullOrWhiteSpace(model.Title) ? k.Replace('-', ' ') : model.Title.Trim(), model.Body.Trim() + "\n");
+        await store.SaveKnowledgeAsync(item, ct).ConfigureAwait(false);
+        return new KnowledgeItem(item.Key, item.Title, item.Body);
+    }
+
+    public async Task<KnowledgeItem> ImportKnowledgeAsync(ImportMarkdownRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var parsed = store.ParseKnowledgeMarkdown(request.Key, request.Markdown ?? "");
+        return await UpsertKnowledgeAsync(parsed.Key, new KnowledgeModel(parsed.Title, parsed.Body), ct).ConfigureAwait(false);
+    }
+
+    public async Task DeleteKnowledgeAsync(string key, CancellationToken ct)
+    {
+        var k = Identifiers.Require(key, ErrorCodes.KnowledgeInvalidKey, "bilgi");
+        var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
+        if (!team.Knowledge.ContainsKey(k))
+        {
+            throw new NotFoundException(ErrorCodes.KnowledgeNotFound, $"Bilgi dosyasi yok: '{k}'.");
+        }
+
+        var users = team.Agents.Values.Where(a => a.Includes.Contains(k, StringComparer.Ordinal)).Select(a => a.Key).ToList();
+        if (users.Count > 0)
+        {
+            throw new DomainException(ErrorCodes.KnowledgeInUse, $"'{k}' su ajanlarin bilgi dosyalarinda: {string.Join(", ", users)}. Once oradan cikarin.");
+        }
+
+        await store.DeleteKnowledgeAsync(k, ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<KnowledgeItem>> ListKnowledgeAsync(CancellationToken ct)

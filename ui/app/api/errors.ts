@@ -18,6 +18,10 @@ const MESSAGES: Record<string, string> = {
   'team.missing_role': 'İş akışının gerektirdiği bir rol ekipte eksik.',
 
   'knowledge.invalid_key': 'Bilgi dosyası anahtarı geçersiz.',
+  'knowledge.not_found': 'Bilgi dosyası bulunamadı.',
+  'knowledge.in_use': 'Bilgi dosyası bir ajanın listesinde; önce oradan çıkarın.',
+  'knowledge.body_empty': 'Bilgi dosyasının gövdesi boş olamaz.',
+  'agent.markdown_invalid': 'Ajan md dosyası çözülemedi: frontmatter (---) ve gövde biçimini kontrol edin.',
 
   'workflow.analyze_count': 'İş akışında tam olarak bir analiz adımı olmalı.',
   'workflow.analyze_first': 'Analiz adımı ilk sırada olmalı.',

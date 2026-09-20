@@ -22,6 +22,10 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
 | `GET /api/v1/agents/{key}` | `AgentDetail` | `prompt` (gövde) + `composedPrompt` (gövde + alt md'ler; modele giden metin) |
 | `PUT /api/v1/agents/{key}` | `AgentDetail` | **tüm alanlar zorunlu**, kısmi güncelleme yok: eksik/null liste ya da metin → 400 `request.invalid`; `provider`/`model`/`canAsk` için `null` = "yok / varsayılan". Dosya atomik yazılır; doğrulama hataları 400 |
 | `GET /api/v1/knowledge` | `KnowledgeItem[]` | alt md'ler: `key, title, body` |
+| `PUT /api/v1/knowledge/{key}` `{ title?, body }` | `KnowledgeItem` | oluşturur ya da üzerine yazar; boş gövde 400 `knowledge.body_empty` |
+| `POST /api/v1/knowledge/import` `{ key, markdown }` | **201** `KnowledgeItem` | yüklenen md: frontmatter `title` yoksa ilk `# Başlık`, o da yoksa anahtar |
+| `DELETE /api/v1/knowledge/{key}` | **204** | bir ajanın `includes`'inde ise 409 `knowledge.in_use`; yoksa 404 `knowledge.not_found` |
+| `POST /api/v1/agents/import` `{ key, markdown }` | **201** `AgentDetail` | hazır ajan md'si (frontmatter + prompt); bozuk biçim 400 `agent.markdown_invalid`; var olan anahtar 409 `agent.exists`; sahneye yerleşir |
 | `GET /api/v1/agents/{key}/work?runs=30` | `AgentRunWork[]` `{ run: RunSummary, turns: Turn[], messages: Message[], phases: Phase[] }` | Ajan panelinin **İşler** sekmesi: son N çalışmada bu ajanın her LLM turu (tam gönderilen metin ve çıktı, o anki sağlayıcı/model), ona gelen/giden notlar (devir, hata, tekrar), faz geçişleri. Payı olmayan çalışma listede yoktur |
 
 ```jsonc
