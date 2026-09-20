@@ -279,6 +279,12 @@ maliyet **eşdeğer** (≈$), asıl koruma **limit eşiği %99** platform bazın
 6. **`ownerId`** JWT claim'inden; LDAP / kullanıcı deposu `IUserDirectory`.
 7. **Sağlayıcılar**: NVIDIA / Ollama runtime adaptörleri (sözleşme hazır). OpenAI eklendi (2026-09-20, aşağıda).
 8. **Emülatör / tarayıcı testleri** için MCP araçları (testçi kararı).
+9. **OpenAI gerçek doğrulama** (2026-09-20 devir, iki oturum birleşti): Codex `login` denenmedi; `codex exec --json` olay
+   adları ve `--output-schema` gerçek turla doğrulanmadı (ilk turda `_parse_events` ve `-o` son mesaj dosyası kontrol
+   edilecek); gerçek API anahtarıyla tur yapılmadı. Bilinen varsayımlar: Codex kalan hak vermiyor (limit koruması geçer),
+   sistem promptu metnin başına gidiyor, API anahtarı yolunda araçlı adım 501, katalog/fiyat tahmini sabit, araçsız
+   Codex turu read-only sandbox ama komut koşabilir. `.claude/launch.json`'daki `ui-5083`, `runtime-5091`, `api-rt5091`
+   girişleri paralel oturumun test kurulumuydu; gerekmiyorsa silinebilir.
 
 ## Sağlayıcı: OpenAI + API anahtarı (2026-09-20, kullanıcı isteği) ✅
 
