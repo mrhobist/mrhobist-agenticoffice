@@ -15,13 +15,12 @@ public static class ProjectEndpoints
             => Results.Created($"/api/v1/projects/{body.Key}", await s.CreateAsync(body, ct).ConfigureAwait(false)));
         // Sabit yol {key}'den once: "reorder" diye proje olamaz mi? Olabilir; bu yuzden anahtar olarak yasaklanmaz ama rota once eslesir.
         g.MapPost("/reorder", (ReorderRequest body, IProjectService s, CancellationToken ct) => s.ReorderAsync(body, ct));
+        // Klasor secici (docs/DOMAIN.md → Projeler): hedef dizin yazilmaz, depo icinden secilir. Sabit yol {key}'den once eslesir.
+        g.MapGet("/dirs", (string? path, IProjectService s, CancellationToken ct) => s.ListDirectoriesAsync(path, ct));
         g.MapGet("/{key}", (string key, IProjectService s, CancellationToken ct) => s.GetAsync(key, ct));
         g.MapPut("/{key}", (string key, ProjectModel body, IProjectService s, CancellationToken ct) => s.UpdateAsync(key, body, ct));
-        g.MapDelete("/{key}", async (string key, IProjectService s, CancellationToken ct) =>
-        {
-            await s.DeleteAsync(key, ct).ConfigureAwait(false);
-            return Results.NoContent();
-        });
+        // Silme: suren calisma varsa 409; gecmis projeyle gider; ?deleteFiles=true hedef dizini de siler (UI iki adimda onaylatir).
+        g.MapDelete("/{key}", (string key, bool? deleteFiles, IProjectService s, CancellationToken ct) => s.DeleteAsync(key, deleteFiles ?? false, ct));
         g.MapGet("/{key}/runs", (string key, int? limit, IRunReader reader, CancellationToken ct) => reader.ListAsync(limit ?? 50, ct, key));
         // Projeyi baslat: kokteki run.cmd yeni konsolda (docs/DOMAIN.md → Projeyi baslatma). 202: surec basladi, sonucu kullanici pencerede gorur.
         g.MapPost("/{key}/launch", async (string key, IProjectService s, CancellationToken ct)

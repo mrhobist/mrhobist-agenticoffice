@@ -136,7 +136,8 @@ Kimliksiz istek **401 `auth.required`**. SSE yalnız `scene/events?access_token=
 | `POST /api/v1/projects` `{ key, title, description?, workflow?, targetDir? }` | **201** `ProjectCard` | `workflow` boş → `default`; `targetDir` boş → `projects/{key}`; 409 `project.exists` |
 | `GET /api/v1/projects/{key}` | `ProjectCard` | 404 `project.not_found` |
 | `PUT /api/v1/projects/{key}` `{ title, description?, workflow?, targetDir? }` | `ProjectCard` | tüm alanlar taşınır |
-| `DELETE /api/v1/projects/{key}` | **204** | içinde çalışma varsa 409 `project.in_use` |
+| `DELETE /api/v1/projects/{key}?deleteFiles=false` | `ProjectDeleteResult` `{ key, targetDir, runsDeleted, filesDeleted }` | süren çalışma varsa 409 `project.in_use`; bitmiş geçmiş projeyle silinir; `deleteFiles=true` hedef dizini de siler |
+| `GET /api/v1/projects/dirs?path=` | `DirectoryListing` `{ path, parent, dirs: [{ name, path }] }` | klasör seçici; depo köküne göre, gizli/üretilen klasörler yok; dışarı çıkan yol 400 `project.target_dir_invalid` |
 | `GET /api/v1/projects/{key}/runs?limit=50` | `RunSummary[]` | `GET /runs?project={key}` ile aynı |
 | `POST /api/v1/projects/reorder` `{ keys: [] }` | `ProjectCard[]` | Verilen anahtarlar 0..n sırasını alır, kalanlar arkaya; ray ve Kanban bu sırayı okur. `ProjectCard.color` / `order` alanları sona eklendi; `POST/PUT` gövdesinde `color?` (`#rrggbb`, değilse 400 `project.invalid_color`) |
 | `POST /api/v1/projects/{key}/launch` | **202** `LaunchResult` `{ key, processId, launcher }` | Kökteki `run.cmd` yeni konsolda (docs/DOMAIN.md → Projeyi başlatma). Yoksa 404 `project.launch_missing`; koşamazsa 400 `project.launch_failed`. `ProjectCard.launchable` düğmenin durumu |

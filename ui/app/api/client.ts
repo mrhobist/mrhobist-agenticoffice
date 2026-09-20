@@ -30,7 +30,8 @@ export interface ApiClient {
   put<T>(path: string, body: unknown): Promise<T>
   /** Govdesiz POST icin body verilmez. */
   post<T>(path: string, body?: unknown): Promise<T>
-  del(path: string): Promise<void>
+  /** Govdesiz 204 icin T verilmez; govdeli silme (projeler) sonucu T ile okunur. */
+  del<T = void>(path: string): Promise<T>
 }
 
 /** Setup icinde cagrilir (useRuntimeConfig). Donen nesne sonradan her yerde kullanilir. */
@@ -48,7 +49,7 @@ export function useApiClient(): ApiClient {
       headers: body === undefined ? {} : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
-    del: path => request<void>(base, path, { method: 'DELETE' }),
+    del: path => request(base, path, { method: 'DELETE' }),
   }
 }
 

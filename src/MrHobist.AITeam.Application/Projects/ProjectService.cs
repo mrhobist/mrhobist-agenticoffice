@@ -41,6 +41,12 @@ public sealed record ProjectCard(
 /// <summary><c>POST /projects/{key}/launch</c> yaniti.</summary>
 public sealed record LaunchResult(string Key, int ProcessId, string Launcher);
 
+/// <summary><c>DELETE /projects/{key}</c> sonucu: kac calisma gecmisi silindi, hedef dizin silindi mi (istenmediyse ya da yoksa false).</summary>
+public sealed record ProjectDeleteResult(string Key, string TargetDir, int RunsDeleted, bool FilesDeleted);
+
+/// <summary><c>GET /projects/dirs?path=</c>: klasor secicinin bir seviyesi. <see cref="Parent"/> kokte null.</summary>
+public sealed record DirectoryListing(string Path, string? Parent, IReadOnlyList<WorkspaceDirectory> Dirs);
+
 public interface IProjectService
 {
     Task<IReadOnlyList<ProjectCard>> ListAsync(CancellationToken ct);
@@ -52,8 +58,14 @@ public interface IProjectService
 
     Task<ProjectCard> UpdateAsync(string key, ProjectModel model, CancellationToken ct);
 
-    /// <summary>Icinde calisma varsa <c>project.in_use</c>: gecmis silinmez, proje kapatilmaz.</summary>
-    Task DeleteAsync(string key, CancellationToken ct);
+    /// <summary>
+    /// Projeyi siler (kullanici karari 2026-09-20): suren calisma varsa <c>project.in_use</c>; bitmis calismalarin gecmisi
+    /// projeyle birlikte silinir; <paramref name="deleteFiles"/> ise hedef dizin de silinir (UI iki adimda onay alir).
+    /// </summary>
+    Task<ProjectDeleteResult> DeleteAsync(string key, bool deleteFiles, CancellationToken ct);
+
+    /// <summary>Klasor secici: depo icindeki bir seviyenin alt klasorleri.</summary>
+    Task<DirectoryListing> ListDirectoriesAsync(string? path, CancellationToken ct);
 
     /// <summary>Proje kokundeki <c>run.cmd</c>'yi yeni konsolda baslatir (docs/DOMAIN.md → Projeyi baslatma).</summary>
     Task<LaunchResult> LaunchAsync(string key, CancellationToken ct);
@@ -144,16 +156,36 @@ public sealed class ProjectService(IProjectStore projects, IWorkflowStore workfl
         return ToCard(project, await runs.ListAsync(1000, ct, project.Key).ConfigureAwait(false), ColorOf(project, await projects.ListAsync(ct).ConfigureAwait(false)));
     }
 
-    public async Task DeleteAsync(string key, CancellationToken ct)
+    /// <summary>Silmeyi engelleyen durumlar: is suruyor ya da kullanicidan/limitten bir sey bekliyor.</summary>
+    private static bool IsActive(RunStatus s)
+        => s is RunStatus.Running or RunStatus.AwaitingApproval or RunStatus.Paused or RunStatus.AwaitingInput;
+
+    public async Task<ProjectDeleteResult> DeleteAsync(string key, bool deleteFiles, CancellationToken ct)
     {
         var project = await projects.LoadAsync(key, ct).ConfigureAwait(false);
-        var count = (await runs.ListAsync(1, ct, project.Key).ConfigureAwait(false)).Count;
-        if (count > 0)
+        var history = await runs.ListAsync(10_000, ct, project.Key).ConfigureAwait(false);
+        var active = history.Count(r => IsActive(r.Status));
+        if (active > 0)
         {
-            throw new DomainException(ErrorCodes.ProjectInUse, $"'{key}' icinde calisma var; gecmis silinmez. Once calismalari arsivleyin.");
+            throw new DomainException(ErrorCodes.ProjectInUse, $"'{key}' icinde suren {active} calisma var; once bitirin ya da iptal edin.");
         }
 
+        // Gecmis projeyle gider: proje kapsamli UI'da projesiz gecmisin yeri yok (varsayimla ilerlenir, docs/DOMAIN.md).
+        foreach (var run in history)
+        {
+            await runs.DeleteAsync(run.Id, ct).ConfigureAwait(false);
+        }
+
+        var filesDeleted = deleteFiles && workspace.DeleteRoot(project);
         await projects.DeleteAsync(project.Key, ct).ConfigureAwait(false);
+        return new ProjectDeleteResult(project.Key, project.TargetDir, history.Count, filesDeleted);
+    }
+
+    public Task<DirectoryListing> ListDirectoriesAsync(string? path, CancellationToken ct)
+    {
+        var rel = (path ?? "").Replace('\\', '/').Trim().Trim('/');
+        var parent = rel.Length == 0 ? null : (rel.Contains('/') ? rel[..rel.LastIndexOf('/')] : "");
+        return Task.FromResult(new DirectoryListing(rel, parent, workspace.ListDirectories(rel)));
     }
 
     private static Project Compose(string key, DateTimeOffset createdAt, ProjectModel m)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { CreateProjectRequest, InboxItem, LaunchResult, ProjectCard, ProjectModel, ReorderRequest, RunSummary, WorkflowListItem } from '~/api/types'
+import type { CreateProjectRequest, InboxItem, LaunchResult, ProjectCard, ProjectDeleteResult, ProjectModel, ReorderRequest, RunSummary, WorkflowListItem } from '~/api/types'
+import DirPicker from '~/components/DirPicker.vue'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel } from '~/api/labels'
@@ -8,7 +9,8 @@ import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel } from '~/a
  * Proje karti acildi (docs/DOMAIN.md → Projeler): kagit pano, sekmeler Isler / Ayarlar.
  *  - projectKey null → yeni proje formu (baslik, aciklama, akis, hedef dizin; butce yok).
  *  - Isler: bu projenin calismalari; satira tiklaninca calisma paneli. "Yeni is" YALNIZ burada.
- *  - Ayarlar: proje alanlari; silme yalniz icinde calisma yoksa.
+ *  - Ayarlar: proje alanlari (hedef dizin klasor seciciyle, serbest metin degil); silme iki adimda onaylanir:
+ *    suren is varsa kapali, gecmis projeyle gider, dosyalarin silinip silinmeyecegi ayrica isaretlenir.
  */
 const props = defineProps<{ projectKey: string | null; inbox: InboxItem[] }>()
 const emit = defineEmits<{ close: []; openRun: [id: string]; newRun: [projectKey: string]; created: [key: string]; changed: [] }>()
@@ -60,6 +62,11 @@ const runs = ref<RunSummary[] | null>(null)
 const loadError = ref<string | null>(null)
 const tab = ref<'runs' | 'settings'>('runs')
 let timer: ReturnType<typeof setInterval> | undefined
+// Silme durumu: projectKey watch'i bunlari sifirlar, o yuzden watch'tan once tanimli.
+const confirmingDelete = ref(false)
+const deleteFiles = ref(false)
+const deleting = ref(false)
+const deleted = ref<ProjectDeleteResult | null>(null)
 
 // ------------------------------------------------------------------ ayarlar
 
@@ -132,7 +139,7 @@ async function load() {
 
 watch(() => props.projectKey, (k) => {
   clearInterval(timer)
-  card.value = null; runs.value = null; loadError.value = null; tab.value = 'runs'; editing.value = false
+  card.value = null; runs.value = null; loadError.value = null; tab.value = 'runs'; editing.value = false; confirmingDelete.value = false; deleted.value = null
   if (k) { void load(); timer = setInterval(() => { void load() }, 5000) }
   else { void loadWorkflows() }
 }, { immediate: true })
@@ -156,21 +163,28 @@ async function save() {
   }
 }
 
+// Silme (kullanici karari 2026-09-20): durum yukarida (watch ondan once kosar); once onay kutusu, dosyalar orada isaretlenir.
+function askRemove() { deleteFiles.value = false; saveError.value = null; confirmingDelete.value = true }
 async function remove() {
-  if (!props.projectKey || !card.value) return
-  if (!window.confirm(`«${card.value.title}» silinsin mi? İçinde çalışma varsa silinmez.`)) return
+  if (!props.projectKey || !card.value || deleting.value) return
+  deleting.value = true
+  saveError.value = null
   try {
-    await api.del(`/api/v1/projects/${encodeURIComponent(props.projectKey)}`)
+    deleted.value = await api.del<ProjectDeleteResult>(`/api/v1/projects/${encodeURIComponent(props.projectKey)}?deleteFiles=${deleteFiles.value}`)
+    confirmingDelete.value = false
+    clearInterval(timer)
     emit('changed')
-    emit('close')
   } catch (e) {
     saveError.value = errorText(e)
+  } finally {
+    deleting.value = false
   }
 }
 
 // ------------------------------------------------------------------ turetilenler
 
-const ACTIVE = new Set(['running', 'awaitingApproval', 'paused'])
+/** Silmeyi kapatan durumlar: is suruyor ya da kullanicidan bir sey bekliyor (sunucu da 409 project.in_use ile reddeder). */
+const ACTIVE = new Set(['running', 'awaitingApproval', 'paused', 'awaitingInput'])
 const activeRuns = computed(() => (runs.value ?? []).filter(r => ACTIVE.has(r.status)))
 const otherRuns = computed(() => (runs.value ?? []).filter(r => !ACTIVE.has(r.status)))
 function pendingOf(id: string): InboxItem | undefined { return props.inbox.find(i => i.runId === id) }
@@ -217,8 +231,8 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
               </select>
             </div>
             <div class="field">
-              <label class="lbl" for="p-dir">Hedef dizin <span class="sub">(boş: projects/{{ nKey || 'anahtar' }})</span></label>
-              <input id="p-dir" v-model="nDir" type="text" spellcheck="false" placeholder="projects/hello-world">
+              <label class="lbl" for="p-dir">Hedef dizin <span class="sub">(depo içinden seçilir)</span></label>
+              <DirPicker id="p-dir" v-model="nDir" :project-key="nKey" />
             </div>
           </div>
           <p class="sub">İşler bu projenin içinde açılır, akışı devralır. Bütçe iş başına verilir.</p>
@@ -228,6 +242,13 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
           </div>
         </form>
       </template>
+
+      <!-- ------------------------------------------------ silindi -->
+      <div v-else-if="deleted" class="form done" role="status">
+        <p><b>Proje silindi.</b> {{ deleted.runsDeleted }} çalışmanın geçmişi kaldırıldı.
+          {{ deleted.filesDeleted ? 'Dosyalar da silindi' : 'Dosyalar yerinde' }}: <code>{{ deleted.targetDir }}</code>.</p>
+        <div class="actions"><button type="button" class="primary" @click="emit('close')">Kapat</button></div>
+      </div>
 
       <!-- ------------------------------------------------ acik proje -->
       <template v-else>
@@ -288,8 +309,8 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
               </select>
             </div>
             <div class="field">
-              <label class="lbl" for="e-dir">Hedef dizin</label>
-              <input id="e-dir" v-model="eDir" type="text" spellcheck="false">
+              <label class="lbl" for="e-dir">Hedef dizin <span class="sub">(depo içinden seçilir)</span></label>
+              <DirPicker id="e-dir" v-model="eDir" :project-key="card?.key ?? ''" />
             </div>
           </div>
           <div class="row">
@@ -310,8 +331,21 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
           <div class="actions">
             <button class="primary" type="submit" :disabled="saving || !dirty">{{ saving ? 'Kaydediliyor…' : 'Kaydet' }}</button>
             <button type="button" class="ghost" :disabled="!dirty || saving" @click="card && fillForm(card)">Geri al</button>
-            <button type="button" class="danger" :disabled="!!card && card.runs > 0" :title="card && card.runs > 0 ? 'İçinde çalışma var; geçmiş silinmez' : undefined" @click="remove">Projeyi sil</button>
+            <button type="button" class="danger" :disabled="confirmingDelete || activeRuns.length > 0" :title="activeRuns.length ? 'Süren iş var; önce bitirin ya da iptal edin' : undefined" @click="askRemove">Projeyi sil…</button>
             <span v-if="saveError" class="err" role="alert">{{ saveError }}</span>
+          </div>
+
+          <div v-if="confirmingDelete && card" class="confirm" role="alertdialog" aria-labelledby="del-title">
+            <p id="del-title"><b>«{{ card.title }}» silinsin mi?</b> Proje tanımı ve içindeki <b>{{ card.runs }}</b> çalışmanın geçmişi silinir. Geri alınamaz.</p>
+            <label class="check">
+              <input v-model="deleteFiles" type="checkbox">
+              <span>Proje dosyaları da silinsin: <code>{{ card.targetDir }}</code></span>
+            </label>
+            <p class="sub">{{ deleteFiles ? 'Klasör ve içindeki her şey diskten silinir.' : 'Klasör diskte kalır; yalnız proje kaydı ve çalışma geçmişi gider.' }}</p>
+            <div class="actions">
+              <button type="button" class="danger fill" :disabled="deleting" @click="remove">{{ deleting ? 'Siliniyor…' : (deleteFiles ? 'Evet, projeyi ve dosyaları sil' : 'Evet, projeyi sil (dosyalar kalsın)') }}</button>
+              <button type="button" class="ghost" :disabled="deleting" @click="confirmingDelete = false">Vazgeç</button>
+            </div>
           </div>
         </form>
 
@@ -381,6 +415,12 @@ button:disabled { opacity: 0.5; cursor: default; }
 .primary { background: #23283a; color: #fff; border-color: #23283a; }
 .ghost { background: transparent; }
 .danger { margin-left: auto; color: #7a1f1f; border-color: #e0a0a0; }
+.danger.fill { margin-left: 0; background: #b3261e; color: #fff; border-color: #b3261e; font-weight: 700; }
+.confirm { border: 1px solid #e0a0a0; background: #fbecec; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.confirm p { margin: 0; font-size: 13px; line-height: 1.45; }
+.check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { margin-top: 3px; }
+.done p { font-size: 13px; line-height: 1.5; margin: 0; }
 .err { color: #b3261e; font-size: 12px; }
 code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
 

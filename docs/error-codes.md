@@ -49,7 +49,7 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `project.invalid_key` | 400 | Proje anahtarı `[a-z0-9][a-z0-9_-]*` değil |
 | `project.not_found` | 404 | Böyle bir proje yok |
 | `project.exists` | 409 | `POST /projects`: bu anahtarla proje var |
-| `project.in_use` | 409 | `DELETE /projects`: içinde çalışma var; geçmiş silinmez |
+| `project.in_use` | 409 | `DELETE /projects`: içinde **süren** çalışma var (running / awaitingApproval / paused / awaitingInput); önce bitir ya da iptal et |
 | `project.title_empty` | 400 | Proje başlığı boş |
 | `project.target_dir_invalid` | 400 | Hedef dizin depo içinde göreli bir yol değil (`..`, `/`, sürücü harfi) |
 | `project.launch_missing` | 404 | `launch`: proje kökünde `run.cmd` yok |

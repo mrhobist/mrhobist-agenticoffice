@@ -96,6 +96,12 @@ public interface IRunStore
     Task<IReadOnlyList<Phase>> ReadPhasesAsync(string runId, string task, CancellationToken ct);
 
     Task<IReadOnlyList<string>> ListTasksAsync(string runId, CancellationToken ct);
+
+    /// <summary>
+    /// Calisma klasorunu butunuyle siler (<c>runs/{id}/</c>). Append-only kural satir duzeyindedir; klasor silme yalniz
+    /// proje silinirken, bitmis calismalar icin cagrilir (docs/DOMAIN.md → Projeler → Silme). Yoksa sessiz.
+    /// </summary>
+    Task DeleteAsync(string runId, CancellationToken ct);
 }
 
 /// <summary><c>config/settings.json</c>: calisma alani ayarlari (limit korumasi). Dosya yoksa varsayilan.</summary>
@@ -113,7 +119,20 @@ public interface ISettingsStore
 public interface IWorkspaceLocator
 {
     string RootOf(Project project);
+
+    /// <summary>
+    /// Depo icindeki klasorler (klasor secici icin; kullanici karari 2026-09-20: hedef dizin serbest metin degil).
+    /// <paramref name="relativePath"/> depo kokune gore (<c>""</c> = kok); gizli ve uretilen klasorler (<c>.git</c>,
+    /// <c>node_modules</c>, <c>bin</c>, <c>obj</c>, <c>.venv</c>…) listelenmez. Disari cikan yol <c>project.target_dir_invalid</c>.
+    /// </summary>
+    IReadOnlyList<WorkspaceDirectory> ListDirectories(string? relativePath);
+
+    /// <summary>Projenin hedef dizinini icerigiyle siler; yoksa false. Depo disina cikamaz (RootOf ile ayni kural).</summary>
+    bool DeleteRoot(Project project);
 }
+
+/// <summary>Klasor secicinin bir satiri: ad ve depo kokune gore yol (ileri bolu).</summary>
+public sealed record WorkspaceDirectory(string Name, string Path);
 
 /// <summary>
 /// Projeyi baslatma sozlesmesi (kullanici istegi 2026-09-20): proje kokundeki <c>run.cmd</c> yeni bir konsol

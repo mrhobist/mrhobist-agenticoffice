@@ -119,6 +119,17 @@ public sealed class JsonlRunStore(StoragePaths paths) : IRunStore
         return runs;
     }
 
+    public Task DeleteAsync(string runId, CancellationToken ct)
+    {
+        var dir = RunDir(runId);
+        if (Directory.Exists(dir))
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<Spec?> ReadSpecAsync(string runId, CancellationToken ct)
         => ReadJsonAsync<Spec>(Path.Combine(RunDir(runId), "spec.json"), ct);
 

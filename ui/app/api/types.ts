@@ -191,6 +191,13 @@ export interface ReorderRequest { keys: string[] }
 /** POST /api/v1/projects/{key}/launch yaniti. */
 export interface LaunchResult { key: string; processId: number; launcher: string }
 
+/** DELETE /api/v1/projects/{key}?deleteFiles= yaniti: gecmis projeyle gitti; dosyalar istendiyse ve varsa silindi. */
+export interface ProjectDeleteResult { key: string; targetDir: string; runsDeleted: number; filesDeleted: boolean }
+
+/** GET /api/v1/projects/dirs?path= — klasor secicinin bir seviyesi (depo kokune gore yollar). */
+export interface WorkspaceDirectory { name: string; path: string }
+export interface DirectoryListing { path: string; parent: string | null; dirs: WorkspaceDirectory[] }
+
 /** POST /api/v1/projects govdesi. */
 export interface CreateProjectRequest {
   key: string

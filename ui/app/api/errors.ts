@@ -53,7 +53,7 @@ const MESSAGES: Record<string, string> = {
   'project.invalid_key': 'Proje anahtarı geçersiz: yalnız küçük harf, rakam, tire ve alt çizgi.',
   'project.not_found': 'Proje bulunamadı.',
   'project.exists': 'Bu anahtarla bir proje zaten var.',
-  'project.in_use': 'Projede çalışmalar var; geçmiş silinmez.',
+  'project.in_use': 'Projede süren çalışma var; önce bitirin ya da iptal edin.',
   'project.title_empty': 'Proje başlığı boş olamaz.',
   'project.target_dir_invalid': 'Hedef dizin depo içinde göreli bir yol olmalı.',
   'project.launch_missing': 'Proje kökünde run.cmd yok; developer henüz başlatıcı yazmadı.',

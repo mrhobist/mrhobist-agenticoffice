@@ -70,17 +70,63 @@ public sealed class JsonSettingsStore(StoragePaths paths) : ISettingsStore
 /// <summary>Depo koku = <c>config/</c>'in ustu; proje hedef dizini ona gore cozulur. Yol depo disina cikamaz (Project.Validate).</summary>
 public sealed class WorkspaceLocator(StoragePaths paths) : IWorkspaceLocator
 {
+    /// <summary>Klasor secicide gosterilmeyenler: bagimlilik ve derleme ciktilari, calisma gecmisi (noktayla baslayanlar da gizli).</summary>
+    private static readonly HashSet<string> Hidden = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "node_modules", "bin", "obj", "__pycache__", "dist", "TestResults", "runs",
+    };
+
     public string RootOf(Domain.Projects.Project project)
     {
         ArgumentNullException.ThrowIfNull(project);
-        var repo = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(paths.ConfigRoot))!;
-        var full = Path.GetFullPath(Path.Combine(repo, project.TargetDir.Replace('/', Path.DirectorySeparatorChar)));
-        if (!full.StartsWith(repo + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        var full = Resolve(project.TargetDir, project.Key);
+        Directory.CreateDirectory(full);
+        return full;
+    }
+
+    public IReadOnlyList<WorkspaceDirectory> ListDirectories(string? relativePath)
+    {
+        var repo = Repo();
+        var rel = (relativePath ?? "").Replace('\\', '/').Trim().Trim('/');
+        var full = rel.Length == 0 ? repo : Resolve(rel, "klasor");
+        if (!Directory.Exists(full))
         {
-            throw new DomainException(ErrorCodes.ProjectTargetDirInvalid, $"{project.Key}: hedef dizin depo disina cikiyor.");
+            return [];
         }
 
-        Directory.CreateDirectory(full);
+        return Directory.EnumerateDirectories(full)
+            .Select(d => Path.GetFileName(d)!)
+            .Where(n => !n.StartsWith('.') && !Hidden.Contains(n))
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .Select(n => new WorkspaceDirectory(n, rel.Length == 0 ? n : rel + "/" + n))
+            .ToList();
+    }
+
+    public bool DeleteRoot(Domain.Projects.Project project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        var full = Resolve(project.TargetDir, project.Key);
+        if (!Directory.Exists(full))
+        {
+            return false;
+        }
+
+        Directory.Delete(full, recursive: true);
+        return true;
+    }
+
+    private string Repo() => Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(paths.ConfigRoot))!;
+
+    /// <summary>Depo kokune gore yolu mutlaklar; kokun kendisi ya da disina cikan yol reddedilir.</summary>
+    private string Resolve(string relative, string subject)
+    {
+        var repo = Repo();
+        var full = Path.GetFullPath(Path.Combine(repo, relative.Replace('/', Path.DirectorySeparatorChar)));
+        if (!full.StartsWith(repo + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DomainException(ErrorCodes.ProjectTargetDirInvalid, $"{subject}: hedef dizin depo disina cikiyor.");
+        }
+
         return full;
     }
 }

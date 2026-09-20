@@ -45,7 +45,15 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
   dosya yazacağı yerdir.
 - Ekip ve bilgi dosyaları çalışma alanı düzeyinde ortaktır; proje yalnız bir akış seçer.
 - Kart özeti (`ProjectCard`): iş sayıları duruma göre, toplam maliyet, son hareket. UI'da ray kartları bunu gösterir.
-- Silme: içinde çalışma varsa **409 `project.in_use`**; geçmiş silinmez.
+- **Silme (2026-09-20, kullanıcı kararı):** UI iki adımda onaylatır: önce "silinsin mi", sonra **dosyalar da silinsin mi**
+  (onay kutusu). `DELETE /projects/{key}?deleteFiles=` → **süren** çalışma varsa (running / awaitingApproval / paused /
+  awaitingInput) **409 `project.in_use`**; yoksa proje kaydı ve **bitmiş çalışmaların geçmişi** (`runs/<id>/`) birlikte silinir
+  (varsayımla ilerlenir: proje kapsamlı UI'da projesiz geçmişin yeri yok; alternatif "geçmiş kalsın" sahipsiz kartlar üretirdi).
+  `deleteFiles=true` ise hedef dizin de içeriğiyle silinir; depo dışına çıkamaz. Yanıt `ProjectDeleteResult`.
+- **Hedef dizin seçimi (2026-09-20, kullanıcı kararı):** serbest metin **yok**; klasör seçici `GET /projects/dirs?path=` ile depo
+  içini bir seviye bir seviye gezer (`.git`, `node_modules`, `bin`, `obj`, `runs`… gizli). Seçim: var olan klasör ya da
+  gezilen klasörün içinde `<key>` adlı yeni klasör. Boş = varsayılan `projects/{key}`. İlke: **serbest metin yalnız ad ve
+  açıklama alanlarında**; diğer alanlar seçici/liste.
 - **Renk ve sıra (2026-09-20, kullanıcı isteği):** her projenin bir rengi (`color`, `#rrggbb`; boşsa paletten
   kullanılmayan ilk renk) ve sırası (`order`) var. Ray kartı, Kanban sekme grupları ve Kanban **"Tümü"** sekmesi
   (tüm projelerin görevleri dört Kanban şeridinde, kart rengi = proje) aynı rengi ve sırayı okur. Sıra
