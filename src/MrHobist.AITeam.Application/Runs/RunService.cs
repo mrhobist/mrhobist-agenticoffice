@@ -38,6 +38,9 @@ public interface IRunService
     /// <summary>Failed/Interrupted/BudgetExceeded/Cancelled (ve limit beklemesi) → Running; kaldigi adimi soyler (kuyruga o girer).</summary>
     Task<RetryResult> RetryAsync(string runId, CancellationToken ct);
 
+    /// <summary>Limit beklemesi bitti (otomatik): Running; kullanici tekrari SAYILMAZ, not organizatorden.</summary>
+    Task<RetryResult> ResumeAsync(string runId, CancellationToken ct);
+
     /// <summary>Yalniz <c>AwaitingInput</c>: kullanicinin secimini uygular (retry / skip / cancel). Running donerse dagitim kuyruga girer.</summary>
     Task<Run> BeginAnswerAsync(string runId, AnswerRequest answer, CancellationToken ct);
 
@@ -187,14 +190,9 @@ public sealed class RunService(
         }
     }
 
-    /// <summary>Projenin hedef dizini (mutlak). Yoksa olusturulur: ajan araclari burada acilir.</summary>
+    /// <summary>Projenin hedef dizini (mutlak); Infrastructure yoksa olusturur. Ajan araclari burada acilir.</summary>
     private async Task<string> RootAsync(Run run, CancellationToken ct)
-    {
-        var project = await projects.LoadAsync(run.Project, ct).ConfigureAwait(false);
-        var root = workspace.RootOf(project);
-        Directory.CreateDirectory(root);
-        return root;
-    }
+        => workspace.RootOf(await projects.LoadAsync(run.Project, ct).ConfigureAwait(false));
 
     /// <summary>[brief istemi] → (her revizyon icin) [onceki plan] → [not] … Runtime hicbir sey hatirlamaz; gecmis buradan gider.</summary>
     private async Task<IReadOnlyList<RuntimeMessage>> AnalystHistoryAsync(Run run, Workflow wf, IReadOnlyList<Message> notes, string root, CancellationToken ct)
@@ -267,12 +265,22 @@ public sealed class RunService(
 
     // ------------------------------------------------------------------ tekrar / iptal
 
-    public async Task<RetryResult> RetryAsync(string runId, CancellationToken ct)
+    public Task<RetryResult> RetryAsync(string runId, CancellationToken ct) => ContinueAsync(runId, byUser: true, ct);
+
+    public Task<RetryResult> ResumeAsync(string runId, CancellationToken ct) => ContinueAsync(runId, byUser: false, ct);
+
+    /// <summary>Ortak surdurme: kullanici "yeniden dene" (sayac + user notu) ya da otomatik limit surdurmesi (sayac yok, organizer notu).</summary>
+    private async Task<RetryResult> ContinueAsync(string runId, bool byUser, CancellationToken ct)
     {
         var run = await reader.GetAsync(runId, ct).ConfigureAwait(false);
         if (!run.IsRetryable)
         {
             throw new DomainException(ErrorCodes.RunNotRetryable, $"Calisma '{run.Status}' durumunda; yeniden deneme yalniz Failed/Interrupted/BudgetExceeded/Cancelled ve limit beklemesinde.");
+        }
+
+        if (!byUser && !(run.Status == RunStatus.Paused && run.ResumeAt is not null))
+        {
+            throw new DomainException(ErrorCodes.RunNotRetryable, $"Otomatik surdurme yalniz limit beklemesinde; calisma '{run.Status}'.");
         }
 
         // Nereden surecek: plan yoksa analiz. Plan varsa: analiz asamasinda dustuyse (Detail 'analiz' ile baslar) yine analiz,
@@ -296,9 +304,11 @@ public sealed class RunService(
             (step, next, detail) = (RetryStep.Dispatch, RunStatus.Running, "dağıtım");
         }
 
-        run = run with { Status = next, FinishedAt = null, Detail = detail, Retries = run.Retries + 1, ResumeAt = null, Question = null };
+        run = run with { Status = next, FinishedAt = null, Detail = detail, Retries = byUser ? run.Retries + 1 : run.Retries, ResumeAt = null, Question = null };
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
-        await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, "user", "organizer", $"yeniden dene #{run.Retries}: {detail}", Subject: "retry"), ct).ConfigureAwait(false);
+        await runs.AppendMessageAsync(run.Id, byUser
+            ? new Message(DateTimeOffset.UtcNow, MessageKind.Note, "user", "organizer", $"yeniden dene #{run.Retries}: {detail}", Subject: "retry")
+            : new Message(DateTimeOffset.UtcNow, MessageKind.Note, "organizer", "user", $"limit penceresi sıfırlandı, sürüyor: {detail}", Subject: "limit-resume"), ct).ConfigureAwait(false);
         Publish(SceneEventTypes.WorkflowSet, new { key = run.Workflow, run = run.Id });
         return new RetryResult(run, next == RunStatus.AwaitingApproval ? RetryStep.Dispatch : step);
     }
@@ -331,7 +341,8 @@ public sealed class RunService(
             if (phases.Count > 0 && phases[^1].Status == PhaseStatus.Started)
             {
                 var p = phases[^1];
-                await runs.AppendPhaseAsync(run.Id, p with { Ts = DateTimeOffset.UtcNow, Status = PhaseStatus.Skipped, Detail = "iptal" }, ct).ConfigureAwait(false);
+                // Failed (Skipped degil): "yeniden dene" ayni adimi yeniden kosar; Skipped bir sonraki adima gecirir ve kod yazilmadan test baslar.
+                await runs.AppendPhaseAsync(run.Id, p with { Ts = DateTimeOffset.UtcNow, Status = PhaseStatus.Failed, Detail = "iptal: kullanıcı durdurdu" }, ct).ConfigureAwait(false);
                 PublishAgent(run, p.Agent, "idle", null, null);
             }
         }
@@ -360,7 +371,7 @@ public sealed class RunService(
         var wf = await RequireWorkflowAsync(runId, ct).ConfigureAwait(false);
         var spec = await runs.ReadSpecAsync(runId, ct).ConfigureAwait(false)
             ?? throw new DomainException(ErrorCodes.RunPlanInvalid, "spec.json yok; dagitim plansiz yapilamaz.");
-        var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
+        var team = wf.HandoffRole is null ? null : await agents.LoadTeamAsync(ct).ConfigureAwait(false);
         var stages = wf.TaskStages;
         var root = await RootAsync(run, ct).ConfigureAwait(false);
         var ordered = TaskGraph.Order(spec.Tasks);
@@ -416,7 +427,9 @@ public sealed class RunService(
             var taskPhases = phasesByTask.GetValueOrDefault(a.Task.Id, []);
             var round = taskPhases.Count(p => p.Stage == a.Stage.Id && p.Status != PhaseStatus.Started && !IsLimitPhase(p)) + 1; // tur = bitmis denemeler + 1
 
-            if (wf.HandoffRole is { } organizer)
+            // Devir notu yalniz implement adimina atamada (ilk ve red sonrasi): inceleme adimlarina not bilgi katmiyor,
+            // her gecis bir organizator turu (olculdu: 14–70 s, ≈$0.02–0.05) ediyordu.
+            if (wf.HandoffRole is { } organizer && team is not null && a.Stage.Kind == StageKind.Implement)
             {
                 run = await HandoffAsync(run, spec, a, organizer, team, ct).ConfigureAwait(false);
                 if (run.Status != RunStatus.Running)
@@ -440,8 +453,11 @@ public sealed class RunService(
         }
     }
 
-    /// <summary>Limit beklemesinden dogan Failed fazi: tur sayilmaz, red/hata tavanina girmez.</summary>
-    private static bool IsLimitPhase(Phase p) => p.Status == PhaseStatus.Failed && p.Detail?.StartsWith("limit", StringComparison.Ordinal) == true;
+    /// <summary>Sistemden dogan Failed fazi (limit beklemesi, iptal, surec yeniden basladi): ajanin hatasi degil; tur sayilmaz, tavana girmez.</summary>
+    private static bool IsLimitPhase(Phase p) => p.Status == PhaseStatus.Failed
+        && (p.Detail?.StartsWith("limit", StringComparison.Ordinal) == true
+            || p.Detail?.StartsWith("iptal", StringComparison.Ordinal) == true
+            || p.Detail?.StartsWith("süreç", StringComparison.Ordinal) == true);
 
     // ------------------------------------------------------------------ adim yurutuculeri (docs/DOMAIN.md → Adim yurutuculeri)
 
@@ -778,6 +794,16 @@ public sealed class RunService(
             {
                 await runs.UpdateAsync(run with { Status = RunStatus.Interrupted, FinishedAt = DateTimeOffset.UtcNow, Detail = "süreç yeniden başladı" }, ct).ConfigureAwait(false);
                 count++;
+
+                // Yarim kalan adim Started kalirsa dagitici ona hic dokunmaz (Started → null) ve "yeniden dene" sonsuza kadar bekler.
+                foreach (var id in await runs.ListTasksAsync(run.Id, ct).ConfigureAwait(false))
+                {
+                    var phases = await runs.ReadPhasesAsync(run.Id, id, ct).ConfigureAwait(false);
+                    if (phases.Count > 0 && phases[^1].Status == PhaseStatus.Started)
+                    {
+                        await runs.AppendPhaseAsync(run.Id, phases[^1] with { Ts = DateTimeOffset.UtcNow, Status = PhaseStatus.Failed, Detail = "süreç yeniden başladı" }, ct).ConfigureAwait(false);
+                    }
+                }
             }
         }
 

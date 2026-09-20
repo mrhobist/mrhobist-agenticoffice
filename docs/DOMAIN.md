@@ -159,10 +159,20 @@ Agent SDK araçlarıyla (Read/Glob/Grep/Write/Edit/Bash), projenin hedef dizinin
 | `review` | tam | Testçi / manager kodu okur, testleri **fiilen** koşar (test dosyası yazabilir, uygulama kodunu değiştirmez); kabul ya da gerekçeli red | `verdict, testsRun, findings[], feedback, commandsRun[]` |
 
 **Sınırlar.** Araç listesi ve çalışma dizini .NET'ten gelir (`ToolAccess.ForKind`); runtime seçmez. Dosya yazan
-araçlar (`Write/Edit/MultiEdit/NotebookEdit`) yalnız hedef dizinin **içine** yazar — dışı SDK izin geri çağrısında
-(`can_use_tool`) reddedilir, ajan hatayı görür. Her araç çağrısı (araç + hedef) turun kaydına yazılır
-(`Turn.toolUses`), günlükte "Araçlar" olarak görünür. Bash komutları dizinde koşar; emülatör/tarayıcı testleri için
-ajan Claude Code'un kendi araçlarını kullanır (ileride MCP).
+araçlar (`Write/Edit/MultiEdit/NotebookEdit`) yalnız hedef dizinin **içine** yazar; **Bash** komutlarında dizin
+dışına çıkan mutlak yol, `~` ve `..` reddedilir (`/dev/null`, `/tmp` serbest). İkisi de SDK izin geri çağrısında
+(`can_use_tool`) kararlaşır, ajan ret mesajını görür ve yolunu düzeltir (2026-09-20: ilk koşuda developer'ın
+kullanıcı profilinden dosya okuduğu görüldü, kapatıldı). Her araç çağrısı (araç + hedef) turun kaydına yazılır
+(`Turn.toolUses`), günlükte "Araçlar" olarak görünür. Emülatör/tarayıcı testleri için ajan Claude Code'un kendi
+araçlarını kullanır (ileride MCP).
+
+**Devir notu yalnız `implement` atamasında** (ilk ve red sonrası): inceleme adımlarına not bilgi katmıyordu, her
+geçiş bir organizatör turu ediyordu (ölçüldü: 14–70 s, ≈$0.02–0.05).
+
+**Yarım kalan adım.** Süreç yeniden başlar (`Interrupted`) ya da kullanıcı iptal ederse `Started` faz **`Failed`**
+ile kapanır (`süreç yeniden başladı` / `iptal`); "yeniden dene" aynı adımı yeniden koşar. `Skipped` kullanılmaz:
+o bir sonraki adıma geçirir ve kod yazılmadan test başlar. Sistem kaynaklı bu fazlar (limit, iptal, kesinti) tur
+sayılmaz, tavana girmez.
 
 **Yürütme döngüsü.** `DispatchAsync`: planla → bir adımı koş → yeniden planla; hazır iş kalmayınca ya da durum
 `Running`'den çıkınca döner. Çalışma **içinde sıralı** (çalışma başına tek iş, kanal kilidi), **çalışmalar arası
@@ -206,8 +216,9 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   **%99**, Ayarlar ekranında platform bazında değiştirilir. Her LLM çağrısından önce (`LimitGuard`) sağlayıcının
   aktif kota pencereleri (5 saat, hafta, modele özel) okunur (runtime 90 s önbellek); biri eşiğe ulaştıysa çağrı
   **yapılmaz**: çalışma `Paused` + `resumeAt` (pencerenin sıfırlanma zamanı), `limit` notu, bildirim zilinde
-  "Limit doldu · HH:mm'de sürer". `LimitResumer` dakikada bir bakar, süresi gelen çalışmayı kendisi sürdürür;
-  kullanıcı "Yeniden dene" ile erken deneyebilir. Kota ucu bilgi vermiyorsa koruma sessizce geçer (varsayımla
+  "Limit doldu · HH:mm'de sürer". `LimitResumer` dakikada bir bakar, süresi gelen çalışmayı kendisi sürdürür
+  (`ResumeAsync`: kullanıcı tekrarı sayılmaz, not organizatörden `limit-resume`); kullanıcı "Yeniden dene" ile
+  erken deneyebilir. Kota ucu bilgi vermiyorsa koruma sessizce geçer (varsayımla
   ilerlenir; üst bar zaten "kalan kullanım yok" der).
 
 ## Model, efor ve kimlik (2026-09-19, kullanıcı kararı)

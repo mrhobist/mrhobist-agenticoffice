@@ -5,8 +5,8 @@ namespace MrHobist.AITeam.Api.Jobs;
 
 /// <summary>
 /// Limit korumasiyla bekleyen calismalari (Paused + ResumeAt) pencere sifirlaninca surdurur (docs/DOMAIN.md → Butce ve limit).
-/// Dakikada bir bakar; suresi gelen calismayi "yeniden dene" ile Running yapar ve dagitimi kuyruga koyar. Kullanici ayni seyi
-/// dugmeyle erken yapabilir. Kota hala doluysa ilk LLM cagrisi yine LimitReached verir ve calisma yeniden bekler.
+/// Dakikada bir bakar; suresi gelen calismayi surdurur (kullanici tekrari sayilmaz, not organizatorden) ve dagitimi kuyruga koyar.
+/// Kullanici ayni seyi "yeniden dene" ile erken yapabilir. Kota hala doluysa ilk LLM cagrisi yine LimitReached verir ve calisma yeniden bekler.
 /// </summary>
 public sealed partial class LimitResumer(IRunReader reader, IRunService runs, JobChannel jobs, ILogger<LimitResumer> logger) : BackgroundService
 {
@@ -22,7 +22,7 @@ public sealed partial class LimitResumer(IRunReader reader, IRunService runs, Jo
                 {
                     if (run.Status == RunStatus.Paused && run.ResumeAt is { } at && at <= now)
                     {
-                        var result = await runs.RetryAsync(run.Id, stoppingToken).ConfigureAwait(false);
+                        var result = await runs.ResumeAsync(run.Id, stoppingToken).ConfigureAwait(false);
                         if (result.Run.Status == RunStatus.Running)
                         {
                             jobs.Enqueue(run.Id, result.Step == RetryStep.Analyze ? $"analiz {run.Id}" : $"dagitim {run.Id}",

@@ -266,6 +266,8 @@ export interface RunsOverview {
   completed: number
   cancelled: number
   inbox: InboxItem[]
+  /** Takilip senden secim bekleyenler (AwaitingInput). */
+  awaitingInput?: number
 }
 
 export interface RunTask {

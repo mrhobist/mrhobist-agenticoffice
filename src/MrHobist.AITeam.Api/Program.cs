@@ -72,7 +72,6 @@ app.UseStatusCodePages();
 app.UseCors();
 app.UseAuthentication();
 app.UseAiTeamAuthGate();
-app.UseAuthorization();
 
 // Sozlesme: /openapi/v1.json (CLAUDE.md §Belge haritasi).
 app.MapOpenApi();

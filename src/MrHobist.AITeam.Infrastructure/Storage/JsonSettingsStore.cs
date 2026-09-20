@@ -16,11 +16,20 @@ public sealed class JsonSettingsStore(StoragePaths paths) : ISettingsStore
 
     private string File => paths.ConfigFile("settings.json");
 
+    // Her LLM cagrisi oncesi okunur: dosya damgasi degismediyse onbellekten (stat ucuz, JSON ayristirma degil).
+    private (DateTime Stamp, AppSettings Value)? _cache;
+
     public async Task<AppSettings> LoadAsync(CancellationToken ct)
     {
         if (!System.IO.File.Exists(File))
         {
             return AppSettings.Default;
+        }
+
+        var stamp = System.IO.File.GetLastWriteTimeUtc(File);
+        if (_cache is { } c && c.Stamp == stamp)
+        {
+            return c.Value;
         }
 
         Dto? dto;
@@ -45,6 +54,7 @@ public sealed class JsonSettingsStore(StoragePaths paths) : ISettingsStore
 
         var settings = new AppSettings(guards);
         settings.Validate();
+        _cache = (stamp, settings);
         return settings;
     }
 
@@ -65,11 +75,12 @@ public sealed class WorkspaceLocator(StoragePaths paths) : IWorkspaceLocator
         ArgumentNullException.ThrowIfNull(project);
         var repo = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(paths.ConfigRoot))!;
         var full = Path.GetFullPath(Path.Combine(repo, project.TargetDir.Replace('/', Path.DirectorySeparatorChar)));
-        if (!full.StartsWith(repo, StringComparison.OrdinalIgnoreCase))
+        if (!full.StartsWith(repo + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
             throw new DomainException(ErrorCodes.ProjectTargetDirInvalid, $"{project.Key}: hedef dizin depo disina cikiyor.");
         }
 
+        Directory.CreateDirectory(full);
         return full;
     }
 }

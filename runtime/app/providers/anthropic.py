@@ -193,22 +193,41 @@ class AnthropicProvider:
     #: Dosya degistiren araclar: hedef yol cwd disindaysa reddedilir.
     WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 
+    #: Bash komutunda mutlak yol adaylari: `C:\...`, `C:/...`, `/...`, `~`. Dizin disi yol → ret.
+    _ABS_PATH = re.compile(r"""(?<![\w.-])(?:[A-Za-z]:[\\/][^\s"'`;&|<>)]*|/[^\s"'`;&|<>)]+|~(?:[\\/][^\s"'`;&|<>)]*)?)""")
+    #: Kok disina cikamayan ama gorunumde mutlak olan yollar (git bash / posix aygitlari).
+    _BASH_ALLOW_PREFIXES = ("/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/tmp")
+
     @classmethod
     def _guard(cls, cwd: str | None):
-        """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: yazma yalniz verilen dizinde."""
+        """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: dosya yazma ve Bash yalniz verilen dizinde."""
         root = Path(cwd).resolve() if cwd else None
 
+        def inside(raw: str) -> bool:
+            try:
+                target = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+            except (OSError, ValueError):
+                return False
+            return root == target or root in target.parents
+
         async def decide(tool: str, tool_input: dict[str, Any], _ctx: ToolPermissionContext):
-            if tool in cls.WRITE_TOOLS and root is not None:
+            if root is None:
+                return PermissionResultAllow()
+            if tool in cls.WRITE_TOOLS:
                 raw = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
-                try:
-                    target = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
-                except OSError:
-                    return PermissionResultDeny(message=f"gecersiz yol: {raw}")
-                if root != target and root not in target.parents:
-                    return PermissionResultDeny(
-                        message=f"Bu dizinin disina yazilamaz: {raw}. Yalniz {root} altinda calis."
-                    )
+                if not inside(raw):
+                    return PermissionResultDeny(message=f"Bu dizinin disina yazilamaz: {raw}. Yalniz {root} altinda calis.")
+            elif tool == "Bash":
+                # Bash her yere ulasabilir (cat, rm, > yonlendirme): komuttaki mutlak yollar ve `..` denetlenir.
+                cmd = str(tool_input.get("command") or "")
+                if ".." in cmd.replace("...", ""):
+                    return PermissionResultDeny(message=f"Komutta '..' kullanilamaz; yollar {root} altinda ve goreli olsun.")
+                for m in cls._ABS_PATH.finditer(cmd):
+                    raw = m.group(0)
+                    if raw.startswith(cls._BASH_ALLOW_PREFIXES):
+                        continue
+                    if raw.startswith("~") or not inside(raw):
+                        return PermissionResultDeny(message=f"Komut bu dizinin disina cikiyor: {raw}. Yalniz {root} altinda calis.")
             return PermissionResultAllow()
 
         return decide

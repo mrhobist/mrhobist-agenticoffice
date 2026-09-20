@@ -117,9 +117,9 @@ public sealed class RunServiceTests : IDisposable
         var handoff = _runtime.Calls.First(c => c.Model == "claude-haiku-4-5-20251001");
         Assert.Null(handoff.Tools);
 
-        // Rapor ve kabul notlari messages.jsonl'de; devir notu her atamada; arac kullanimi turda.
+        // Rapor ve kabul notlari messages.jsonl'de; devir notu YALNIZ implement atamasinda (2 gorev → 2 not); arac kullanimi turda.
         var messages = await _store.ReadMessagesAsync(run.Id, Ct);
-        Assert.Equal(6, messages.Count(m => m.Kind == MessageKind.Handoff));
+        Assert.Equal(2, messages.Count(m => m.Kind == MessageKind.Handoff));
         Assert.Equal(2, messages.Count(m => m.Subject == "implement-report"));
         Assert.Equal(4, messages.Count(m => m.Subject == "review-accept"));
         var devTurn = (await _store.ReadTurnsAsync(run.Id, "developer", Ct))[0];
@@ -225,11 +225,13 @@ public sealed class RunServiceTests : IDisposable
         var inbox = (await _reader.GetOverviewAsync(Ct)).Inbox;
         Assert.Contains(inbox, i => i.RunId == run.Id && i.Kind == InboxKind.Decision && i.Title.StartsWith("Limit", StringComparison.Ordinal));
 
-        // Esik yukseltilirse (ayar) cagri gecer; yeniden dene analizden surer.
+        // Esik yukseltilirse (ayar) cagri gecer; otomatik surdurme (LimitResumer yolu) sayaci artirmaz, kullanici tekrari sayilmaz.
         await settings.SaveAsync(new Domain.Settings.AppSettings(new Dictionary<Provider, int> { [Provider.Anthropic] = 100 }), Ct);
-        var retry = await svc.RetryAsync(run.Id, Ct);
-        Assert.Equal((RetryStep.Analyze, RunStatus.Running), (retry.Step, retry.Run.Status));
+        var retry = await svc.ResumeAsync(run.Id, Ct);
+        Assert.Equal((RetryStep.Analyze, RunStatus.Running, 0), (retry.Step, retry.Run.Status, retry.Run.Retries));
         Assert.Null(retry.Run.ResumeAt);
+        Assert.Contains(await _store.ReadMessagesAsync(run.Id, Ct), m => m.Subject == "limit-resume" && m.From == "organizer");
+        Assert.DoesNotContain(await _store.ReadMessagesAsync(run.Id, Ct), m => m.Subject == "retry");
         run = await svc.AnalyzeAsync(run.Id, Ct);
         Assert.Equal(RunStatus.AwaitingApproval, run.Status);
     }
@@ -339,6 +341,39 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal(1, await _svc.MarkInterruptedAsync(Ct));
         Assert.Equal(RunStatus.Interrupted, (await _reader.GetAsync(run.Id, Ct)).Status);
         Assert.Equal(0, await _svc.MarkInterruptedAsync(Ct));
+    }
+
+    [Fact]
+    public async Task Yarim_kalan_adim_kesinti_ve_iptalde_kapanir_yeniden_dene_ayni_adimi_kosar()
+    {
+        // Onayli plan + elle Started faz: LLM cagrisi ortasinda surec olmus gibi.
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        await _store.AppendPhaseAsync(run.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Started), Ct);
+
+        Assert.Equal(1, await _svc.MarkInterruptedAsync(Ct));
+        var phases = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
+        Assert.Equal((PhaseStatus.Failed, "süreç yeniden başladı"), (phases[^1].Status, phases[^1].Detail));
+
+        // Yeniden dene → dagitim ayni adimi (gelistirme) 1. tur olarak yeniden kosar; sistem fazi tur sayilmaz.
+        var retry = await _svc.RetryAsync(run.Id, Ct);
+        Assert.Equal(RetryStep.Dispatch, retry.Step);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        phases = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
+        var rerun = phases.First(p => p.Stage == "gelistirme" && p.Status == PhaseStatus.Started && p.Ts > phases[1].Ts);
+        Assert.Equal(1, rerun.Round);
+
+        // Iptal de Started fazi Failed yapar (Skipped degil): kod yazilmadan test adimina gecilmez.
+        var other = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief 2"), Ct);
+        await _svc.AnalyzeAsync(other.Id, Ct);
+        await _svc.BeginApproveAsync(other.Id, Ct);
+        await _store.AppendPhaseAsync(other.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Started), Ct);
+        await _svc.CancelAsync(other.Id, Ct);
+        var cancelled = await _store.ReadPhasesAsync(other.Id, "t1", Ct);
+        Assert.Equal(PhaseStatus.Failed, cancelled[^1].Status);
+        Assert.StartsWith("iptal", cancelled[^1].Detail, StringComparison.Ordinal);
     }
 
     [Fact]

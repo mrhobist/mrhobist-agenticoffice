@@ -106,12 +106,13 @@ public sealed class RunReader(IRunStore runs) : IRunReader
         return new RunsOverview(
             list.Count,
             list.Count(r => r.Status == RunStatus.Running),
-            list.Count(r => r.Status is RunStatus.AwaitingApproval or RunStatus.AwaitingInput),
+            list.Count(r => r.Status == RunStatus.AwaitingApproval),
             list.Count(r => r.Status == RunStatus.Paused),
             list.Count(r => r.Status is RunStatus.Failed or RunStatus.Interrupted or RunStatus.BudgetExceeded or RunStatus.PolicyRejected),
             list.Count(r => r.Status == RunStatus.Completed),
             list.Count(r => r.Status == RunStatus.Cancelled),
-            inbox.OrderByDescending(i => i.Ts).ToList());
+            inbox.OrderByDescending(i => i.Ts).ToList(),
+            list.Count(r => r.Status == RunStatus.AwaitingInput));
     }
 
     /// <summary>

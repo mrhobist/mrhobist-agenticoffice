@@ -110,4 +110,6 @@ public sealed record RunsOverview(
     int Failed,
     int Completed,
     int Cancelled,
-    IReadOnlyList<InboxItem> Inbox);
+    IReadOnlyList<InboxItem> Inbox,
+    /// <summary>Takilip kullanicidan secim bekleyen calismalar (AwaitingInput). Sona eklendi (CLAUDE.md §5).</summary>
+    int AwaitingInput = 0);

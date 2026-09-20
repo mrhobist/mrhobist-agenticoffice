@@ -263,7 +263,22 @@ maliyet **eşdeğer** (≈$), asıl koruma **limit eşiği %99** platform bazın
 - UI: soru kutusu ve seçenekler (RunPanel), limit notu, araç listesi günlükte, Ayarlar → Limit koruması,
   `≈$` etiketleri, giriş ekranı sabit renkler + autofill düzeltmesi.
 - Testler: 40 servis (tam akış, red döngüsü + soru, engellenen developer, limit beklemesi), 32 birim, 21 runtime.
-- Sonraki: gerçek koşuda ölçüm (tur sayısı, süre), `canAsk` (ajan → manager sorusu), emülatör/tarayıcı testleri için MCP.
+- Gerçek koşu (2026-09-20, hello world): analiz 48 s · developer 149 s / 22 araç · test 58 s · karar 55 s; ≈$1.81.
+- Kod incelemesi sonrası (2026-09-20): Bash dizin sınırı · otomatik limit sürdürmesi `ResumeAsync` (tekrar sayılmaz) ·
+  `awaitingInput` sayacı ayrı · devir notu yalnız implement'te · dizin yaratma Infrastructure'da · 401 gövdesi
+  `ProblemMapping`'ten · `AddAuthorization` kaldırıldı · ekip yalnız devir için yüklenir · limit beklemesinde 20 s yoklama ·
+  ayarlar dosya damgasıyla önbellekte · yarım kalan `Started` faz kesinti/iptalde `Failed` (yeniden dene aynı adım).
+
+## Kalan işler (2026-09-20 itibarıyla, öncelik sırasıyla)
+
+1. **`canAsk`**: ajan → manager sorusu (`ask`/`answer` mesajları var, yürütücü yok; bugün developer yalnız kullanıcıya sorar).
+2. **Faz 5 SSE** `GET /runs/{id}/events`: UI 2 s yoklamayla idare ediyor; çok çalışma açıkken yük artar.
+3. **İş Akışı paneli** (adım ekle/sil/sırala, `PUT /workflows/{key}`); uç var, ekran yok.
+4. **Tasarım artıkları**: ray daralması (proje açıkken 72 px), pano için çalışma düzeyinde analiz kartı.
+5. **Açık kararlar** (DOMAIN §Açık kararlar 4–7): `canAsk` hedefi, `officeRole` çakışması, `kind: handoff` ikiliği.
+6. **`ownerId`** JWT claim'inden; LDAP / kullanıcı deposu `IUserDirectory`.
+7. **Sağlayıcılar**: NVIDIA / Ollama runtime adaptörleri (sözleşme hazır).
+8. **Emülatör / tarayıcı testleri** için MCP araçları (testçi kararı).
 
 ## Faz 4c — Ofis odağı ve giriş (2026-09-19, kullanıcı istekleri) ✅
 

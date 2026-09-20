@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { InboxItem, RunStatus, RunSummary, RunsOverview } from '~/api/types'
+import type { InboxItem, ProjectCard, RunStatus, RunSummary, RunsOverview } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel } from '~/api/labels'
@@ -27,7 +27,7 @@ async function load() {
     loadError.value = errorText(e)
   }
 }
-onMounted(() => { void load(); timer = setInterval(() => { void load() }, 5000) })
+onMounted(() => { void load(); void loadProjects(); timer = setInterval(() => { void load() }, 5000) })
 onBeforeUnmount(() => clearInterval(timer))
 
 /** Filtre gruplari: "basarisiz" tum dusme turlerini toplar (overview.failed ile ayni tanim). */
@@ -78,6 +78,13 @@ function fmtWhen(s: string): string {
   return today ? time : `${d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' })} ${time}`
 }
 const totalCost = computed(() => (runs.value ?? []).reduce((a, r) => a + r.totalCostUsd, 0))
+
+/** Proje basligi: isler proje icinde yasar; listede hangi projeden oldugu gorunur (tasarim: proje etiketi). */
+const projectTitles = ref<Record<string, string>>({})
+async function loadProjects() {
+  try { projectTitles.value = Object.fromEntries((await api.get<ProjectCard[]>('/api/v1/projects')).map(p => [p.key, p.title])) } catch { /* etiket anahtar olarak kalir */ }
+}
+function projectOf(r: RunSummary): string { return projectTitles.value[r.project] ?? r.project }
 </script>
 
 <template>
@@ -132,7 +139,7 @@ const totalCost = computed(() => (runs.value ?? []).reduce((a, r) => a + r.total
             <span class="status" :class="r.status">{{ RUN_STATUS_LABEL[r.status] }}</span>
             <strong class="label">{{ r.label }}</strong>
             <span v-if="pending(r.id)" class="kind" :class="pending(r.id)!.kind">{{ INBOX_KIND_LABEL[pending(r.id)!.kind] }}</span>
-            <span class="sub meta">{{ r.workflow }} · {{ fmtWhen(r.startedAt) }} · {{ fmtCost(r.totalCostUsd) }}<template v-if="r.retries"> · {{ r.retries }}× yeniden</template></span>
+            <span class="sub meta"><b class="proj">{{ projectOf(r) }}</b> · {{ r.workflow }} · {{ fmtWhen(r.startedAt) }} · {{ fmtCost(r.totalCostUsd) }}<template v-if="r.retries"> · {{ r.retries }}× yeniden</template></span>
             <span v-if="r.detail" class="sub detail">{{ r.detail }}</span>
           </button>
         </li>
@@ -196,6 +203,7 @@ button { font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px; 
 .row.pending { border-left-color: #d23b3b; }
 .row .label { font-size: 13px; }
 .row .meta { grid-column: 1 / span 3; }
+.row .proj { color: #1f5f93; font-weight: 700; }
 .row .detail { grid-column: 1 / span 3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,0.08); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
 .status.awaitingApproval { background: #f3c34a; }

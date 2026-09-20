@@ -81,8 +81,10 @@ const acting = ref(false)
 const actError = ref<string | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 
-/** Yalniz bu durumlarda kayit degisir; digerlerinde yoklama durur (approve/revise yeniden baslatir). */
+/** Yalniz bu durumlarda kayit kendiliginden degisir; digerlerinde yoklama durur (approve/revise/answer yeniden baslatir). */
 const LIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(['running', 'paused'])
+/** Yoklama araligi: calisirken 2 s; limit beklemesi saatler surebilir, 20 s yeter (kabuk zaten 5 s'de overview ceker). */
+function pollInterval(status: RunStatus | undefined): number { return status === 'paused' ? 20_000 : 2000 }
 
 async function poll() {
   if (!props.runId) return
@@ -90,6 +92,7 @@ async function poll() {
     run.value = await api.get<RunDetail>(`/api/v1/runs/${encodeURIComponent(props.runId)}`)
     loadError.value = null
     if (!LIVE.has(run.value.status)) stopPolling()
+    else if (timer && pollInterval(run.value.status) !== currentInterval) startPolling()
     if (showLog.value) void loadTurns()
   } catch (e) {
     loadError.value = errorText(e)
@@ -130,10 +133,12 @@ const log = computed<LogEntry[]>(() => {
   return out.sort((a, b) => a.ts.localeCompare(b.ts))
 })
 
+let currentInterval = 2000
 function startPolling() {
   stopPolling()
+  currentInterval = pollInterval(run.value?.status)
+  timer = setInterval(() => { void poll() }, currentInterval)
   void poll()
-  timer = setInterval(() => { void poll() }, 2000)
 }
 function stopPolling() { clearInterval(timer); timer = undefined }
 

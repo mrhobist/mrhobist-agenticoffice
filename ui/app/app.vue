@@ -253,6 +253,7 @@ const jobsTitle = computed(() => {
   const parts = [`${o.total} iş`]
   if (o.running) parts.push(`${o.running} çalışıyor`)
   if (o.awaitingApproval) parts.push(`${o.awaitingApproval} onay bekliyor`)
+  if (o.awaitingInput) parts.push(`${o.awaitingInput} senden cevap bekliyor`)
   if (o.paused) parts.push(`${o.paused} durakladı`)
   if (o.failed) parts.push(`${o.failed} başarısız`)
   if (o.inbox.length) parts.push(`— ${o.inbox.length} tanesi senden cevap bekliyor`)

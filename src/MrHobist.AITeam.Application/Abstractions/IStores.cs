@@ -96,7 +96,7 @@ public interface ISettingsStore
 
 /// <summary>
 /// Projenin hedef dizininin diskteki mutlak yolu (depo koku + <c>targetDir</c>). Developer/testci araclari bu dizinde
-/// calisir, yazma disina cikamaz. Yoksa olusturulur. Infrastructure, depo kokunu <c>config/</c>'in ustu olarak bilir.
+/// calisir, yazma disina cikamaz. Dizin yoksa OLUSTURULUR (SDK cwd'nin var olmasini ister); dosya I/O burada, Application'da degil.
 /// </summary>
 public interface IWorkspaceLocator
 {

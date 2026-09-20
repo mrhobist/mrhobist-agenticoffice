@@ -60,7 +60,7 @@ public static class AuthSetup
                 },
             };
         });
-        services.AddAuthorization();
+        // AddAuthorization YOK: yetki kapisi UseAiTeamAuthGate; hicbir uc RequireAuthorization kullanmaz (tek sema, rol claim'i).
         return services;
     }
 
@@ -105,14 +105,8 @@ public static class AuthSetup
                 || path.StartsWithSegments("/api/v1/jobs/health"); // canlilik probu kimliksiz
             if (!open && ctx.User.Identity?.IsAuthenticated != true)
             {
-                ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                await ctx.Response.WriteAsJsonAsync(new Microsoft.AspNetCore.Mvc.ProblemDetails
-                {
-                    Status = 401,
-                    Title = "Unauthorized",
-                    Detail = "Giris gerekli.",
-                    Extensions = { ["errorCode"] = ErrorCodes.AuthRequired, ["traceId"] = ctx.TraceIdentifier },
-                }).ConfigureAwait(false);
+                // Ayni Problem Details sekli (errorCode + traceId): ProblemMapping tek kaynak.
+                await ProblemMapping.Result(StatusCodes.Status401Unauthorized, ErrorCodes.AuthRequired, "Giris gerekli.").ExecuteAsync(ctx).ConfigureAwait(false);
                 return;
             }
 

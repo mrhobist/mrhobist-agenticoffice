@@ -154,6 +154,7 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 | `GET /api/v1/jobs/health` | `{ status, pending }` | iş kanalında bekleyen iş sayısı (kimliksiz) |
 | `GET /api/v1/settings` · `PUT /api/v1/settings` `{ limitGuards: { anthropic: 99 } }` | `SettingsDto` | Limit koruması eşiği, sağlayıcı başına % (1–100; değilse 400 `settings.invalid`). `config/settings.json` |
 
+`RunsOverview.awaitingInput`: takılıp seçim bekleyen çalışma sayısı (sona eklendi; `awaitingApproval` yalnız plan onayı).
 `RunSummary` ek alanlar: `question` (`awaitingInput`'ta `{ ts, agent, text, options: [{ id, label, detail, needsNote }], task, stage, context }`),
 `resumeAt` (limit beklemesi). `Turn` ek alanlar: `toolUses: [{ tool, target }]`, `turns` (ajan döngüsünün iç tur sayısı).
 `totalCostUsd` **eşdeğer** maliyettir (docs/DOMAIN.md → Bütçe ve limit).
