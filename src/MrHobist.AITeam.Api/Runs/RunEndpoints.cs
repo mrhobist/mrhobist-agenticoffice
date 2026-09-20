@@ -67,6 +67,13 @@ public static class RunEndpoints
             return Results.Accepted($"/api/v1/runs/{run.Id}", run);
         });
 
+        // Canli arac akisi: runtime suren turda her arac cagrisini buraya bildirir (belirtec = yetki, JWT yok). Bilinmeyen belirtec 204: tur bitmis.
+        app.MapPost("/api/v1/progress/{token}", (string token, ProgressEvent body, ProgressRegistry registry) =>
+        {
+            registry.Report(token, body);
+            return Results.NoContent();
+        });
+
         // Iptal: durum hemen yazilir; suren is varsa belirteci kesilir (LLM cagrisi durur), yarim sonuc yazilmaz.
         g.MapPost("/{id}/cancel", async (string id, IRunService runs, JobChannel jobs, CancellationToken ct) =>
         {

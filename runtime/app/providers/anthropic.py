@@ -158,6 +158,28 @@ def _classify(exc: Exception) -> HTTPException:
     return _error(502, "runtime.provider_error", text)
 
 
+async def _report_progress(url: str | None, use: ToolUse) -> None:
+    """Canli arac akisi: .NET'e tek POST, 2 s zaman asimi, hata yutulur (akis gorunurluk icindir, turu bozmaz)."""
+    if not url:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.post(url, json=use.model_dump())
+    except Exception:  # noqa: BLE001 — bildirim basarisizligi turu etkilemez
+        pass
+
+
+async def _report_progress(url: str | None, use: ToolUse) -> None:
+    """Canli arac akisi: .NET'e tek POST, 2 s zaman asimi, hata yutulur (akis gorunurluk icindir, turu bozmaz)."""
+    if not url:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.post(url, json=use.model_dump())
+    except Exception:  # noqa: BLE001 — bildirim basarisizligi turu etkilemez
+        pass
+
+
 class AnthropicProvider:
     name = PROVIDER_NAME
 
@@ -300,7 +322,9 @@ class AnthropicProvider:
                         if isinstance(block, TextBlock):
                             parts.append(block.text)
                         elif isinstance(block, ToolUseBlock):
-                            tool_uses.append(ToolUse(tool=block.name, target=self._tool_target(block)))
+                            use = ToolUse(tool=block.name, target=self._tool_target(block))
+                            tool_uses.append(use)
+                            await _report_progress(request.progress_url, use)
                 elif isinstance(msg, ResultMessage):
                     if msg.is_error:
                         detail = "; ".join(msg.errors or []) or msg.result or "bilinmiyor"

@@ -126,6 +126,7 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `cafe.special` | `text \| null` | kahve panosundaki günün özeli; `null` listeye döner |
 | `workflow.set` | `key` | pano sütunları o iş akışına göre yeniden kurulur (`GET /api/v1/workflows/{key}`); Faz 5'te çalışma başlarken yayımlanır |
 | `light` | `id, state: on/off` | o ışık açılır/kapanır (**mutlak** durum: yankılanması zararsız). Tuvale tıklamak da aynı komutu yayımlar, böylece ikinci bir tarayıcı da görür |
+| `agent.tool` | `agent, tool, target?, run, task?, stage?` | **Canlı araç akışı** (2026-09-20): süren turda ajan bir araç çağırdığı anda (Write/Edit/Bash…). Runtime `progressUrl`'e POST eder, Api yayımlar. Sahnede kısa balon ("✎ App/Program.cs"), çalışma panelinde "Şu an" şeridi. Tam kayıt tur bitince `Turn.toolUses` |
 | `scene.reload` | `reason?` | `config/scene.json` değişti (ajan eklendi/silindi/adı değişti, masa eklendi): UI `GET /scene` ile sahneyi yeniden kurar, SSE kopmaz. Api ajan değişikliklerinde yayımlar; elle: `POST /scene/commands` |
 
 **Simülasyon çizimden bağımsızdır.** `requestAnimationFrame` sekme gizliyken durur; simülasyon

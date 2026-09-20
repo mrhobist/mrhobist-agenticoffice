@@ -16,6 +16,8 @@ const props = defineProps<{
   agents: AgentListItem[] | null
   /** Yeni is formu icin proje anahtari: is yalniz bir projenin icinde baslar (docs/DOMAIN.md → Projeler). */
   project: string | null
+  /** Canli arac akisi (SSE agent.tool → kabuk): suren turda ajanin yaptigi son cagrilar. */
+  liveTools?: Array<{ ts: number; agent: string; tool: string; target: string | null; task: string | null }>
 }>()
 const emit = defineEmits<{ close: []; open: [id: string]; jobs: []; newRun: [project: string] }>()
 
@@ -346,6 +348,7 @@ function stageTitle(id: string): string {
 
 function fmtTime(s: string): string { return new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) }
 function fmtClock(s: string): string { return new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
+const TOOL_SHORT: Record<string, string> = { Write: 'yaz', Edit: 'düzenle', MultiEdit: 'düzenle', Read: 'oku', Glob: 'ara', Grep: 'ara', Bash: 'çalıştır' }
 const PHASE_LABEL: Record<string, string> = { started: 'başladı', done: 'bitti', rejected: 'reddedildi', failed: 'başarısız', skipped: 'atlandı' }
 const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 'error').length ?? 0)
 </script>
@@ -418,6 +421,12 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <span v-if="busy" class="spin" aria-hidden="true" />
             <span class="sub">{{ run.detail }}</span>
             <span v-if="busy && elapsed" class="elapsed" :title="stepHint">⏱ {{ elapsed }}</span>
+          </div>
+          <!-- Canli arac akisi: developer/testci calisirken hangi dosya, hangi komut (SSE agent.tool). Tur bitince tam liste gunlukte. -->
+          <div v-if="busy && props.liveTools?.length" class="livetools" aria-live="polite">
+            <span class="lbl">Şu an</span>
+            <span v-for="t in props.liveTools.slice(-6)" :key="t.ts" class="tool" :class="t.tool.toLowerCase()" :title="`${agentName(t.agent)} · ${t.tool} · ${t.target ?? ''}`"><b>{{ TOOL_SHORT[t.tool] ?? t.tool }}</b> {{ t.target ?? '' }}</span>
+            <span class="sub">{{ props.liveTools.length }} çağrı</span>
             <span class="sub right">{{ run.workflow }} · <span :title="COST_TITLE">{{ fmtCost(run.totalCostUsd, 4) }}</span><template v-if="run.maxCostUsd"> / {{ fmtCost(run.maxCostUsd) }}</template><template v-if="run.retries"> · {{ run.retries }}× yeniden</template></span>
             <button v-if="canRetry" type="button" class="small" :disabled="acting" @click="retry">Yeniden dene</button>
             <button v-if="canCancel" type="button" class="small danger" :disabled="acting" @click="cancel">{{ canRetry ? 'Kapat (iptal)' : 'İptal et' }}</button>
@@ -634,6 +643,12 @@ button:disabled { opacity: 0.5; cursor: default; }
 .status.running { background: #4fa3e0; color: #fff; }
 .status.paused { background: #a889e6; color: #fff; }
 .status.awaitingInput { background: #d23b3b; color: #fff; }
+.livetools { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 6px; padding: 6px 8px; background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; }
+.livetools .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #4a5068; }
+.livetools .tool { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #e5e7ee; color: #23283a; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.livetools .tool b { color: #4a5068; margin-right: 3px; }
+.livetools .tool.write, .livetools .tool.edit, .livetools .tool.multiedit { background: #dcf1d3; }
+.livetools .tool.bash { background: #d8ebfa; }
 .elapsed { font-size: 11px; font-variant-numeric: tabular-nums; color: #4a5068; background: #fff; border: 1px solid #c9c3b3; border-radius: 999px; padding: 1px 8px; }
 .done-box { background: #e3f4dc; border: 2px solid #7cc46b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .done-box h3 { display: flex; align-items: center; gap: 8px; color: #2d5a22; font-size: 14px; text-transform: none; letter-spacing: 0; margin: 0; }

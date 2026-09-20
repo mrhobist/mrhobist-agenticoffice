@@ -21,6 +21,7 @@ const emit = defineEmits<{
   agents: [list: Array<{ key: string; name: string; state: string; note: string | null }>]
   select: [key: string | null]
   board: [snapshot: ReturnType<World['board']['snapshot']>]
+  tool: [e: { agent: string; tool: string; target: string | null; run: string; task: string | null }]
 }>()
 
 const host = useTemplateRef<HTMLDivElement>('host')
@@ -175,6 +176,7 @@ async function boot() {
   feed = connectFeed(apiBase, (e: SceneEvent) => {
     // config/scene.json degisti (ajan eklendi/silindi, masa eklendi): sahne yeniden kurulur, SSE ayni kalir.
     if (e.type === 'scene.reload') { void reboot(); return }
+    if (e.type === 'agent.tool') emit('tool', { agent: e.data.agent, tool: e.data.tool, target: e.data.target ?? null, run: e.data.run, task: e.data.task ?? null })
     world?.apply(e)
     publishAgents()
   }, s => emit('status', s))

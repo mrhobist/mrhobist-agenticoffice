@@ -29,7 +29,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         string? ReasoningEffort,
         IReadOnlyList<string>? Tools,
         string? Cwd,
-        int? MaxTurns);
+        int? MaxTurns,
+        string? ProgressUrl);
 
     private sealed record MessageDto(string Role, string Content);
 
@@ -175,7 +176,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             request.ReasoningEffort,
             request.Tools is { Count: > 0 } ? request.Tools : null,
             request.Cwd,
-            request.MaxTurns);
+            request.MaxTurns,
+            request.ProgressUrl);
 
         HttpResponseMessage response;
         try

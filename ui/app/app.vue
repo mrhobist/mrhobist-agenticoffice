@@ -116,6 +116,7 @@
           @agents="agents = $event"
           @select="selectAgent"
           @board="openBoard"
+          @tool="onTool"
         />
 
 
@@ -159,7 +160,7 @@
         />
 
         <!-- Calisma paneli: yeni brief (projeye bagli), plan onayi, devir notlari. Diger panellerle ayni anda acilmaz. -->
-        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" @close="closeRun" @open="openRun" @jobs="toggleJobs" @new-run="openNewRun" />
+        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" :live-tools="runId ? (liveTools[runId] ?? []) : []" @close="closeRun" @open="openRun" @jobs="toggleJobs" @new-run="openNewRun" />
 
         <!-- Ekip yonetimi: ajan havuzu (ekle/sil) ve takimlar = is akislari (kullanici karari 2026-09-20). -->
         <TeamPanel v-if="teamPanel" :agents="team" @close="teamPanel = false" @select="k => { teamPanel = false; selectAgent(k) }" @changed="loadTeam(); loadProjects()" />
@@ -462,6 +463,13 @@ function selectAgent(key: string | null) {
 
 function closeAgent() {
   if (leaveAgent()) selected.value = null
+}
+
+/** Canli arac akisi (agent.tool): calisma basina son 30 cagri; RunPanel "su an" seridini bundan cizer. Sayfa yenilenince sifirlanir (turun tam kaydi bitince conversations/*.jsonl'de). */
+const liveTools = ref<Record<string, Array<{ ts: number; agent: string; tool: string; target: string | null; task: string | null }>>>({})
+function onTool(e: { agent: string; tool: string; target: string | null; run: string; task: string | null }) {
+  const list = liveTools.value[e.run] ?? []
+  liveTools.value = { ...liveTools.value, [e.run]: [...list, { ts: Date.now(), agent: e.agent, tool: e.tool, target: e.target, task: e.task }].slice(-30) }
 }
 
 /** Secili ajan sahnede durur, izleyiciye bakar, isini balonda yazar; panel kapaninca akisina doner. */

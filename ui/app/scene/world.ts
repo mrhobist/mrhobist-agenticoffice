@@ -18,6 +18,9 @@ interface PlacedProp extends PropDef { h: number }
  * Sahnenin tamami: yerlesim, varliklar, pano, kapi. Olaylari `apply` ile alir,
  * `update`/`draw` ile yasar. Vue reaktivitesi burada YOK; sicak dongu duz TS.
  */
+/** Arac adi → tek karakter: balon dar, hedef onemli. */
+const TOOL_GLYPH: Record<string, string> = { Write: '✎', Edit: '✎', MultiEdit: '✎', Read: '👁', Glob: '🔍', Grep: '🔍', Bash: '>_' }
+
 export class World {
   readonly nav: NavGrid
   readonly props: PlacedProp[]
@@ -171,6 +174,13 @@ export class World {
       case 'light': {
         const l = this.lights.get(e.data.id)
         if (l) l.on = e.data.state === 'on'
+        break
+      }
+      case 'agent.tool': {
+        // Canli arac akisi: ajanin basinda kisa balon ("Write Program.cs"); odaklanmis (frozen) ajanin karti korunur.
+        const a = this.agents.get(e.data.agent)
+        if (!a || a.frozen) break
+        a.bubble = { kind: 'talk', until: now + 2500, text: `${TOOL_GLYPH[e.data.tool] ?? '⚙'} ${e.data.target ?? e.data.tool}` }
         break
       }
       case 'workflow.set':

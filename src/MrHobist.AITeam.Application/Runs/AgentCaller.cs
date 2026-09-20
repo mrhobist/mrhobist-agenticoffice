@@ -58,7 +58,7 @@ public sealed record RetryPolicy(int Attempts, TimeSpan BaseDelay)
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
-public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null)
+public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null)
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AgentLocks = new(StringComparer.Ordinal);
 
@@ -96,8 +96,11 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         }
 
         var system = agent.ComposePrompt(team.Knowledge);
+        // Canli arac akisi: yalniz aracli turda; belirtec tur boyunca yasar.
+        var progressToken = tools is not null && progress?.BaseUrl is { } baseUrl ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage)) : null;
+        var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
         var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
-            Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns);
+            Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl);
 
         var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -147,6 +150,11 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         }
         finally
         {
+            if (progressToken is not null)
+            {
+                progress!.Release(progressToken);
+            }
+
             gate.Release();
         }
     }

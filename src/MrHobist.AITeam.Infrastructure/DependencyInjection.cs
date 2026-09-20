@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddSingleton<ISceneLayout, JsonSceneLayoutStore>();
         services.AddSingleton<LimitGuard>();
         services.AddSingleton(RetryPolicy.Default);
+        services.AddSingleton<ProgressRegistry>();
         services.AddSingleton<AgentCaller>();
         services.AddSingleton<IRunService, RunService>();
         return services;

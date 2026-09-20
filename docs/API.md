@@ -159,6 +159,7 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 | `POST /api/v1/runs/{id}/cancel` | **200** `RunSummary` | yalnız `running \| awaitingApproval \| paused \| failed \| interrupted \| budgetExceeded \| awaitingInput`; değilse 409 `run.not_cancellable`. Düşen çalışmada anlamı **kapat**: karar verildi, gelen kutusundan düşer. Hemen yazılır; süren LLM çağrısının sonucu yazılmaz |
 | `GET /api/v1/runs/overview` | `RunsOverview` | **İşler** ekranı ve üst bar: kaç iş var, kaçı ne durumda, kaçı kullanıcıdan bir şey bekliyor (`inbox`). UI 5 s'de bir yoklar |
 | `GET /api/v1/jobs/health` | `{ status, pending }` | iş kanalında bekleyen iş sayısı (kimliksiz) |
+| `POST /api/v1/progress/{token}` `{ tool, target? }` | **204** | Runtime'ın canlı araç bildirimi (kimliksiz; tek kullanımlık `token` yetkidir, tur bitince düşer). Api `agent.tool` sahne olayı yayımlar. Bilinmeyen belirteç sessizce 204 |
 | `GET /api/v1/settings` · `PUT /api/v1/settings` `{ limitGuards: { anthropic: 99 } }` | `SettingsDto` | Limit koruması eşiği, sağlayıcı başına % (1–100; değilse 400 `settings.invalid`). `config/settings.json` |
 
 `RunsOverview.awaitingInput`: takılıp seçim bekleyen çalışma sayısı (sona eklendi; `awaitingApproval` yalnız plan onayı).

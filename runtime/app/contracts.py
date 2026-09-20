@@ -50,6 +50,9 @@ class TurnRequest(BaseModel):
     cwd: str | None = None
     #: Ajan dongusunun en fazla tur sayisi. None = araclara gore varsayilan.
     max_turns: int | None = Field(default=None, alias="maxTurns")
+    #: Canli arac akisi: her arac cagrisinda buraya `{tool, target}` POST edilir (loopback, tek kullanimlik belirtecli adres).
+    #: .NET verir; runtime yalniz bildirir, cevabi beklemez, hata yutulur. None = akis yok.
+    progress_url: str | None = Field(default=None, alias="progressUrl")
 
     model_config = {"populate_by_name": True}
 

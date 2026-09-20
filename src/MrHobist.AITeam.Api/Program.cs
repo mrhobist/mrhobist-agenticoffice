@@ -67,6 +67,9 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
 
 var app = builder.Build();
 
+// Canli arac akisi geri cagrisi: runtime bu adrese POST eder (loopback; ApiUrl zaten loopback dogrulandi).
+app.Services.GetRequiredService<MrHobist.AITeam.Application.Runs.ProgressRegistry>().BaseUrl = new Uri(apiUrl, "/api/v1/progress").ToString();
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseCors();

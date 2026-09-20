@@ -16,7 +16,9 @@ public sealed record RuntimeTurnRequest(
     IReadOnlyList<string>? Tools = null,
     /// <summary>Araclarin calisacagi dizin: projenin hedef dizini (mutlak). Yazma bunun disina cikamaz.</summary>
     string? Cwd = null,
-    int? MaxTurns = null);
+    int? MaxTurns = null,
+    /// <summary>Canli arac akisi geri cagrisi (tek kullanimlik belirtecli loopback adres); null = akis yok.</summary>
+    string? ProgressUrl = null);
 
 public sealed record RuntimeMessage(string Role, string Content);
 

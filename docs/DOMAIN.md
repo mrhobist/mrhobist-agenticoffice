@@ -200,6 +200,12 @@ kullanıcı profilinden dosya okuduğu görüldü, kapatıldı). Her araç çağ
 (`Turn.toolUses`), günlükte "Araçlar" olarak görünür. Emülatör/tarayıcı testleri için ajan Claude Code'un kendi
 araçlarını kullanır (ileride MCP).
 
+**Canlı araç akışı (2026-09-20, kullanıcı isteği):** `AgentCaller` araçlı tur için tek kullanımlık belirteçli bir
+geri çağrı adresi (`progressUrl`) üretir; runtime her araç çağrısında `{tool, target}` POST eder (2 s zaman aşımı, hata
+yutulur; turu etkilemez). Api `agent.tool` yayımlar: sahnede balon, çalışma panelinde "Şu an" şeridi. Belirteç tur
+bitince silinir; runtime iş kuralı bilmez, yalnız "araç X hedef Y" der. OpenAI/Codex yolunda olaylar tur sonunda
+ayrıştırıldığı için canlı akış yok (varsayımla ilerlenir).
+
 **Devir notu yalnız `implement` atamasında** (ilk ve red sonrası): inceleme adımlarına not bilgi katmıyordu, her
 geçiş bir organizatör turu ediyordu (ölçüldü: 14–70 s, ≈$0.02–0.05).
 
