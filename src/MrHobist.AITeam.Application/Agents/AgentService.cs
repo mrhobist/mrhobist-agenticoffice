@@ -143,10 +143,12 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
         var current = Find(team, key);
         var detail = await SaveValidatedAsync(team, Compose(current, request), ct).ConfigureAwait(false);
-        if (!string.Equals(current.Name, detail.Name, StringComparison.Ordinal))
+
+        // Kosulsuz: sahne kaydi turetilmis durumdur. Ekipte olup sahnede olmayan bir ajan (md dosyasi elle
+        // eklenmisse boyle olur) her kayitta kendiliginden yerlesir; hicbir sey degismediyse dosya yazilmaz.
+        if (await scene.UpsertAgentAsync(key, detail.Name, ct).ConfigureAwait(false))
         {
-            await scene.UpsertAgentAsync(key, detail.Name, ct).ConfigureAwait(false);
-            PublishReload($"ajan adi degisti: {key}");
+            PublishReload($"ajan sahne kaydi guncellendi: {key}");
         }
 
         return detail;

@@ -9,8 +9,9 @@ organizatör) bir brief'i alıp kod üretir; akış 2B piksel bir ofiste canlı 
 | [`runtime/`](runtime/) | Python FastAPI — **yalnız LLM çağrısı** | 5090 |
 | [`ui/`](ui/) | Nuxt 4 + TypeScript + Canvas 2D — sprite tabanlı canlı piksel ofis | 3000 |
 | [`assets/`](assets/) | Ham sprite sayfaları (`raw/`) ve plan panoları (`reference/`) | — |
-| [`config/`](config/) | Ajan md'leri, alt md'ler, iş akışları, **projeler** — **tek doğru kaynak** | — |
-| [`runs/`](runs/) | Çalışma geçmişi (JSONL), gitignore'da | — |
+| [`config/`](config/) | Ajan md'leri, alt md'ler, iş akışları, sahne — **tek doğru kaynak** | — |
+| `data/` | `aiteam.db` (SQLite): proje, çalışma, tur, mesaj, faz, ayarlar. Gitignore'da | — |
+| [`scripts/sql/`](scripts/sql/) | İleri yönlü şema betikleri; uygulanma defteri `schema_change_log` | — |
 
 **Bu dosya her oturumda okunur → KISA TUT (≤200 satır).** Mimari sözleşme
 [`ARCHITECTURE.md`](ARCHITECTURE.md), sapmalar aşağıda §Sapmalar.
@@ -47,19 +48,30 @@ Sonuçları:
 - Sözleşme `IAgentRuntimeService` (Application) · `PythonAgentRuntimeClient` (Infrastructure).
 - Python'u kapatmak derlemeyi ve `ServiceTests`'i **bozmaz** — sahte adaptörle çalışır.
 
-### 2. Dosya tabanlı depo
+### 2. Yapılandırma dosyada, durum veritabanında
 
-Veritabanı **yoktur**. İki ayrı sorumluluk, iki ayrı biçim:
+**2026-09-21 kararı:** çalışma zamanı durumu SQLite'a taşındı; "veritabanı yoktur" kuralı bu tarihte
+kalktı. Gerekçe ve alternatifi aşağıda §Sapmalar. Ayrım kalktı değil, **yer değiştirdi** — iki ayrı
+sorumluluk hâlâ iki ayrı yerde:
 
 | Ne | Nerede | Neden |
 |---|---|---|
-| Ajan md'leri, alt md'ler, iş akışları, projeler | `config/` — md + json | Git'te versiyonlanır, diff okunur, uygulama kapalıyken düzenlenir |
-| Çalışma, görev, faz, tur, mesaj | `runs/<id>/` — JSONL | Append-only, çökme kayıtları bozmaz, UI sonunu okuyup canlı akar |
+| Ajan md'leri, alt md'ler, iş akışları, sahne yerleşimi | `config/` — md + json | Git'te versiyonlanır, diff okunur, uygulama kapalıyken düzenlenir. Bunlar **kaynak koddur** |
+| Proje, çalışma, görev, faz, tur, mesaj, ayarlar | `data/aiteam.db` — SQLite | Sorgulanabilir (maliyet, kullanım, süzme), tek yazımda tutarlı, kimlik dosya adına dönüşmez |
 
-- Yazma **atomiktir**: geçici dosya + `File.Move(overwrite)`. Yarım dosya okunmaz.
-- JSONL'e yazan **tek yazıcı** vardır: Api içindeki iş kanalı (`JobChannel` + `JobWorker`, sıralı).
-  Uçlar hızlı doğrulamayı yapar, uzun işi kanala bırakır, 202 döner. Okuma `IRunReader`.
-- Bozuk son satır **yok sayılır**, geri kalanı kurtarılır.
+- Şema **database-first**: `scripts/sql/changes/*.sql` ileri yönlü, yayından sonra değişmez; uygulanan
+  betik `schema_change_log`'a checksum'ıyla yazılır. Uygulanmış bir betik değişirse **kalkış durur**.
+  EF migration **yoktur**; EF yalnız eşler. Sapma testi: her tablodan `Take(0)` (`ProbeDatabaseAsync`).
+- Domain'de EF **yoktur** (`verify.ps1` bunu denetler). Kalıcılık satırları `Infrastructure/Persistence`
+  altındadır; Application yalnız `IRunStore`/`IProjectStore`/`ISettingsStore` arayüzlerini görür.
+- Append-only **satır düzeyinde** korunur: tur/mesaj/faz satırları eklenir, güncellenmez; sıra AUTOINCREMENT
+  `id`'dir. Ayrı bir `seq` sayacı **yok** — istek yolu (iptal, cevap) ile iş kanalı aynı çalışmaya aynı anda
+  yazabilir, `MAX+1` orada yarışır. Silme yalnız çalışmanın tamamı için, FK cascade ile.
+- Yazan **tek yazıcı** vardır: Api içindeki iş kanalı (`JobChannel` + `JobWorker`, sıralı). Uçlar hızlı
+  doğrulamayı yapar, uzun işi kanala bırakır, 202 döner. Okuma `IRunReader`. SQLite WAL modundadır:
+  okuyucu yazıcıyı beklemez.
+- Bozuk JSON gövdesi olan satır **yok sayılır**, geri kalanı kurtarılır (JSONL'deki yarım satır kuralı).
+- `config/` yazımı **atomiktir**: geçici dosya + `File.Move(overwrite)`. Yarım dosya okunmaz.
 - `config/` değişince Api yeniden yükler; çalışma sürerken yüklenen tanım **donar**.
 
 ### 3. Ağ sınırı
@@ -73,7 +85,7 @@ Kimlik doğrulama tek şemalı ve basit olduğu için **hostlar yalnız `127.0.0
 - Her tur `runs/` içine **hedefiyle** kaydedilir (`local` | `anthropic` | `nvidia` | `openai`).
   Çalışma sonunda makineden çıkan çağrılar tek tek raporlanır.
 - Bütçe aşımı çalışmayı **durdurur**, uyarıyla geçmez. Maliyet **eşdeğerdir** (abonelikle ücret kesilmez);
-  asıl koruma **limit eşiği** (`config/settings.json`, varsayılan %99): kota dolunca yeni tur başlamaz,
+  asıl koruma **limit eşiği** (ayarlarda `limitGuards`, varsayılan %99): kota dolunca yeni tur başlamaz,
   çalışma pencere sıfırlanınca kendisi sürer (`docs/DOMAIN.md` → Bütçe ve limit).
 
 ### 5. Sözleşme
@@ -89,7 +101,7 @@ makinede, tek kullanıcıyla çalışan bir geliştirici aracıdır — aşağı
 
 | Sapma | Gerekçe |
 |---|---|
-| **Veritabanı yok** (EF, Npgsql, numaralı SQL, değişiklik defteri, drift testi) | Yapılandırma dosyada daha iyi (git, diff, elle düzenleme); geçmiş append-only JSONL'e uyuyor. Tek kullanıcıda sorgulanabilirlik karşılığını vermiyor |
+| **PostgreSQL yerine SQLite** (EF Core 10 + `Microsoft.Data.Sqlite`; numaralı SQL, değişiklik defteri ve drift testi **var**) | 2026-09-21: veritabanı geldi, motor küçüldü. Tek makinede çalışan bir geliştirici aracı için sunucu/Docker şartı koymak karşılığını vermiyor; ARCHITECTURE §7 zaten testlerde SQLite'ı sayıyor. Postgres'e geçiş = sağlayıcı + SQL betiklerinin çevirisi. Yapılandırma (`config/`) **kasten dışarıda bırakıldı**: prompt'lar ve iş akışları git diff'inde okunabilir kalmalı (opencode da aynı ayrımı yapıyor) |
 | **Çok kiracılılık yok** (`tenant_id`, named filter, write guard) | Tek çalışma alanı. Ekip aracına dönerse sütun + filtre + guard + taşıma gerekir |
 | **Gateway yok** | Tek makine, loopback |
 | **Cache yok** (FusionCache/Redis) | Sıcak veri küçük, tek okuyucu |
@@ -124,6 +136,9 @@ npm --prefix ui run dev
 ```bash
 python scripts/build-sprites.py
 ```
+
+Veritabanı kalkışta hazırlanır: `data/aiteam.db` yoksa oluşur, uygulanmamış şema betikleri koşar.
+Sıfırdan başlamak için `data/` klasörünü sil — yapılandırma (`config/`) etkilenmez.
 
 ## Belge haritası
 

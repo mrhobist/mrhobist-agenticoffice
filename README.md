@@ -3,9 +3,10 @@
 Yapay zekâ ekibi üretim ofisi: altı rol (analist · tasarımcı · developer · testçi · manager ·
 organizatör) bir brief'i alıp kod üretir; akış 2B piksel bir ofiste canlı izlenir.
 
-Üç süreç, sıfır veritabanı: **.NET 10 Api** (orkestrasyon), **Python FastAPI runtime**
-(yalnız LLM çağrısı), **Nuxt 4 + Canvas 2D UI** (piksel ofis). Durum dosyada tutulur —
-yapılandırma `config/` altında git'te, çalışma geçmişi `runs/` altında append-only JSONL.
+Üç süreç: **.NET 10 Api** (orkestrasyon), **Python FastAPI runtime** (yalnız LLM çağrısı),
+**Nuxt 4 + Canvas 2D UI** (piksel ofis). Yapılandırma `config/` altında git'te md + json olarak
+durur; çalışma zamanı durumu (proje, çalışma, tur, mesaj, faz, ayarlar) `data/aiteam.db`
+içinde SQLite'tadır — şema `scripts/sql/` altındaki ileri yönlü betiklerle kurulur.
 Tüm hostlar yalnız `127.0.0.1` dinler.
 
 - Giriş kapısı ve pazarlıksız kurallar: [`CLAUDE.md`](CLAUDE.md)

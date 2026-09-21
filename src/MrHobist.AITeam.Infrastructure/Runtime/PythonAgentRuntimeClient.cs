@@ -30,13 +30,14 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         IReadOnlyList<string>? Tools,
         string? Cwd,
         int? MaxTurns,
-        string? ProgressUrl);
+        string? ProgressUrl,
+        string SystemPromptMode);
 
     private sealed record MessageDto(string Role, string Content);
 
     private sealed record ToolUseDto(string Tool, string? Target);
 
-    private sealed record UsageDto(int InputTokens, int OutputTokens, int ReasoningChars);
+    private sealed record UsageDto(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0);
 
     private sealed record TurnResultDto(
         string Text,
@@ -177,7 +178,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             request.Tools is { Count: > 0 } ? request.Tools : null,
             request.Cwd,
             request.MaxTurns,
-            request.ProgressUrl);
+            request.ProgressUrl,
+            request.SystemPromptMode);
 
         HttpResponseMessage response;
         try
@@ -204,7 +206,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             ParseProvider(result.Provider),
             result.Model,
             Enum.Parse<Destination>(result.Destination, ignoreCase: true),
-            new RuntimeUsage(result.Usage?.InputTokens ?? 0, result.Usage?.OutputTokens ?? 0, result.Usage?.ReasoningChars ?? 0),
+            new RuntimeUsage(result.Usage?.InputTokens ?? 0, result.Usage?.OutputTokens ?? 0, result.Usage?.ReasoningChars ?? 0,
+                result.Usage?.CacheReadTokens ?? 0, result.Usage?.CacheWriteTokens ?? 0),
             result.CostUsd,
             result.DurationS,
             result.Attempts,

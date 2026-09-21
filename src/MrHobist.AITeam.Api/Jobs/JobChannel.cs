@@ -121,4 +121,13 @@ internal static partial class Log
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} yarim kalan calisma Interrupted isaretlendi.")]
     public static partial void Interrupted(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Count} sema betigi uygulandi: {Database}")]
+    public static partial void SchemaApplied(ILogger logger, int count, string database);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Eski dosya deposu bulundu ({Path}); calisma gecmisi artik veritabaninda, bu klasor okunmaz. Icerigini sakla ya da sil.")]
+    public static partial void LegacyRunsFound(ILogger logger, string path);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "AITeam:RunsRoot ayari artik kullanilmiyor; veritabani konumu AITeam:DataRoot ile verilir.")]
+    public static partial void LegacyRunsRootSetting(ILogger logger);
 }

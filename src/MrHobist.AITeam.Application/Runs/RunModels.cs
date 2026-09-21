@@ -15,7 +15,7 @@ public sealed record ReviseRequest(string Note);
 /// <summary><c>POST /runs/{id}/answer</c> govdesi: <see cref="Choice"/> sorunun seceneklerinden birinin kimligi; <see cref="Note"/> secenek isterse zorunlu.</summary>
 public sealed record AnswerRequest(string Choice, string? Note = null);
 
-/// <summary>Bir gorevin faz kayitlari (<c>tasks/{task}/phases.jsonl</c>).</summary>
+/// <summary>Bir gorevin faz kayitlari.</summary>
 public sealed record TaskPhases(string Id, IReadOnlyList<Phase> Phases);
 
 /// <summary>

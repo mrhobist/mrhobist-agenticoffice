@@ -9,6 +9,8 @@ public static class WorkflowMapping
     {
         ArgumentNullException.ThrowIfNull(wf);
         return new WorkflowDetail(wf.Key, wf.Title, wf.MaxReviewRounds, wf.HandoffRole,
-            wf.Stages.Select(s => new StageModel(s.Id, s.Title, s.Kind, s.Role, s.OfficeRole, s.Description)).ToList());
+            wf.Stages.Select(s => new StageModel(s.Id, s.Title, s.Kind, s.Role, s.OfficeRole, s.Description)).ToList(),
+            wf.AskRole,
+            wf.PlanApprover);
     }
 }

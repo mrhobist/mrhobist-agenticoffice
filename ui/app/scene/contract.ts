@@ -167,6 +167,18 @@ export const ROLE_HEX: Record<string, string> = {
 /** Sahne tanimi olmayan (sonradan eklenen) ajanlar icin sirayla verilen renkler. */
 export const EXTRA_ROLE_HEX: ReadonlyArray<string> = ['#7fa6c9', '#4f7fd9', '#8fbf6a', '#d98a4f', '#9a7fd9']
 
+/**
+ * Ajan rengi. Tabloda yoksa (kullanici sonradan ekledi) anahtardan TURETILIR: ayni ajan her acilista
+ * ayni rengi alir, liste sirasina bagli degildir. Renksiz nokta gostermek yerine bu.
+ */
+export function roleHex(key: string): string {
+  const known = ROLE_HEX[key]
+  if (known) return known
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
+  return EXTRA_ROLE_HEX[h % EXTRA_ROLE_HEX.length]!
+}
+
 export const STATE_LABEL: Record<AgentState, string> = {
   idle: 'boşta',
   working: 'çalışıyor',

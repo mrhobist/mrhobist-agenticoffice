@@ -32,24 +32,82 @@ public static class Prompts
     }
 
     /// <summary>Kullanicinin revize notu, analistin gecmisine kullanici mesaji olarak eklenir.</summary>
+    /// <summary>
+    /// Plani onaylayan ajanin istemi (akis <c>planApprover</c> verdiginde insanin yerine gecer).
+    /// Kod yazdirmaz, dosya okutmaz: karar PLANIN kendisi uzerine verilir.
+    /// </summary>
+    public static string PlanApproval(Run run, Spec spec, int round)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(spec);
+        var sb = new StringBuilder();
+        sb.Append("# Plan onayı (tur ").Append(round).AppendLine(")");
+        sb.AppendLine().AppendLine("Analist aşağıdaki planı üretti. Senin işin PLANI onaylamak ya da gerekçeyle reddetmek.");
+        sb.AppendLine("Kod yazma, dosya açma, komut çalıştırma: karar planın kendisi üzerine verilir.").AppendLine();
+        sb.AppendLine("## Kullanıcının isteği").AppendLine().AppendLine(run.Brief.Trim()).AppendLine();
+        sb.AppendLine("## Plan").AppendLine().Append("Özet: ").AppendLine(spec.Summary);
+        sb.Append("Mimari: ").AppendLine(spec.Architecture);
+        if (spec.Rules.Count > 0)
+        {
+            sb.AppendLine().AppendLine("Kurallar:");
+            foreach (var r in spec.Rules)
+            {
+                sb.Append("- ").AppendLine(r);
+            }
+        }
+
+        sb.AppendLine().AppendLine("Görevler:");
+        foreach (var t in spec.Tasks)
+        {
+            sb.Append("- [").Append(t.Id).Append("] ").Append(t.Title).Append(" — ").AppendLine(t.Description);
+            if (t.Acceptance.Count > 0)
+            {
+                sb.Append("  kabul: ").AppendLine(string.Join(" · ", t.Acceptance));
+            }
+        }
+
+        sb.AppendLine().AppendLine("## Karar");
+        sb.AppendLine("- Plan kullanıcının isteğini karşılıyorsa ve kabul ölçütleri ölçülebilirse: `accept`.");
+        sb.AppendLine("- Eksik, fazla kapsamlı ya da ölçülemez ise: `reject` ve `feedback` alanına analistin NE değiştireceğini somut yaz.");
+        sb.AppendLine("- `testsRun` false, `commandsRun` boş bırak: bu adımda komut çalıştırılmaz.");
+        return sb.ToString();
+    }
+
     public static string RevisionNote(string note)
         => $"# Revize notu\n{note}\n\nPlanı bu nota göre güncelle; değişmeyen kısımları koru. Aynı şemayla planın tamamını yeniden ver.";
 
     /// <summary>Organizatore devir notu istegi: gorev, biten/sonraki adim, plan baglami.</summary>
-    public static string HandoffRequest(Spec spec, Assignment a, string toName)
+    /// <summary>
+    /// Devir notu. **LLM CAGRILMAZ** (kullanici karari 2026-09-21): organizator akista ajanlar arasi
+    /// aktarimi yapar, tur harcamaz. Olculmustu: her devir 14-70 s ve yaklasik $0.02-0.07 ediyordu,
+    /// urettigi metin ise zaten gorev baglaminda (<see cref="TaskContext"/>) bulunan bilgilerin
+    /// yeniden yazimiydi.
+    ///
+    /// Not KISA tutulur: sonraki rolun istemine eklenir, uzun olursa bedeli her turda odenir.
+    /// Degeri bilgi katmak degil, AKTARIMI kayda gecirmek: kim kime, hangi adimda, kacinci turda.
+    /// </summary>
+    public static string HandoffNote(Assignment a, string toName, int round, IReadOnlyList<Message> notes)
     {
-        ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
+        ArgumentNullException.ThrowIfNull(notes);
         var sb = new StringBuilder();
-        sb.AppendLine("# Devir").AppendLine($"Görev: {a.Task.Id} — {a.Task.Title}").AppendLine(a.Task.Description).AppendLine();
-        sb.AppendLine("Kabul ölçütleri:").AppendJoin('\n', a.Task.Acceptance.Select(x => "- " + x)).AppendLine();
-        sb.AppendLine($"Dosyalar: {string.Join(", ", a.Task.Files)}");
-        sb.AppendLine($"Bağımlılıklar: {(a.Task.DependsOn.Count == 0 ? "yok" : string.Join(", ", a.Task.DependsOn))}").AppendLine();
-        sb.AppendLine($"Sonraki adım: {a.Stage.Title} — {toName} ({a.Agent}).").AppendLine();
-        sb.AppendLine("# Plan özeti").AppendLine(spec.Summary).AppendLine();
-        sb.AppendLine("# Kurallar").AppendJoin('\n', spec.Rules.Select(x => "- " + x)).AppendLine();
-        sb.AppendLine().AppendLine($"{toName} için kısa (en fazla 10 satır) bir devir notu yaz: ne bitti, ne bekleniyor, nereye dikkat.");
-        return sb.ToString();
+        sb.Append("Devir: ").Append(a.Task.Id).Append(" → ").Append(toName)
+          .Append(" · ").Append(a.Stage.Title).Append(" · tur ").Append(round).AppendLine();
+
+        if (round > 1)
+        {
+            // Red sonrasi atama: neyin duzeltilecegi notun ilk satirinda dursun.
+            var last = notes.LastOrDefault(m => m.Subject == "review-feedback");
+            var first = last?.Body.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+            sb.Append("Önceki tur reddedildi").Append(string.IsNullOrEmpty(first) ? "." : ": " + first).AppendLine();
+        }
+
+        if (a.Task.DependsOn.Count > 0)
+        {
+            sb.Append("Bağımlılıklar bitti: ").AppendJoin(", ", a.Task.DependsOn).AppendLine();
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     /// <summary>Gorev baglami: plan + gorev + kurallar + dizin. Uc yurutucu de bunu kullanir.</summary>

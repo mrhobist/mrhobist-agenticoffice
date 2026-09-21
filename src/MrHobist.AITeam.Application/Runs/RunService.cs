@@ -60,7 +60,8 @@ public sealed class RunService(
     AgentCaller caller,
     ISceneEventPublisher scene,
     IWorkspaceLocator workspace,
-    IRunScheduler scheduler) : IRunService
+    IRunScheduler scheduler,
+    IHistoryCompactor? compactor = null) : IRunService
 {
     private const string PlanRevisionSubject = "plan-revision";
 
@@ -172,6 +173,26 @@ public sealed class RunService(
                 return await StopForBudgetAsync(run, analyze.Role, ct).ConfigureAwait(false);
             }
 
+            // Plani kim onaylar: akis soyler (docs/DOMAIN.md -> Plan onayi).
+            if (wf.PlanApproverAgent is { } approver)
+            {
+                PublishAgent(run, analyze.Role, "done", $"{spec.Tasks.Count} görev · onaya gitti", "plan");
+                return await ApprovePlanByAgentAsync(run, wf, approver, spec, notes.Count + 1, ct).ConfigureAwait(false);
+            }
+
+            // `auto`: onay kapisi yok, plan uretilir uretilmez dagitima gecilir. Kullanici yalniz
+            // takilan ajanin sorusunda devreye girer (2026-09-21 karari).
+            if (!wf.PlanNeedsUser)
+            {
+                PublishAgent(run, analyze.Role, "done", $"{spec.Tasks.Count} görev · dağıtıma geçildi", "plan");
+                run = run with { Status = RunStatus.Running, Detail = "dağıtım", Step = RunStep.Dispatch };
+                await runs.UpdateAsync(run, ct).ConfigureAwait(false);
+                // Kuyruga KOY: analiz zaten bir isin icinde kosuyor, donusu kendiliginden yeni is uretmez.
+                // (Kullanici onayinda bunu ucun cagrisi yapiyordu: BeginApproveAsync -> ScheduleAndAccept.)
+                scheduler.Schedule(run.Id, RunStep.Dispatch);
+                return run;
+            }
+
             run = run with { Status = RunStatus.AwaitingApproval, Detail = "plan onay bekliyor", Step = RunStep.Approval };
             await runs.UpdateAsync(run, ct).ConfigureAwait(false);
             PublishAgent(run, analyze.Role, "done", $"{spec.Tasks.Count} görev · plan onay bekliyor", "plan");
@@ -189,6 +210,55 @@ public sealed class RunService(
         {
             return await FailAsync(run, analyze.Role, analyze.Id, null, "analiz", ex, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Plani ajan onaylar (akis <c>planApprover</c>). Kabul ederse dagitima gecilir; red ederse geri bildirim
+    /// revize notu olarak yazilir ve analiz yeniden kosar -- kullanicinin "Revize et" akisinin birebir ayni yolu.
+    /// Tur limiti: <c>maxReviewRounds</c>. Asilirsa karar KULLANICIYA birakilir (sonsuz donguye girilmez).
+    /// </summary>
+    private async Task<Run> ApprovePlanByAgentAsync(Run run, Workflow wf, string approver, Spec spec, int round, CancellationToken ct)
+    {
+        var analyze = wf.Stages[0];
+        if (round > wf.MaxReviewRounds)
+        {
+            run = run with { Status = RunStatus.AwaitingApproval, Detail = $"plan onay bekliyor ({approver} {wf.MaxReviewRounds} turda onaylamadı)", Step = RunStep.Approval };
+            await runs.UpdateAsync(run, ct).ConfigureAwait(false);
+            return run;
+        }
+
+        PublishAgent(run, approver, "working", "plan inceleniyor", "plan");
+        var reply = await caller.CallAsync(run, approver, [new RuntimeMessage("user", Prompts.PlanApproval(run, spec, round))], StepSchemas.Review, analyze.Id, null, round, ct).ConfigureAwait(false);
+        if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
+        {
+            return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
+        }
+
+        run = await AddCostAsync(run, reply.CostUsd, ct).ConfigureAwait(false);
+        if (OverBudget(run))
+        {
+            return await StopForBudgetAsync(run, approver, ct).ConfigureAwait(false);
+        }
+
+        var report = StepSchemas.ParseReview(reply.StructuredJson, reply.Text);
+        if (report.Accepted)
+        {
+            await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, approver, analyze.Role, $"Plan onaylandı. {report.Feedback}".Trim(), Stage: analyze.Id, Subject: "plan-approved"), ct).ConfigureAwait(false);
+            PublishAgent(run, approver, "done", "plan onaylandı", "plan");
+            run = run with { Status = RunStatus.Running, Detail = "dağıtım", Step = RunStep.Dispatch };
+            await runs.UpdateAsync(run, ct).ConfigureAwait(false);
+            scheduler.Schedule(run.Id, RunStep.Dispatch);
+            return run;
+        }
+
+        var feedback = report.Feedback + (report.Findings.Count == 0 ? "" : "\n\nBulgular:\n" + string.Join("\n", report.Findings.Select(f => "- " + f)));
+        await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, approver, analyze.Role, feedback.Trim(), Stage: analyze.Id, Subject: PlanRevisionSubject), ct).ConfigureAwait(false);
+        Publish(SceneEventTypes.Meet, new { from = approver, to = analyze.Role, kind = "reject", run = run.Id });
+        PublishAgent(run, approver, "done", "plan reddedildi", "plan");
+        run = run with { Status = RunStatus.Running, Detail = "plan revize", Step = RunStep.Analyze };
+        await runs.UpdateAsync(run, ct).ConfigureAwait(false);
+        scheduler.Schedule(run.Id, RunStep.Analyze);
+        return run;
     }
 
     /// <summary>Projenin hedef dizini (mutlak); Infrastructure yoksa olusturur. Ajan araclari burada acilir.</summary>
@@ -211,8 +281,13 @@ public sealed class RunService(
             list.Add(new RuntimeMessage(item.Role, item.Text));
         }
 
-        // Ardisik ayni roller (ornegin basarisiz bir tur) birlestirilir: saglayicilar user/assistant sirasi ister.
-        var merged = new List<RuntimeMessage>();
+        return Alternate(list);
+    }
+
+    /// <summary>Ardisik ayni roller birlestirilir: saglayicilar user/assistant sirasi ister.</summary>
+    private static List<RuntimeMessage> Alternate(List<RuntimeMessage> list)
+    {
+        var merged = new List<RuntimeMessage>(list.Count);
         foreach (var m in list)
         {
             if (merged.Count > 0 && merged[^1].Role == m.Role)
@@ -226,6 +301,49 @@ public sealed class RunService(
         }
 
         return merged;
+    }
+
+    /// <summary>
+    /// Ajanin BU GOREVDEKI kendi gecmisi + yeni istem. Ayni ajan ardisik adimlarda kostugunda
+    /// (tek kisilik akista gelistirme → test, ya da red sonrasi ikinci tur) baglamini SIFIRDAN
+    /// kurmasi gerekmez.
+    ///
+    /// Olculdu 2026-09-21 (ayni brief, ayni model/efor): tek kisilik akis 55 ic tur ve $1,38 ederken
+    /// Claude Code ayni isi tek surekli konusmada 16 ic tur ve $0,43'e yapiyordu. Fark onbellek DEGILDI
+    /// (%92,9 ≈ %93,4); fark, her adimin tek mesajlik gecmisle baslamasiydi: test adimi, gelistirme
+    /// adiminin AZ ONCE yazdigi dosyalari sifirdan okuyup dogruluyordu (19 ic tur).
+    ///
+    /// Tasinan sey ajanin kendi CIKTISIDIR, onceki istemi degil: istem zaten gorev baglamini
+    /// (plan, kurallar, notlar) tasiyor, tekrari her turda bedel oduretir. Kapsam GOREV basina:
+    /// baska gorevin gecmisi tasinmaz.
+    /// </summary>
+    private async Task<IReadOnlyList<RuntimeMessage>> AgentTaskHistoryAsync(Run run, Assignment a, string prompt, CancellationToken ct)
+    {
+        var prior = (await runs.ReadTurnsAsync(run.Id, a.Agent, ct).ConfigureAwait(false))
+            .Where(t => t.Task == a.Task.Id && !string.IsNullOrWhiteSpace(t.Output))
+            .ToList();
+
+        if (prior.Count == 0)
+        {
+            return [new RuntimeMessage("user", prompt)];
+        }
+
+        var carried = new List<RuntimeMessage>(prior.Count * 2);
+        foreach (var t in prior)
+        {
+            var label = $"[{a.Task.Id} · {t.Stage ?? "önceki adım"}{(t.Round is { } r ? $" · tur {r}" : "")}] Bu adımda verdiğin çıktı:";
+            carried.Add(new RuntimeMessage("user", label));
+            carried.Add(new RuntimeMessage("assistant", t.Output!));
+        }
+
+        // Tasinan gecmis red turlariyla buyur: butceyi asarsa en eski turlar duser, uzun ciktilar kirpilir.
+        // Yeni istem sikistirmaya GIRMEZ (son mesaj daima tam). Politika: CompactionBudget.TaskHistory.
+        var kept = await (compactor ?? new NoCompaction()).CompactAsync(carried, CompactionBudget.TaskHistory, ct).ConfigureAwait(false);
+
+        var list = new List<RuntimeMessage>(kept.Count + 1);
+        list.AddRange(kept);
+        list.Add(new RuntimeMessage("user", prompt));
+        return Alternate(list);
     }
 
     // ------------------------------------------------------------------ onay / revize
@@ -457,11 +575,8 @@ public sealed class RunService(
             // her gecis bir organizator turu (olculdu: 14–70 s, ≈$0.02–0.05) ediyordu.
             if (wf.HandoffRole is { } organizer && team is not null && a.Stage.Kind == StageKind.Implement)
             {
-                run = await HandoffAsync(run, spec, a, organizer, team, ct).ConfigureAwait(false);
-                if (run.Status != RunStatus.Running)
-                {
-                    return run;
-                }
+                var handoffNotes = (await runs.ReadMessagesAsync(run.Id, ct).ConfigureAwait(false)).Where(m => m.Task == a.Task.Id).ToList();
+                run = await HandoffAsync(run, a, organizer, team, round, handoffNotes, ct).ConfigureAwait(false);
             }
 
             await runs.AppendPhaseAsync(run.Id, new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, PhaseStatus.Started), ct).ConfigureAwait(false);
@@ -504,7 +619,8 @@ public sealed class RunService(
             {
                 case StageKind.Implement:
                 {
-                    var reply = await caller.CallAsync(run, a.Agent, [new RuntimeMessage("user", Prompts.ImplementTask(spec, a, root, notes, round))], StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round), ct).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -523,7 +639,7 @@ public sealed class RunService(
                         var q = string.IsNullOrWhiteSpace(report.Question) ? "Görev bitirilemedi; ne yapılmalı?" : report.Question.Trim();
 
                         // can_ask: soru once ekipteki hedefe (manager) gider; o cevaplarsa kullanici hic gormez (docs/DOMAIN.md → Takilma, ajan → ajan sorusu).
-                        var asked = await AskColleagueAsync(run, spec, a, q, body, notes, root, round, ct).ConfigureAwait(false);
+                        var asked = await AskColleagueAsync(run, wf, spec, a, q, body, notes, root, round, ct).ConfigureAwait(false);
                         run = asked.Run;
                         if (run.Status != RunStatus.Running)
                         {
@@ -548,7 +664,8 @@ public sealed class RunService(
 
                 case StageKind.Review:
                 {
-                    var reply = await caller.CallAsync(run, a.Agent, [new RuntimeMessage("user", Prompts.ReviewTask(spec, a, root, notes, a.Stage, round, wf.MaxReviewRounds))], StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, round, wf.MaxReviewRounds), ct).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -556,7 +673,7 @@ public sealed class RunService(
 
                     run = await AddCostAsync(run, reply.CostUsd, ct).ConfigureAwait(false);
                     var report = StepSchemas.ParseReview(reply.StructuredJson, reply.Text);
-                    var developer = wf.ImplementBefore(a.Stage).Role;
+                    var developer = wf.ProducerBefore(a.Stage).Role;
                     if (report.Accepted)
                     {
                         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, a.Agent, developer, $"Kabul ({a.Stage.Title}). {(report.TestsRun ? "Testler çalıştırıldı." : "Testler çalıştırılmadı.")} {report.Feedback}".Trim(), a.Task.Id, a.Stage.Id, Subject: "review-accept"), ct).ConfigureAwait(false);
@@ -583,7 +700,8 @@ public sealed class RunService(
 
                 case StageKind.Design:
                 {
-                    var reply = await caller.CallAsync(run, a.Agent, [new RuntimeMessage("user", Prompts.DesignTask(spec, a, root, notes))], StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.DesignTask(spec, a, root, notes), ct).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history, StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -678,14 +796,25 @@ public sealed class RunService(
 
     /// <summary>
     /// Takilan ajanin sorusu <c>can_ask</c> hedefine (ajan md'si; bugun manager): 1 LLM turu, yalniz okuma araci. Kayit
-    /// messages.jsonl'de <c>ask</c> (soran → hedef) + <c>answer</c> (hedef → soran, ayni ref); sonraki turda notlar arasinda gider.
+    /// Mesaj kaydinda <c>ask</c> (soran → hedef) + <c>answer</c> (hedef → soran, ayni ref); sonraki turda notlar arasinda gider.
     /// Kural (varsayimla): hedef ayni gorevde BIR kez sorulur — ikinci takilma kullaniciya gider. Yukseltme (escalate) ya da
     /// hedefin hatasi kullaniciya duser; limit dogrudan yukari cikar (adim limit fazi olur).
     /// </summary>
-    private async Task<ColleagueAsk> AskColleagueAsync(Run run, Spec spec, Assignment a, string question, string report, IReadOnlyList<Message> notes, string root, int round, CancellationToken ct)
+    private async Task<ColleagueAsk> AskColleagueAsync(Run run, Workflow wf, Spec spec, Assignment a, string question, string report, IReadOnlyList<Message> notes, string root, int round, CancellationToken ct)
     {
         var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
-        var target = team.Agents.TryGetValue(a.Agent, out var asker) ? asker.CanAsk : null;
+        team.Agents.TryGetValue(a.Agent, out var asker);
+
+        // Soruyu KIM cevaplar: akisin karari (acik karar #4). null = ajanin can_ask'i (eski davranis),
+        // "user" = dogrudan kullaniciya, ajan anahtari = o ajan. Boylece manager'i olmayan bir akis
+        // manager'i (ve maliyetini) ise sokmaz.
+        var target = wf.AskRole switch
+        {
+            null => asker?.CanAsk,
+            Workflow.UserRole => null,
+            var role => role,
+        };
+
         if (target is null || asker is null || !team.Agents.TryGetValue(target, out var colleague))
         {
             return new ColleagueAsk(run, false, null, null);
@@ -749,7 +878,7 @@ public sealed class RunService(
         }
     }
 
-    /// <summary>Akis takildi: calisma <c>AwaitingInput</c>, soru run.json'da, kayit messages.jsonl'de (ask, ref). Bildirim zili bunu gosterir.</summary>
+    /// <summary>Akis takildi: calisma <c>AwaitingInput</c>, soru calisma satirinda, kayit mesajlarda (ask, ref). Bildirim zili bunu gosterir.</summary>
     private async Task<Run> AskUserAsync(Run run, string agent, string text, IReadOnlyList<QuestionOption> options, Assignment a, string? context, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
@@ -847,43 +976,21 @@ public sealed class RunService(
         return busy;
     }
 
-    /// <summary>Organizator devir notu: 1 LLM turu, ucuz model; not sonraki rolun girdisi olur (messages.jsonl).</summary>
-    private async Task<Run> HandoffAsync(Run run, Spec spec, Assignment a, string organizer, Team team, CancellationToken ct)
+    /// <summary>
+    /// Organizator devri: ajanlar arasi AKTARIM, LLM turu DEGIL (kullanici karari 2026-09-21).
+    /// Not kodda uretilir (<see cref="Prompts.HandoffNote"/>), maliyet cikmaz, butce kontrolu gerekmez.
+    /// Kayit ve sahne olayi aynen kalir: devrin kim tarafindan kime yapildigi gecmiste gorunur.
+    /// </summary>
+    private async Task<Run> HandoffAsync(Run run, Assignment a, string organizer, Team team, int round, IReadOnlyList<Message> notes, CancellationToken ct)
     {
         var toName = team.Agents.TryGetValue(a.Agent, out var toAgent) ? toAgent.Name : a.Agent;
         PublishAgent(run, organizer, "working", $"{a.Task.Id} → {toName}", a.Task.Id);
 
-        try
-        {
-            var reply = await caller.CallAsync(run, organizer, [new RuntimeMessage("user", Prompts.HandoffRequest(spec, a, toName))], null, a.Stage.Id, a.Task.Id, null, ct).ConfigureAwait(false);
-            if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
-            {
-                return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
-            }
-
-            await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Handoff, organizer, a.Agent, reply.Text.Trim(), a.Task.Id, a.Stage.Id, Subject: "handoff"), ct).ConfigureAwait(false);
-            run = run with { TotalCostUsd = run.TotalCostUsd + reply.CostUsd };
-            if (OverBudget(run))
-            {
-                return await StopForBudgetAsync(run, organizer, ct).ConfigureAwait(false);
-            }
-
-            await runs.UpdateAsync(run, ct).ConfigureAwait(false);
-            Publish(SceneEventTypes.Meet, new { from = organizer, to = a.Agent, kind = "handoff", run = run.Id });
-            return run;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (LimitReachedException ex)
-        {
-            return await PauseForLimitAsync(run, organizer, $"devir ({a.Task.Id})", ex, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            return await FailAsync(run, organizer, a.Stage.Id, a.Task.Id, $"devir ({a.Task.Id})", ex, ct).ConfigureAwait(false);
-        }
+        var note = Prompts.HandoffNote(a, toName, round, notes);
+        await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Handoff, organizer, a.Agent, note, a.Task.Id, a.Stage.Id, Subject: "handoff"), ct).ConfigureAwait(false);
+        Publish(SceneEventTypes.Meet, new { from = organizer, to = a.Agent, kind = "handoff", run = run.Id });
+        PublishAgent(run, organizer, "idle", null, null);
+        return run;
     }
 
     // ------------------------------------------------------------------ butce / hata / kurtarma
@@ -904,7 +1011,7 @@ public sealed class RunService(
         return run;
     }
 
-    /// <summary>Hata gunluge de yazilir (messages.jsonl, subject: error): "takildi" tek basina bilgi degildir (LESSONS).</summary>
+    /// <summary>Hata gunluge de yazilir (mesaj kaydi, subject: error): "takildi" tek basina bilgi degildir (LESSONS).</summary>
     private async Task<Run> FailAsync(Run run, string agent, string stage, string? task, string what, Exception ex, CancellationToken ct)
     {
         if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))

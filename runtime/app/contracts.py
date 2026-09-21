@@ -43,6 +43,9 @@ class TurnRequest(BaseModel):
     reasoning_effort: Literal["low", "medium", "high", "max"] | None = Field(
         default="low", alias="reasoningEffort"
     )
+    #: Sistem promptu SDK'ya nasil verilir: `replace` = duz string (Claude Code'un kilavuzu silinir),
+    #: `claude_code` = preset korunur, bizimki sonuna eklenir. KARAR .NET'in (adim turune gore); burasi yalniz esler.
+    system_prompt_mode: Literal["replace", "claude_code"] = Field(default="replace", alias="systemPromptMode")
     #: Ajanin kullanabilecegi araclar (Read, Write, Edit, Bash, Glob, Grep...). Bos/None = arac yok.
     #: Hangi ajanin hangi araci alacagi .NET'in karari; burasi yalniz iletir.
     tools: list[str] | None = None
@@ -65,9 +68,14 @@ class ToolUse(BaseModel):
 
 
 class Usage(BaseModel):
+    #: Toplam girdi: dogrudan + onbellege yazilan + onbellekten okunan.
     input_tokens: int = Field(default=0, alias="inputTokens")
     output_tokens: int = Field(default=0, alias="outputTokens")
     reasoning_chars: int = Field(default=0, alias="reasoningChars")
+    #: Kirilim: `input_tokens` icindeki onbellekten OKUNAN pay (ucuz) ve onbellege YAZILAN pay (pahali).
+    #: Ikisi de 0 ise ya saglayici onbellek kullanmiyor ya da bildirmiyordur -- "olculemedi" demektir.
+    cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
+    cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
 
     model_config = {"populate_by_name": True}
 

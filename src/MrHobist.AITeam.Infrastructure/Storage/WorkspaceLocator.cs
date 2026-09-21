@@ -1,71 +1,7 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using MrHobist.AITeam.Application.Abstractions;
+﻿using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Domain;
-using MrHobist.AITeam.Domain.Agents;
-using MrHobist.AITeam.Domain.Settings;
 
 namespace MrHobist.AITeam.Infrastructure.Storage;
-
-/// <summary><c>config/settings.json</c>: <c>{ "limitGuards": { "anthropic": 99 } }</c>. Dosya yoksa varsayilan; yazma atomik.</summary>
-public sealed class JsonSettingsStore(StoragePaths paths) : ISettingsStore
-{
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
-
-    private sealed record Dto(Dictionary<string, int>? LimitGuards);
-
-    private string File => paths.ConfigFile("settings.json");
-
-    // Her LLM cagrisi oncesi okunur: dosya damgasi degismediyse onbellekten (stat ucuz, JSON ayristirma degil).
-    private (DateTime Stamp, AppSettings Value)? _cache;
-
-    public async Task<AppSettings> LoadAsync(CancellationToken ct)
-    {
-        if (!System.IO.File.Exists(File))
-        {
-            return AppSettings.Default;
-        }
-
-        var stamp = System.IO.File.GetLastWriteTimeUtc(File);
-        if (_cache is { } c && c.Stamp == stamp)
-        {
-            return c.Value;
-        }
-
-        Dto? dto;
-        try
-        {
-            await using var stream = System.IO.File.OpenRead(File);
-            dto = await JsonSerializer.DeserializeAsync<Dto>(stream, Json, ct).ConfigureAwait(false);
-        }
-        catch (JsonException ex)
-        {
-            throw new DomainException(ErrorCodes.ConfigFileInvalid, $"settings.json gecersiz: {ex.Message}");
-        }
-
-        var guards = new Dictionary<Provider, int>(AppSettings.Default.LimitGuards);
-        foreach (var (key, value) in dto?.LimitGuards ?? [])
-        {
-            if (Providers.Parse(key) is { } p)
-            {
-                guards[p] = value;
-            }
-        }
-
-        var settings = new AppSettings(guards);
-        settings.Validate();
-        _cache = (stamp, settings);
-        return settings;
-    }
-
-    public async Task SaveAsync(AppSettings settings, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        settings.Validate();
-        var dto = new Dto(settings.LimitGuards.ToDictionary(kv => Providers.Wire(kv.Key), kv => kv.Value));
-        await AtomicFile.WriteAsync(File, JsonSerializer.Serialize(dto, Json), ct).ConfigureAwait(false);
-    }
-}
 
 /// <summary>Depo koku = <c>config/</c>'in ustu; proje hedef dizini ona gore cozulur. Yol depo disina cikamaz (Project.Validate).</summary>
 public sealed class WorkspaceLocator(StoragePaths paths) : IWorkspaceLocator
@@ -73,7 +9,7 @@ public sealed class WorkspaceLocator(StoragePaths paths) : IWorkspaceLocator
     /// <summary>Klasor secicide gosterilmeyenler: bagimlilik ve derleme ciktilari, calisma gecmisi (noktayla baslayanlar da gizli).</summary>
     private static readonly HashSet<string> Hidden = new(StringComparer.OrdinalIgnoreCase)
     {
-        "node_modules", "bin", "obj", "__pycache__", "dist", "TestResults", "runs",
+        "node_modules", "bin", "obj", "__pycache__", "dist", "TestResults", "data",
     };
 
     public string RootOf(Domain.Projects.Project project)
@@ -81,7 +17,48 @@ public sealed class WorkspaceLocator(StoragePaths paths) : IWorkspaceLocator
         ArgumentNullException.ThrowIfNull(project);
         var full = Resolve(project.TargetDir, project.Key);
         Directory.CreateDirectory(full);
+        EnsureMsBuildBarrier(full);
         return full;
+    }
+
+    /// <summary>
+    /// MSBuild yalitimi. Hedef dizin depo ICINDE oldugu icin (<see cref="Domain.Projects.Project.Validate"/>),
+    /// ajanin urettigi her .NET projesi bu deponun <c>Directory.Build.props</c> ve <c>Directory.Packages.props</c>
+    /// dosyalarini miras alir: <c>TreatWarningsAsErrors</c>, merkezi paket surumleri, hedef framework...
+    /// Bunlar uretilen isin kararlari DEGILDIR ve tasinabilirligini bozar.
+    ///
+    /// MSBuild yukari dogru ararken BULDUGU ILK dosyada durur; bu yuzden proje kokune bos birer dosya koymak
+    /// zinciri temiz keser. 2026-09-21 olcumu: bu olmadan ajan mirasi deneyerek kesfetti ve 6 LLM turu harcadi
+    /// (gecici bir iskele proje kurup <c>dotnet msbuild -getProperty:</c> ile sorguladi).
+    ///
+    /// Var olan dosyanin ustune YAZILMAZ: kullanici ya da ajan bilerek koyduysa onunki gecerlidir.
+    /// </summary>
+    private static void EnsureMsBuildBarrier(string projectRoot)
+    {
+        Write("Directory.Build.props", """
+            <Project>
+              <!-- Bu proje bagimsizdir: ust klasorlerdeki derleme ayarlari miras ALINMAZ.
+                   MSBuild yukari dogru ararken bu dosyada durur. Kendi ayarlarini buraya ekleyebilirsin. -->
+            </Project>
+            """);
+
+        Write("Directory.Packages.props", """
+            <Project>
+              <!-- Merkezi paket surumu KAPALI: paket surumleri kendi csproj'larinda durur. -->
+              <PropertyGroup>
+                <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+              </PropertyGroup>
+            </Project>
+            """);
+
+        void Write(string name, string content)
+        {
+            var path = Path.Combine(projectRoot, name);
+            if (!File.Exists(path))
+            {
+                File.WriteAllText(path, content + Environment.NewLine);
+            }
+        }
     }
 
     public IReadOnlyList<WorkspaceDirectory> ListDirectories(string? relativePath)

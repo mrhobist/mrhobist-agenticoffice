@@ -7,11 +7,26 @@ namespace MrHobist.AITeam.Application.Workflows;
 public sealed record StageModel(string Id, string Title, StageKind Kind, string Role, string OfficeRole, string Description);
 
 /// <summary>PUT govdesi; anahtar yoldan gelir. Tum alanlar tasinir (kismi guncelleme yok).</summary>
-public sealed record WorkflowModel(string Title, int MaxReviewRounds, string? HandoffRole, IReadOnlyList<StageModel> Stages);
+public sealed record WorkflowModel(
+    string Title,
+    int MaxReviewRounds,
+    string? HandoffRole,
+    IReadOnlyList<StageModel> Stages,
+    /// <summary>Takilma sorusunu kim cevaplar: bos/null = ajanin can_ask'i · <c>user</c> = kullanici · ajan anahtari.</summary>
+    string? AskRole = null,
+    /// <summary>Plani kim onaylar: bos/null ya da <c>user</c> = kullanici · ajan anahtari.</summary>
+    string? PlanApprover = null);
 
 public sealed record WorkflowListItem(string Key, string Title, bool IsDefault, int StageCount, IReadOnlyList<string> Roles);
 
-public sealed record WorkflowDetail(string Key, string Title, int MaxReviewRounds, string? HandoffRole, IReadOnlyList<StageModel> Stages);
+public sealed record WorkflowDetail(
+    string Key,
+    string Title,
+    int MaxReviewRounds,
+    string? HandoffRole,
+    IReadOnlyList<StageModel> Stages,
+    string? AskRole = null,
+    string? PlanApprover = null);
 
 public interface IWorkflowService
 {
@@ -52,7 +67,9 @@ public sealed class WorkflowService(IWorkflowStore store, IAgentStore agents) : 
             model.Title.Trim(),
             model.MaxReviewRounds,
             string.IsNullOrWhiteSpace(model.HandoffRole) ? null : model.HandoffRole.Trim(),
-            model.Stages.Select(s => new Stage(s.Id, s.Title, s.Kind, s.Role, s.OfficeRole, s.Description ?? "")).ToList());
+            model.Stages.Select(s => new Stage(s.Id, s.Title, s.Kind, s.Role, s.OfficeRole, s.Description ?? "")).ToList(),
+            Blank(model.AskRole),
+            Blank(model.PlanApprover));
         workflow.Validate();
         workflow.ValidateAgainst(await agents.LoadTeamAsync(ct).ConfigureAwait(false));
         await store.SaveAsync(workflow, ct).ConfigureAwait(false);
@@ -74,4 +91,7 @@ public sealed class WorkflowService(IWorkflowStore store, IAgentStore agents) : 
     private static string RequireKey(string key) => Identifiers.Require(key, ErrorCodes.WorkflowInvalidStage, "akis");
 
     private static WorkflowDetail ToDetail(Workflow wf) => WorkflowMapping.ToDetail(wf);
+
+    /// <summary>Bos metin = "verilmedi": UI bos secimi bos string gonderir, depoda null durmalidir.</summary>
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

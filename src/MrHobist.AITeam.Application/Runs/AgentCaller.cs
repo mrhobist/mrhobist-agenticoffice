@@ -19,7 +19,7 @@ public sealed record AgentTarget(Provider Provider, string Model, string Effort,
     }
 }
 
-/// <summary>Tek bir LLM turunun sonucu; tur kaydi <c>conversations/{agent}.jsonl</c>'e zaten yazilmistir.</summary>
+/// <summary>Tek bir LLM turunun sonucu; tur kaydi deposuna zaten yazilmistir.</summary>
 public sealed record AgentReply(string Text, string? StructuredJson, decimal CostUsd, IReadOnlyList<ToolUse> ToolUses);
 
 /// <summary>
@@ -31,6 +31,15 @@ public sealed record ToolAccess(IReadOnlyList<string> Tools, string Cwd, int Max
     public static readonly IReadOnlyList<string> ReadOnly = ["Read", "Glob", "Grep"];
 
     public static readonly IReadOnlyList<string> Full = ["Read", "Glob", "Grep", "Write", "Edit", "Bash"];
+
+    /// <summary>
+    /// Yurutme adimi mi: dosya yazar / komut kosar. Claude Code'un kendi kilavuzu bu adimlarda korunur
+    /// (<see cref="SystemPromptModes.ClaudeCode"/>); plan ureten adimlarda korunmaz, cunku orada buyuk semayi
+    /// doldurmayi bozdugu olculdu (bkz. <see cref="SystemPromptModes"/>).
+    /// </summary>
+    public bool IsExecution => Tools.Contains("Write", StringComparer.Ordinal);
+
+    public string SystemPromptMode => IsExecution ? SystemPromptModes.ClaudeCode : SystemPromptModes.Replace;
 
     /// <summary>analyze/design: yalniz okuma (var olan kodu gorsun) · implement/review: tam · handoff: yok.</summary>
     public static ToolAccess? ForKind(Domain.Workflows.StageKind kind, string cwd) => kind switch
@@ -54,7 +63,7 @@ public sealed record RetryPolicy(int Attempts, TimeSpan BaseDelay)
 
 /// <summary>
 /// Bir ajan adina LLM cagrisi: ekipten ajani bulur, prompt'u kurar, hassasiyet politikasini cagridan ONCE denetler,
-/// runtime'i cagirir, turu <c>conversations/{agent}.jsonl</c>'e yazar. Is kurali burada yok; yalniz "nasil cagrilir".
+/// runtime'i cagirir, turu calismanin tur kaydina yazar. Is kurali burada yok; yalniz "nasil cagrilir".
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
@@ -100,7 +109,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         var progressToken = tools is not null && progress?.BaseUrl is { } baseUrl ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage)) : null;
         var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
         var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
-            Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl);
+            Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
+            SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace);
 
         var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -143,7 +153,9 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 r.Usage.InputTokens,
                 r.Usage.OutputTokens,
                 r.ToolUses is { Count: > 0 } ? r.ToolUses.Select(t => new ToolUse(t.Tool, t.Target)).ToList() : null,
-                r.Turns);
+                r.Turns,
+                r.Usage.CacheReadTokens,
+                r.Usage.CacheWriteTokens);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
             return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m, turn.ToolUses ?? []);

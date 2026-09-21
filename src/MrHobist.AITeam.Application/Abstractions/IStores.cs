@@ -29,7 +29,7 @@ public interface IAgentStore
     Knowledge ParseKnowledgeMarkdown(string key, string markdown);
 }
 
-/// <summary><c>config/projects/{key}.json</c>; is yalniz bir projenin icinde baslar (docs/DOMAIN.md → Projeler).</summary>
+/// <summary>Projeler; is yalniz bir projenin icinde baslar (docs/DOMAIN.md → Projeler).</summary>
 public interface IProjectStore
 {
     Task<IReadOnlyList<Project>> ListAsync(CancellationToken ct);
@@ -57,8 +57,9 @@ public interface IWorkflowStore
 }
 
 /// <summary>
-/// <c>runs/{id}/</c> append-only JSONL deposu. Yazan tek yazici Api icindeki is kanalidir; uclar IRunReader ile okur.
-/// Bozuk son satir yok sayilir, geri kalani kurtarilir.
+/// Calisma gecmisi: <c>run</c> ve alt tablolari (tur, mesaj, faz). Append-only satir duzeyinde -- satirlar eklenir,
+/// guncellenmez; sira ekleme sirasidir (monoton kimlik), ayri bir sayac hesaplanmaz. Yazan tek yazici Api icindeki is kanalidir; uclar IRunReader ile okur.
+/// Bozuk govde (JSON) olan satir yok sayilir, geri kalani kurtarilir.
 /// </summary>
 public interface IRunStore
 {
@@ -68,7 +69,7 @@ public interface IRunStore
 
     Task WriteSpecAsync(string runId, Spec spec, CancellationToken ct);
 
-    /// <summary>Calisma baslarken secilen akisin kopyasi: <c>runs/{id}/workflow.json</c>. Config sonradan degisse de calisma bunu okur.</summary>
+    /// <summary>Calisma baslarken secilen akisin kopyasi. Config sonradan degisse de calisma bunu okur.</summary>
     Task WriteWorkflowAsync(string runId, Workflow workflow, CancellationToken ct);
 
     Task<Workflow?> ReadWorkflowAsync(string runId, CancellationToken ct);
@@ -88,7 +89,13 @@ public interface IRunStore
 
     Task<IReadOnlyList<Turn>> ReadTurnsAsync(string runId, string agent, CancellationToken ct);
 
-    /// <summary><c>conversations/*.jsonl</c> dosya adlari: bu calismada LLM cagirmis ajanlar (silinmis ajanlar dahil).</summary>
+    /// <summary>
+    /// Son <paramref name="runLimit"/> calismanin turlarinin YALNIZ toplama alanlari (saglayici, model, token, maliyet).
+    /// Kullanim ozeti icin: prompt/cikti metinleri okunmaz, calisma basina ayri sorgu atilmaz.
+    /// </summary>
+    Task<IReadOnlyList<TurnUsage>> ReadUsageAsync(int runLimit, CancellationToken ct);
+
+    /// <summary>Bu calismada LLM cagirmis ajanlar (silinmis ajanlar dahil).</summary>
     Task<IReadOnlyList<string>> ListConversationsAsync(string runId, CancellationToken ct);
 
     Task<IReadOnlyList<Message>> ReadMessagesAsync(string runId, CancellationToken ct);
@@ -98,13 +105,17 @@ public interface IRunStore
     Task<IReadOnlyList<string>> ListTasksAsync(string runId, CancellationToken ct);
 
     /// <summary>
-    /// Calisma klasorunu butunuyle siler (<c>runs/{id}/</c>). Append-only kural satir duzeyindedir; klasor silme yalniz
-    /// proje silinirken, bitmis calismalar icin cagrilir (docs/DOMAIN.md → Projeler → Silme). Yoksa sessiz.
+    /// Calismayi butunuyle siler; alt satirlar (tur, mesaj, faz) yabanci anahtar cascade'i ile duser. Append-only kural
+    /// satir duzeyindedir; calisma silme yalniz proje silinirken, bitmis calismalar icin cagrilir
+    /// (docs/DOMAIN.md → Projeler → Silme). Yoksa sessiz.
     /// </summary>
     Task DeleteAsync(string runId, CancellationToken ct);
 }
 
-/// <summary><c>config/settings.json</c>: calisma alani ayarlari (limit korumasi). Dosya yoksa varsayilan.</summary>
+/// <summary>Bir turun kullanim ozeti satiri: <see cref="IRunStore.ReadUsageAsync"/>. Tam <see cref="Turn"/> degil, yalniz toplanan alanlar.</summary>
+public sealed record TurnUsage(string RunId, string Provider, string Model, int? InputTokens, int? OutputTokens, decimal? CostUsd, DateTimeOffset Ts);
+
+/// <summary>Calisma alani ayarlari (limit korumasi). Kayit yoksa varsayilan.</summary>
 public interface ISettingsStore
 {
     Task<Domain.Settings.AppSettings> LoadAsync(CancellationToken ct);

@@ -2,7 +2,7 @@ using MrHobist.AITeam.Application.Abstractions;
 
 namespace MrHobist.AITeam.Application.Runs;
 
-/// <summary>Bir saglayici/model ciftinin bu makinedeki toplam kullanimi (runs/ turlarindan).</summary>
+/// <summary>Bir saglayici/model ciftinin bu makinedeki toplam kullanimi (kayitli turlardan).</summary>
 public sealed record UsageItem(
     string Provider,
     string Model,
@@ -14,7 +14,7 @@ public sealed record UsageItem(
     DateTimeOffset? LastAt);
 
 /// <summary>
-/// <c>GET /usage</c>: her calismanin <c>conversations/*.jsonl</c> turlarini saglayici+model bazinda toplar.
+/// <c>GET /usage</c>: son N calismanin turlarini saglayici+model bazinda toplar (tek sorgu, yalniz toplama sutunlari).
 /// Kaynak yalniz bizim kayitlarimizdir; saglayicinin abonelik limitini/kalan kotasini vermez (CLI bunu sunmuyor).
 /// </summary>
 public interface IUsageReader
@@ -37,28 +37,23 @@ public sealed class UsageReader(IRunStore runs) : IUsageReader
     public async Task<IReadOnlyList<UsageItem>> SummarizeAsync(int runLimit, CancellationToken ct)
     {
         var acc = new Dictionary<(string Provider, string Model), Acc>();
-        foreach (var run in await runs.ListAsync(Math.Clamp(runLimit, 1, 1000), ct).ConfigureAwait(false))
+        // Para SQL'de toplanmaz (SQLite'ta ondalik metin): satirlar sutun bazinda gelir, toplama burada.
+        foreach (var t in await runs.ReadUsageAsync(Math.Clamp(runLimit, 1, 1000), ct).ConfigureAwait(false))
         {
-            foreach (var agent in await runs.ListConversationsAsync(run.Id, ct).ConfigureAwait(false))
+            var key = (t.Provider, t.Model);
+            if (!acc.TryGetValue(key, out var a))
             {
-                foreach (var t in await runs.ReadTurnsAsync(run.Id, agent, ct).ConfigureAwait(false))
-                {
-                    var key = (t.Provider, t.Model);
-                    if (!acc.TryGetValue(key, out var a))
-                    {
-                        acc[key] = a = new Acc();
-                    }
+                acc[key] = a = new Acc();
+            }
 
-                    a.Turns++;
-                    a.Runs.Add(run.Id);
-                    a.In += t.InputTokens ?? 0;
-                    a.Out += t.OutputTokens ?? 0;
-                    a.Cost += t.CostUsd ?? 0m;
-                    if (a.Last is null || t.Ts > a.Last)
-                    {
-                        a.Last = t.Ts;
-                    }
-                }
+            a.Turns++;
+            a.Runs.Add(t.RunId);
+            a.In += t.InputTokens ?? 0;
+            a.Out += t.OutputTokens ?? 0;
+            a.Cost += t.CostUsd ?? 0m;
+            if (a.Last is null || t.Ts > a.Last)
+            {
+                a.Last = t.Ts;
             }
         }
 
