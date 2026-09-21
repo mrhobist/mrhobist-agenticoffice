@@ -1,0 +1,25 @@
+{
+  "title": "Solo (Claude Code gibi)",
+  "maxReviewRounds": 1,
+  "handoffRole": "organizer",
+  "stages": [
+    {
+      "id": "analiz",
+      "title": "Analiz",
+      "kind": "analyze",
+      "role": "solo",
+      "officeRole": "pm",
+      "description": "Asgari plan, tek görev."
+    },
+    {
+      "id": "is",
+      "title": "İş",
+      "kind": "implement",
+      "role": "solo",
+      "officeRole": "dev",
+      "description": "Yaz, çalıştır, doğrula, bitir."
+    }
+  ],
+  "askRole": "user",
+  "planApprover": "auto"
+}

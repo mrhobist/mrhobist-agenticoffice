@@ -70,7 +70,7 @@ public static class ConfigEndpoints
         g.MapGet("/limits", (bool? refresh, IAgentRuntimeService runtime, CancellationToken ct)
             => runtime.ListLimitsAsync(null, refresh ?? false, ct));
 
-        // Kullanim: bizim kayitlarimizdan (runs/ turlari), saglayici+model bazinda.
+        // Kullanim: bizim kayitlarimizdan (kayitli turlar), saglayici+model bazinda.
         g.MapGet("/usage", (int? runs, IUsageReader usage, CancellationToken ct) => usage.SummarizeAsync(runs ?? 200, ct));
 
         // Calisma alani ayarlari (config/settings.json): saglayici basina limit korumasi esigi (docs/DOMAIN.md → Butce ve limit).

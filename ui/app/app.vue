@@ -6,7 +6,7 @@
       <span class="brand">MrHobist.AITeam</span>
       <span class="chip" :class="status">{{ STATUS_LABEL[status] }}</span>
       <!-- Kalan kullanim: aktif saglayicilarin kota pencereleri (5 saat, hafta, modele ozel). -->
-      <LimitsBar ref="limitsBar" @open="toggleSettings" />
+      <LimitsBar ref="limitsBar" :signed-out="signedOutProviders" @open="toggleSettings" />
       <span class="run">
         <!-- Sahne HUD'u: yalniz bir adim akarken (bos "— · tur 0" cipleri kalabalik yapiyordu). -->
         <template v-if="overview?.running">
@@ -128,14 +128,14 @@
         <div v-if="!selected && !runPanel && !settings && !jobs && !board && !teamPanel" class="compass" :class="{ min: compassMin }" aria-label="Ekip">
           <button type="button" class="compass-head" :title="compassMin ? 'Ekibi göster' : 'Ekibi küçült'" @click="toggleCompass">
             <span class="compass-title">Ekip</span>
-            <span v-if="compassMin" class="compass-dots"><span v-for="a in agents" :key="a.key" class="dot" :class="{ busy: a.state !== 'idle' && a.state !== 'done' }" :style="{ background: ROLE_HEX[a.key] }" :title="`${a.name}: ${a.note || STATE_LABEL[a.state as AgentState]}`" /></span>
+            <span v-if="compassMin" class="compass-dots"><span v-for="a in agents" :key="a.key" class="dot" :class="{ busy: a.state !== 'idle' && a.state !== 'done' }" :style="{ background: roleHex(a.key) }" :title="`${a.name}: ${a.note || STATE_LABEL[a.state as AgentState]}`" /></span>
             <span v-if="compassMin && busyAgents" class="compass-busy">{{ busyAgents }} çalışıyor</span>
             <Ico class="compass-chev" :name="compassMin ? 'chevron-up' : 'chevron-down'" :size="12" />
           </button>
           <button v-if="!compassMin" type="button" class="compass-manage" title="Ajan ekle, takım kur" @click.stop="toggleTeam">Yönet →</button>
           <template v-if="!compassMin">
             <button v-for="a in agents" :key="a.key" type="button" class="compass-row" :title="teamSummary(a.key)" @click="selectAgent(a.key)">
-              <span class="dot" :style="{ background: ROLE_HEX[a.key] }" />
+              <span class="dot" :style="{ background: roleHex(a.key) }" />
               <span class="name">{{ a.name }}</span>
               <span class="state" :style="{ color: STATE_HEX[a.state as AgentState] }">{{ a.note || STATE_LABEL[a.state as AgentState] }}</span>
             </button>
@@ -197,7 +197,7 @@ import LoginPanel from '~/components/LoginPanel.vue'
 import TeamPanel from '~/components/TeamPanel.vue'
 import { useAuth } from '~/composables/useAuth'
 import type { Hud } from '~/scene/world'
-import { ROLE_HEX, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
+import { roleHex, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
 import type { AgentDetail, AgentListItem, InboxKind, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
@@ -355,20 +355,29 @@ useHead({ title: computed(() => (inboxCount.value ? `(${inboxCount.value}) ` : '
 interface ProviderNotice { kind: 'warn' | 'down'; title: string; text: string; command?: string }
 const providerNotice = ref<ProviderNotice | null>(null)
 
+/** Girisi olmayan saglayicilar: ust seritteki kalan-hak rozeti sebebi "giris yok" diye gosterir. */
+const signedOutProviders = ref<string[]>([])
+
 /** `refresh`: runtime'in kimlik onbellegini atlar (kullanici `claude login` sonrasi yeniden bakti). */
 async function loadProviders(refresh = false) {
   try {
     const list = await api.get<ProviderStatus[]>(`/api/v1/providers${refresh ? '?refresh=true' : ''}`)
     const missing = list.filter(p => !p.loggedIn)
-    providerNotice.value = missing.length
+    signedOutProviders.value = missing.map(p => p.provider)
+
+    // Bant yalniz IS YAPILAMAZ durumunda cikar: hicbir saglayicida giris yok. Kullanilmayan bir saglayicinin
+    // (ornegin Codex kurmayan kullanicida OpenAI) girisi yoksa bu bir hata degil; durumu ust seritteki
+    // kalan-hak rozeti soyler. Aksi halde kapatilamayan, her acilista tekrar eden bir uyari olurdu.
+    providerNotice.value = list.length > 0 && missing.length === list.length
       ? {
           kind: 'warn',
-          title: `${missing.map(p => providerLabel(p.provider)).join(', ')}: giriş yok.`,
-          text: 'Modeller CLI oturumunu kullanır (Anthropic: Claude Code, OpenAI: Codex); oturum Windows kullanıcısına bağlıdır. Ayarlar\'dan giriş yapın ya da runtime\'ı çalıştıran kullanıcıyla bir terminalde giriş yapıp yeniden kontrol edin. Kullanmadığınız sağlayıcıda giriş gerekmez.',
+          title: 'Hiçbir sağlayıcıda giriş yok.',
+          text: 'Modeller CLI oturumunu kullanır (Anthropic: Claude Code, OpenAI: Codex); oturum Windows kullanıcısına bağlıdır. Giriş olmadan çalışma başlatılamaz: Ayarlar\'dan giriş yapın ya da runtime\'ı çalıştıran kullanıcıyla bir terminalde giriş yapıp yeniden kontrol edin.',
           command: missing.map(p => p.provider === 'openai' ? 'codex login' : p.provider === 'anthropic' ? 'claude login' : `${p.provider}: giriş`).join('  ·  '),
         }
       : null
   } catch (e) {
+    signedOutProviders.value = []
     providerNotice.value = isApiError(e) && (e.errorCode === 'runtime.unavailable' || e.endpointMissing)
       ? { kind: 'down', title: 'Runtime kapalı.', text: 'Model çağrısı yapılamaz; çalışma başlatılırsa analiz başarısız olur.', command: 'runtime/.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 5090 --app-dir runtime' }
       : { kind: 'down', title: 'Sağlayıcı durumu alınamadı.', text: errorText(e) }

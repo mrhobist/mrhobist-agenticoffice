@@ -172,8 +172,12 @@ async function loadWorkflows() {
 }
 
 type StageRow = { id: string; title: string; kind: string; role: string; officeRole: string; description: string }
+/** Ajan degil kullanici: sunucudaki Workflow.UserRole ile ayni deger. */
+const USER_ROLE = 'user'
+/** Onay kapisi yok: sunucudaki Workflow.AutoApprove. */
+const AUTO_APPROVE = 'auto'
 const editKey = ref<string | null>(null)
-const editing = ref<{ key: string; title: string; maxReviewRounds: number; handoffRole: string; stages: StageRow[]; isNew: boolean } | null>(null)
+const editing = ref<{ key: string; title: string; maxReviewRounds: number; handoffRole: string; askRole: string; planApprover: string; stages: StageRow[]; isNew: boolean } | null>(null)
 const wfSaving = ref(false)
 const wfSaveError = ref<string | null>(null)
 const wfSaved = ref(false)
@@ -188,7 +192,12 @@ async function openWorkflow(key: string) {
   try {
     const d = await api.get<WorkflowDetail>(`/api/v1/workflows/${encodeURIComponent(key)}`)
     editKey.value = key
-    editing.value = { key: d.key, title: d.title, maxReviewRounds: d.maxReviewRounds, handoffRole: d.handoffRole ?? '', stages: d.stages.map(s => ({ ...s })), isNew: false }
+    editing.value = {
+      key: d.key, title: d.title, maxReviewRounds: d.maxReviewRounds, handoffRole: d.handoffRole ?? '',
+      // askRole bos = "ajanin kendi can_ask'i"; planApprover bos = kullanici (varsayilan).
+      askRole: d.askRole ?? '', planApprover: d.planApprover ?? USER_ROLE,
+      stages: d.stages.map(s => ({ ...s })), isNew: false,
+    }
   } catch (e) {
     wfError.value = errorText(e)
   }
@@ -198,7 +207,8 @@ function newWorkflow() {
   const dev = agentKeys.value.includes('developer') ? 'developer' : (agentKeys.value[0] ?? '')
   editKey.value = ''
   editing.value = {
-    key: '', title: '', maxReviewRounds: 3, handoffRole: agentKeys.value.includes('organizer') ? 'organizer' : '', isNew: true,
+    key: '', title: '', maxReviewRounds: 3, handoffRole: agentKeys.value.includes('organizer') ? 'organizer' : '',
+    askRole: '', planApprover: USER_ROLE, isNew: true,
     stages: [
       { id: 'analiz', title: 'Analiz', kind: 'analyze', role: analyst, officeRole: 'pm', description: 'Brief çözümlenir, kurallar ve görev grafiği çıkarılır.' },
       { id: 'gelistirme', title: 'Geliştirme', kind: 'implement', role: dev, officeRole: 'dev', description: 'Görev kodlanır, dosyalar çalışma dizinine yazılır.' },
@@ -232,6 +242,7 @@ async function saveWorkflow() {
     const key = w.isNew ? slug(w.key || w.title) : w.key
     await api.put(`/api/v1/workflows/${encodeURIComponent(key)}`, {
       title: w.title.trim(), maxReviewRounds: Number(w.maxReviewRounds) || 1, handoffRole: w.handoffRole || null,
+      askRole: w.askRole || null, planApprover: w.planApprover || null,
       stages: w.stages.map(s => ({ id: s.id.trim(), title: s.title.trim(), kind: s.kind, role: s.role, officeRole: s.officeRole, description: s.description })),
     })
     wfSaved.value = true
@@ -397,6 +408,26 @@ onMounted(() => { void loadKnowledge(); void loadWorkflows() })
               <div class="field"><label class="lbl" for="w-rounds">En fazla inceleme turu</label><input id="w-rounds" v-model.number="editing.maxReviewRounds" type="number" min="1" max="10"></div>
               <div class="field"><label class="lbl" for="w-handoff">Devir notu yazan</label><select id="w-handoff" v-model="editing.handoffRole"><option value="">yok</option><option v-for="k in agentKeys" :key="k" :value="k">{{ agentName(k) }}</option></select></div>
             </div>
+            <div class="row">
+              <div class="field">
+                <label class="lbl" for="w-approver">Planı onaylayan</label>
+                <select id="w-approver" v-model="editing.planApprover">
+                  <option :value="AUTO_APPROVE">Onay yok — doğrudan dağıtım</option>
+                  <option :value="USER_ROLE">Kullanıcı (sen)</option>
+                  <option v-for="k in agentKeys" :key="k" :value="k">{{ agentName(k) }}</option>
+                </select>
+                <span class="hint">Onay yok: plan üretilir üretilmez işe başlanır. Ajan seçersen o onaylar; reddederse analist yeniden çalışır.</span>
+              </div>
+              <div class="field">
+                <label class="lbl" for="w-ask">Soruları cevaplayan</label>
+                <select id="w-ask" v-model="editing.askRole">
+                  <option value="">ajanın kendi hedefi (can_ask)</option>
+                  <option :value="USER_ROLE">Kullanıcı (sen)</option>
+                  <option v-for="k in agentKeys" :key="k" :value="k">{{ agentName(k) }}</option>
+                </select>
+                <span class="hint">Takılan ajanın sorusu buraya gider. Bu akışta olmayan bir ajanı seçme.</span>
+              </div>
+            </div>
 
             <div class="stages">
               <div class="stage-h"><span>#</span><span>Adım</span><span>Tür</span><span>Ajan</span><span>Ofis rolü</span><span /></div>
@@ -488,6 +519,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .team.on { border-color: #23283a; outline: 2px solid #23283a; outline-offset: -1px; }
 .team .tag { font-size: 9px; font-weight: 700; text-transform: uppercase; background: #f3c34a; color: #3a2f12; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
 .editor .keyval { font-size: 12px; padding: 5px 8px; }
+.hint { font-size: 11px; color: var(--ink-3, var(--ink-2)); line-height: 1.35; }
 .stages { display: flex; flex-direction: column; gap: 6px; }
 .stage-h, .stage { display: grid; grid-template-columns: 22px 1.3fr 1.1fr 1fr 1fr 78px; gap: 6px; align-items: center; }
 .stage-h { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #6b7285; padding: 0 2px; }

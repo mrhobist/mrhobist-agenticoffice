@@ -17,15 +17,23 @@ public sealed class WorkflowStoreTests : IDisposable
     public async Task Gercek_akislar_yuklenir()
     {
         var store = new JsonWorkflowStore(_fx.Paths);
-        Assert.Equal(["default", "tasarimli"], await store.ListKeysAsync(CancellationToken.None));
 
+        // Liste SABIT degil: depoya yeni bir akis eklemek bu testi kirmamali. Sart olan iki sey:
+        // 'default' silinemez oldugu icin hep durur, ve gonderilen her akis yuklenip dogrulanabilmeli.
+        var keys = await store.ListKeysAsync(CancellationToken.None);
+        Assert.Contains("default", keys);
+        Assert.Contains("tasarimli", keys);
+        foreach (var key in keys)
+        {
+            (await store.LoadAsync(key, CancellationToken.None)).Validate();
+        }
+
+        // 'default'in ICERIGI urun karari ve degisir (2026-09-21: tek kisilik oldu). Burada yalniz
+        // her akis icin gecerli olan DEGISMEZLER sinanir; sekle bagli iddia kurulmaz.
         var wf = await store.LoadAsync("default", CancellationToken.None);
         Assert.True(wf.IsDefault);
-        Assert.Equal("organizer", wf.HandoffRole);
         Assert.Equal(StageKind.Analyze, wf.Stages[0].Kind);
-        Assert.Equal("manager", wf.Stages[^1].Role);
-        Assert.DoesNotContain(wf.Stages, s => s.Role == "designer");
-        Assert.Contains("organizer", wf.Roles);
+        Assert.Contains(wf.Stages, s => s.Kind == StageKind.Implement);
 
         var tasarimli = await store.LoadAsync("tasarimli", CancellationToken.None);
         Assert.Contains(tasarimli.Stages, s => s.Kind == StageKind.Design && s.Role == "designer");

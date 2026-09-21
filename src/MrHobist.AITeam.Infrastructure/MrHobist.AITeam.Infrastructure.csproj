@@ -1,8 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\scripts\sql\changes\*.sql" LinkBase="Sql" />
   </ItemGroup>
 
   <ItemGroup>
@@ -10,6 +16,8 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <!-- MAF Compaction ve M.E.AI [Experimental] isaretli: bilincli kullanim (docs/PHASES.md -> compact). -->
+    <NoWarn>$(NoWarn);MAAI001;MEAI001</NoWarn>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

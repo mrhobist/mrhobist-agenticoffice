@@ -108,19 +108,39 @@ public sealed class AgentStoreTests : IDisposable
     [Fact]
     public async Task Akista_gecen_ajan_silinemez()
     {
+        // Hangi akista gectigi urun karari; sart olan SILINEMEMESI ve sebebin akis adiyla soylenmesi.
         var service = Service();
+        var store = new JsonWorkflowStore(_fx.Paths);
+        var kullanan = new List<string>();
+        foreach (var key in await store.ListKeysAsync(CancellationToken.None))
+        {
+            if ((await store.LoadAsync(key, CancellationToken.None)).Roles.Contains("developer", StringComparer.Ordinal))
+            {
+                kullanan.Add(key);
+            }
+        }
+
+        Assert.NotEmpty(kullanan);
         var ex = await Assert.ThrowsAsync<DomainException>(() => service.DeleteAsync("developer", CancellationToken.None));
         Assert.Equal(ErrorCodes.AgentInUse, ex.ErrorCode);
-        Assert.Contains("default", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(kullanan, k => ex.Message.Contains(k, StringComparison.Ordinal));
         Assert.True(File.Exists(Path.Combine(_fx.Paths.AgentsDir, "developer.md")));
     }
 
     [Fact]
     public async Task Can_ask_hedefi_silinemez()
     {
-        // designer yalniz 'tasarimli' akisinda; once o akisi kaldir, sonra can_ask kalir mi bak.
+        // Once designer'i KULLANAN butun akislari kaldir; geriye yalniz can_ask baglantisi kalsin.
+        // (Sabit bir akis adina dayanmiyoruz: depoya yeni akis eklemek bu testi kirmamali.)
         var service = Service();
-        File.Delete(_fx.Paths.WorkflowFile("tasarimli"));
+        var store = new JsonWorkflowStore(_fx.Paths);
+        foreach (var key in await store.ListKeysAsync(CancellationToken.None))
+        {
+            if (key != "default" && (await store.LoadAsync(key, CancellationToken.None)).Roles.Contains("designer", StringComparer.Ordinal))
+            {
+                File.Delete(_fx.Paths.WorkflowFile(key));
+            }
+        }
         var ex = await Assert.ThrowsAsync<DomainException>(() => service.DeleteAsync("manager", CancellationToken.None));
         Assert.Equal(ErrorCodes.AgentInUse, ex.ErrorCode);
         Assert.Contains("can_ask", ex.Message, StringComparison.Ordinal);

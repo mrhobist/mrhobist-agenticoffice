@@ -19,7 +19,10 @@ public sealed class JsonWorkflowStore(StoragePaths paths) : IWorkflowStore
         string? Title,
         int MaxReviewRounds,
         string? HandoffRole,
-        IReadOnlyList<StageDto>? Stages);
+        IReadOnlyList<StageDto>? Stages,
+        // Yeni alanlar SONA: eski akis dosyalari alan yokken de okunur (null = eski davranis).
+        string? AskRole = null,
+        string? PlanApprover = null);
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -56,7 +59,7 @@ public sealed class JsonWorkflowStore(StoragePaths paths) : IWorkflowStore
             s.Role ?? "",
             s.OfficeRole ?? "",
             s.Description ?? "")).ToList();
-        var workflow = new Workflow(key, dto.Title ?? key, dto.MaxReviewRounds, dto.HandoffRole, stages);
+        var workflow = new Workflow(key, dto.Title ?? key, dto.MaxReviewRounds, dto.HandoffRole, stages, dto.AskRole, dto.PlanApprover);
         workflow.Validate();
         return workflow;
     }
@@ -73,7 +76,9 @@ public sealed class JsonWorkflowStore(StoragePaths paths) : IWorkflowStore
             workflow.Title,
             workflow.MaxReviewRounds,
             workflow.HandoffRole,
-            workflow.Stages.Select(s => new StageDto(s.Id, s.Title, s.Kind.ToString().ToLowerInvariant(), s.Role, s.OfficeRole, s.Description)).ToList());
+            workflow.Stages.Select(s => new StageDto(s.Id, s.Title, s.Kind.ToString().ToLowerInvariant(), s.Role, s.OfficeRole, s.Description)).ToList(),
+            workflow.AskRole,
+            workflow.PlanApprover);
         await AtomicFile.WriteAsync(file, JsonSerializer.Serialize(dto, Json) + "\n", ct).ConfigureAwait(false);
     }
 

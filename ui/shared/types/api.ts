@@ -4,6 +4,45 @@
  */
 
 export interface paths {
+    "/api/v1/progress/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProgressEvent"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs/health": {
         parameters: {
             query?: never;
@@ -277,6 +316,140 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["KnowledgeModel"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KnowledgeItem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImportMarkdownRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImportMarkdownRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -1271,6 +1444,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/dirs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DirectoryListing"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{key}": {
         parameters: {
             query?: never;
@@ -1329,7 +1539,9 @@ export interface paths {
         post?: never;
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    deleteFiles?: boolean;
+                };
                 header?: never;
                 path: {
                     key: string;
@@ -1343,7 +1555,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["ProjectDeleteResult"];
+                    };
                 };
             };
         };
@@ -1486,6 +1700,15 @@ export interface components {
         };
         /** @enum {unknown} */
         Destination: "local" | "anthropic" | "nvidia" | "openai";
+        DirectoryListing: {
+            path: string;
+            parent: null | string;
+            dirs: components["schemas"]["WorkspaceDirectory"][];
+        };
+        ImportMarkdownRequest: {
+            key: string;
+            markdown: string;
+        };
         InboxItem: {
             runId: string;
             label: string;
@@ -1502,6 +1725,10 @@ export interface components {
         KnowledgeItem: {
             key: string;
             title: string;
+            body: string;
+        };
+        KnowledgeModel: {
+            title: null | string;
             body: string;
         };
         LoginRequest: {
@@ -1543,9 +1770,17 @@ export interface components {
             /** Format: double */
             durationS?: null | number | string;
             detail?: null | string;
+            cause?: null | components["schemas"]["PhaseCause"];
+            isSystemFailure?: boolean;
         };
         /** @enum {unknown} */
+        PhaseCause: "agent" | "limit" | "cancelled" | "interrupted" | null;
+        /** @enum {unknown} */
         PhaseStatus: "started" | "done" | "rejected" | "failed" | "skipped";
+        ProgressEvent: {
+            tool: string;
+            target: null | string;
+        };
         ProjectCard: {
             key: string;
             title: string;
@@ -1580,6 +1815,13 @@ export interface components {
              * @default 0
              */
             order: number | string;
+        };
+        ProjectDeleteResult: {
+            key: string;
+            targetDir: string;
+            /** Format: int32 */
+            runsDeleted: number | string;
+            filesDeleted: boolean;
         };
         ProjectModel: {
             title: string;
@@ -1648,6 +1890,9 @@ export interface components {
             question?: null | components["schemas"]["UserQuestion"];
             /** Format: date-time */
             resumeAt?: null | string;
+            step?: null | components["schemas"]["RunStep"];
+            /** Format: date-time */
+            waitingSince?: null | string;
             isCancellable?: boolean;
             isRetryable?: boolean;
         };
@@ -1679,6 +1924,9 @@ export interface components {
             order: string[];
             tasks: components["schemas"]["TaskPhases"][];
             messages: components["schemas"]["Message"][];
+            step?: null | components["schemas"]["RunStep"];
+            /** Format: date-time */
+            waitingSince?: null | string;
         };
         RunRequest: {
             brief: string;
@@ -1691,6 +1939,8 @@ export interface components {
         };
         /** @enum {unknown} */
         RunStatus: "running" | "completed" | "failed" | "interrupted" | "budgetExceeded" | "policyRejected" | "awaitingApproval" | "paused" | "cancelled" | "awaitingInput";
+        /** @enum {unknown} */
+        RunStep: "analyze" | "approval" | "dispatch" | null;
         RunTask: {
             id: string;
             title: string;
@@ -1818,6 +2068,10 @@ export interface components {
             toolUses?: null | components["schemas"]["ToolUse"][];
             /** Format: int32 */
             turns?: null | number | string;
+            /** Format: int32 */
+            cacheReadTokens?: null | number | string;
+            /** Format: int32 */
+            cacheWriteTokens?: null | number | string;
         };
         UpdateAgentRequest: {
             name: string;
@@ -1868,6 +2122,8 @@ export interface components {
             maxReviewRounds: number | string;
             handoffRole: null | string;
             stages: components["schemas"]["StageModel"][];
+            askRole?: null | string;
+            planApprover?: null | string;
         };
         WorkflowListItem: {
             key: string;
@@ -1883,6 +2139,12 @@ export interface components {
             maxReviewRounds: number | string;
             handoffRole: null | string;
             stages: components["schemas"]["StageModel"][];
+            askRole?: null | string;
+            planApprover?: null | string;
+        };
+        WorkspaceDirectory: {
+            name: string;
+            path: string;
         };
     };
     responses: never;

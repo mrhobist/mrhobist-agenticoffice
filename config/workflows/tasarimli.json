@@ -4,10 +4,47 @@
   "maxReviewRounds": 3,
   "handoffRole": "organizer",
   "stages": [
-    { "id": "analiz",      "title": "Analiz",     "kind": "analyze",   "role": "analyst",   "officeRole": "pm",       "description": "Brief çözümlenir, kurallar ve görev grafiği çıkarılır." },
-    { "id": "tasarim",     "title": "Tasarım",    "kind": "design",    "role": "designer",  "officeRole": "designer", "description": "Kullanıcıya dokunan yüzeyler ve akış belirlenir; kod yazılmaz." },
-    { "id": "gelistirme",  "title": "Geliştirme", "kind": "implement", "role": "developer", "officeRole": "dev",      "description": "Görev, tasarım kararlarına sadık kalarak kodlanır." },
-    { "id": "test",        "title": "Test",       "kind": "review",    "role": "tester",    "officeRole": "qa",       "description": "Kurallar denetlenir, testler fiilen çalıştırılır; red → geliştirmeye döner." },
-    { "id": "karar",       "title": "Karar",      "kind": "review",    "role": "manager",   "officeRole": "gate",     "description": "Altı şapka ile son onay." }
-  ]
+    {
+      "id": "analiz",
+      "title": "Analiz",
+      "kind": "analyze",
+      "role": "analyst",
+      "officeRole": "pm",
+      "description": "Brief çözümlenir."
+    },
+    {
+      "id": "tasarim",
+      "title": "Tasarım",
+      "kind": "design",
+      "role": "designer",
+      "officeRole": "designer",
+      "description": "Tasarım rehberi üretir."
+    },
+    {
+      "id": "gelistirme",
+      "title": "Geliştirme",
+      "kind": "implement",
+      "role": "developer",
+      "officeRole": "dev",
+      "description": "Görev kodlanır."
+    },
+    {
+      "id": "test",
+      "title": "Test",
+      "kind": "review",
+      "role": "tester",
+      "officeRole": "qa",
+      "description": "Testler koşulur; red → geliştirmeye döner."
+    },
+    {
+      "id": "karar",
+      "title": "Karar",
+      "kind": "review",
+      "role": "manager",
+      "officeRole": "gate",
+      "description": "Son onay."
+    }
+  ],
+  "askRole": "manager",
+  "planApprover": "auto"
 }

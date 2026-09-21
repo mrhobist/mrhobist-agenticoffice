@@ -200,7 +200,16 @@ class AnthropicProvider:
         tools = list(request.tools or [])
         opts: dict[str, Any] = {
             "model": request.model,
-            "system_prompt": request.system_prompt,
+            # Mod .NET'ten gelir (adim turune gore), burasi yalniz SDK sekline esler:
+            #   replace     -> duz string: Claude Code'un kendi kilavuzu SILINIR (plan ureten adimlar; preset
+            #                  altinda buyuk Spec semasi doldurulamiyordu -- 5 denemede 'rules'/'tasks' eksik).
+            #   claude_code -> preset + append: kilavuz korunur (yurutme adimlari; kilavuzsuz 55 ic tur,
+            #                  Claude Code 11-16). Preset her rolde ayni -> roller arasi ortak onbellek on eki.
+            "system_prompt": (
+                {"type": "preset", "preset": "claude_code", "append": request.system_prompt}
+                if request.system_prompt_mode == "claude_code"
+                else request.system_prompt
+            ),
             "effort": request.reasoning_effort,
             "cli_path": self.cli,
         }
@@ -354,6 +363,10 @@ class AnthropicProvider:
                 + int(usage_raw.get("cache_creation_input_tokens") or 0)
                 + int(usage_raw.get("cache_read_input_tokens") or 0),
                 output_tokens=int(usage_raw.get("output_tokens") or 0),
+                # Kirilim ayrica tasinir: toplam tek basina "baglam bosa mi gitti" sorusunu cevaplamaz.
+                # Ajan araci dongusunde toplam her turda buyur ama buyuyen kismin cogu onbellekten okunur.
+                cache_read_tokens=int(usage_raw.get("cache_read_input_tokens") or 0),
+                cache_write_tokens=int(usage_raw.get("cache_creation_input_tokens") or 0),
             ),
             cost_usd=cost,
             duration_s=round(time.monotonic() - started, 3),

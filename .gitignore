@@ -29,8 +29,15 @@ credentials.json
 *.key
 .claude/settings.local.json
 
-# Calisma ciktilari (dosya tabanli depo)
+# Calisma zamani veritabani (SQLite) -- WAL/SHM yan dosyalari dahil
+/data/
+# Dosya deposu doneminden kalan gecmis (2026-09-21 oncesi): artik okunmaz, depoya da girmez
 /runs/
+*.db
+*.db-wal
+*.db-shm
+
+# Gunlukler
 logs/
 *.log
 
@@ -47,5 +54,5 @@ assets/_inspect/
 # Ajan worktree'leri (gecici)
 .claude/worktrees/
 
-# Ajanlarin yazdigi proje ciktilari (config/projects/*.json targetDir; kullanici kendi deposuna tasir)
+# Ajanlarin yazdigi proje ciktilari (proje kaydindaki targetDir; kullanici kendi deposuna tasir)
 /projects/

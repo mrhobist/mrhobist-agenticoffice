@@ -205,7 +205,11 @@ public sealed record Turn(
     int? InputTokens = null,
     int? OutputTokens = null,
     IReadOnlyList<ToolUse>? ToolUses = null,
-    int? Turns = null);
+    int? Turns = null,
+    /// <summary><see cref="InputTokens"/> icindeki onbellekten OKUNAN pay. Yeni alan SONA eklendi (CLAUDE.md §5).</summary>
+    int? CacheReadTokens = null,
+    /// <summary><see cref="InputTokens"/> icindeki onbellege YAZILAN pay.</summary>
+    int? CacheWriteTokens = null);
 
 /// <summary>Ajanlar arasi mesaj: <c>runs/{id}/messages.jsonl</c>. <see cref="Ref"/> ask ile answer'i esler.</summary>
 public sealed record Message(

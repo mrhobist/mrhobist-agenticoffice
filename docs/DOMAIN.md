@@ -39,7 +39,7 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 
 > Her işin bir projesi vardır; proje bağımsız iş başlatılamaz (`run.project_required`).
 
-- Proje `config/projects/{key}.json`: **başlık, açıklama, varsayılan iş akışı, hedef dizin** (`projects/{key}`
+- Proje kaydı (`project` tablosu): **başlık, açıklama, varsayılan iş akışı, hedef dizin** (`projects/{key}`
   varsayılan; depo içinde göreli, `..` yok). **Bütçe projede yoktur**, iş başınadır (kullanıcı kararı).
 - İş projenin akışını devralır; formda değiştirilebilir. Hedef dizin, geliştirme yürütücüsü gelince developer'ın
   dosya yazacağı yerdir.
@@ -47,7 +47,7 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 - Kart özeti (`ProjectCard`): iş sayıları duruma göre, toplam maliyet, son hareket. UI'da ray kartları bunu gösterir.
 - **Silme (2026-09-20, kullanıcı kararı):** UI iki adımda onaylatır: önce "silinsin mi", sonra **dosyalar da silinsin mi**
   (onay kutusu). `DELETE /projects/{key}?deleteFiles=` → **süren** çalışma varsa (running / awaitingApproval / paused /
-  awaitingInput) **409 `project.in_use`**; yoksa proje kaydı ve **bitmiş çalışmaların geçmişi** (`runs/<id>/`) birlikte silinir
+  awaitingInput) **409 `project.in_use`**; yoksa proje kaydı ve **bitmiş çalışmaların geçmişi** (çalışma satırı + turları, mesajları, fazları) birlikte silinir
   (varsayımla ilerlenir: proje kapsamlı UI'da projesiz geçmişin yeri yok; alternatif "geçmiş kalsın" sahipsiz kartlar üretirdi).
   `deleteFiles=true` ise hedef dizin de içeriğiyle silinir; depo dışına çıkamaz. Yanıt `ProjectDeleteResult`.
 - **Hedef dizin seçimi (2026-09-20, kullanıcı kararı):** serbest metin **yok**; klasör seçici `GET /projects/dirs?path=` ile depo
@@ -92,8 +92,16 @@ POST /runs ──► Running(analiz) ──► AwaitingApproval ◄──┐
 `RunStatus` üyeleri (adıyla taşınır, **sona eklenir**): `Running, Completed, Failed, Interrupted,
 BudgetExceeded, PolicyRejected, AwaitingApproval, Paused, Cancelled`.
 
-- **Akış donar (2026-09-19):** çalışma başlarken seçilen akış `runs/<id>/workflow.json` olarak
-  kopyalanır; `run.json` içinde `workflow` anahtarı tutulur. `config/workflows/` sonradan değişse de
+- **Planı kim onaylar (2026-09-21):** akışın `planApprover` alanı. Varsayılan kullanıcıdır (`AwaitingApproval`).
+  Bir ajan verilirse analiz biter bitmez o ajan planı inceler: kabul → dağıtım, red → geri bildirim revize notu
+  olarak yazılır ve analist yeniden koşar. `maxReviewRounds` tur içinde onaylamazsa karar **kullanıcıya** düşer;
+  sonsuz döngü yoktur. Bu bir adım değil akış özelliğidir: `analyze` çalışma başına bir kez koşar, görev başına
+  değil, dolayısıyla görev düzeyindeki `review` ile ifade edilemez.
+- **Geri dönüş hedefi (2026-09-21 genellemesi):** reddedilen iş, kendinden önceki en yakın **üretici** adıma
+  döner (`design` ya da `implement`). Önceden yalnız `implement` aranıyordu; bu yüzden "tasarımı onayla,
+  reddedersen tasarımcıya dön" kurulamıyordu. Kural tek kaynakta: `Workflow.ProducerBefore`.
+- **Akış donar (2026-09-19):** çalışma başlarken seçilen akış çalışma satırına kopyalanır
+  (`workflow_snapshot`); ayrıca `workflow_key` anahtarı tutulur. `config/workflows/` sonradan değişse de
   çalışma kendi kopyasını okur; pano da onu kurar (`workflow.set { key }` olayı).
 - **Hassasiyet** çalışma başında verilir; boşsa `anthropic` (varsayımla ilerlenir: bugün tek
   sağlayıcı Anthropic). Politikaya aykırı bir ajan varsa çalışma **hiç başlamaz** (`PolicyRejected`).
@@ -128,15 +136,15 @@ madde ancak cevap verilince düşer.
 > Developer'a iş gitmeden analistin çıkaracağı iş listesi, sırası ve detayları **insan onayından**
 > geçer. Onaysız hiçbir adım başlamaz, panoya iş açılmaz. İstisna yoktur.
 
-1. Analist brief'i alır, `Spec` şemasıyla yapısal çıktı üretir → `runs/<id>/spec.json`.
+1. Analist brief'i alır, `Spec` şemasıyla yapısal çıktı üretir → çalışma satırının `spec` alanı.
    Çalışma `AwaitingApproval` olur; sahnede analist `done`, not: "plan onay bekliyor".
 2. Kullanıcı UI'da planı görür: özet, mimari, kurallar, görevler (kimlik, başlık, açıklama,
    dosyalar, kabul ölçütleri, bağımlılıklar) ve **yürütme sırası** (topolojik).
 3. **Onayla** → `Running`; `board.set` ile görevler ilk görev-sütununda `queued` açılır; dağıtım başlar.
-4. **Revize et** (`note` zorunlu) → not `messages.jsonl`'e yazılır (`from: user, to: analyst,
+4. **Revize et** (`note` zorunlu) → not mesaj kaydına yazılır (`from: user, to: analyst,
    kind: Note, subject: plan-revision`). Analist **geçmişle** yeniden çağrılır: `[brief] →
-   [önceki plan JSON] → [not]`. Yeni plan `spec.json`'ın üzerine yazılır (eski sürümler
-   `conversations/analyst.jsonl` içindeki turlarda tam metinle durur). Çalışma yine `AwaitingApproval`.
+   [önceki plan JSON] → [not]`. Yeni plan `spec` alanının üzerine yazılır (eski sürümler
+   analistin tur kayıtlarında tam metinle durur). Çalışma yine `AwaitingApproval`.
    Döngü onaya kadar sürer; tur sınırı **yoktur** (insan döngüyü kendi bitirir).
 5. `AwaitingApproval` dışında `approve`/`revise` → **409 `run.not_awaiting_approval`**.
 
@@ -150,9 +158,9 @@ Kod (`Application/Runs/Dispatcher`), her tetiklemede (onay, bir adımın bitişi
   paralel çalışabilir (developer bir görevi kodlarken testçi başka görevi denetler).
 - Hazır görev + hedef adımın ajanı boş → **atama**:
   1. `handoffRole` varsa organizatör **devir notu** üretir (1 LLM turu; girdi: görev, önceki adımın
-     çıktısı/özeti, hedef rol). Not `messages.jsonl`'e `kind: Handoff, from: organizer, to: <rol>`
+     çıktısı/özeti, hedef rol). Not mesaj kaydına `kind: Handoff, from: organizer, to: <rol>`
      yazılır ve hedef rolün prompt'una **girdi** olur. `handoffRole: null` ise not yok, atama sessiz.
-  2. `phases.jsonl`'e `Started` (adım, ajan, tur) yazılır.
+  2. Faz kaydına `Started` (adım, ajan, tur) yazılır.
   3. Sahne: `meet { from: organizer, to: <rol>, kind: handoff }`, `board.move { task, stage,
      state: active }`, `agent.state { <rol>, working }`, `run.stage`.
 - Hazır görev var, ajanı dolu → görev `queued` bekler; ajan boşalınca sıra ona gelir.
@@ -173,7 +181,7 @@ Kod (`Application/Runs/Dispatcher`), her tetiklemede (onay, bir adımın bitişi
   ile yeniden dağıtıma koyar; emniyet olarak `RunResumer` 2 dk'dan eski bekleyenleri dakikada bir tarar. Yeniden
   başlatmada bekleyen çalışma `Interrupted` olmaz (ortada yarım LLM çağrısı yok), dağıtım kuyruğa geri girer.
 - **Otomatik tekrar (geçici hatalar).** `RetryPolicy` (3 deneme, 3 s · 6 s artan bekleme): runtime kapalı,
-  429, 5xx, zaman aşımı, ağ. Şema/politika/4xx gibi kalıcı hatalar hemen düşer. Her deneme `messages.jsonl`'e
+  429, 5xx, zaman aşımı, ağ. Şema/politika/4xx gibi kalıcı hatalar hemen düşer. Her deneme mesaj kaydına
   `subject: retry` notu yazar; sahnede ajan "yeniden deneniyor 2/3" der.
 - **Elle tekrar.** `POST /runs/{id}/retry` kaldığı adımdan sürer (bkz. yaşam döngüsü ve Gelen kutusu);
   `Retries` sayacı artar, `subject: retry` notu düşer. **Kaldığı adım `run.step`'tir** (`analyze | approval |
@@ -251,7 +259,7 @@ paralel** (JobWorker havuzu). Tur = o adımda bitmiş deneme sayısı + 1.
 > "Flow'da sorun olursa soru gelsin; çözüm için müdahale imkânı varsa sunsun, yoksa ben geliştirme yaparım."
 
 Akış kendi çözemediği yerde durur, çalışma **`AwaitingInput`** olur, soru `run.json → question` alanında
-(`{ ts, agent, text, options[], task, stage, context }`), kaydı `messages.jsonl`'de (`ask`, subject `question`).
+(`{ ts, agent, text, options[], task, stage, context }`), kaydı mesajlarda (`ask`, subject `question`).
 Bildirim zilinde ve gelen kutusunda **soru** olarak görünür; çalışma panelinde seçenekler düğme olur.
 
 | Ne zaman | Soran | Seçenekler |
@@ -260,7 +268,7 @@ Bildirim zilinde ve gelen kutusunda **soru** olarak görünür; çalışma panel
 
 **Ajan → ajan sorusu (`can_ask`, 2026-09-20):** developer `blocked=true` dediğinde soru **önce** md'sindeki `can_ask`
 hedefine (bugün `manager`) gider: 1 LLM turu, yalnız okuma aracı, şema `{ answer, escalate, reason }`. Kayıt
-`messages.jsonl`'de `ask` (developer → manager) + `answer` (manager → developer, aynı `ref`); faz `Failed` ("soru → manager")
+Mesaj kaydında `ask` (developer → manager) + `answer` (manager → developer, aynı `ref`); faz `Failed` ("soru → manager")
 olur, aynı adım yeniden koşar ve cevap notlar arasında gider. **Kullanıcı hiçbir şey görmez.** Kullanıcıya düşen hâller:
 `can_ask` yok · manager `escalate=true` (sebep soru bağlamına eklenir, günlükte `escalate`) · manager hata verdi (günlükte
 `error`) · **aynı görevde ikinci takılma** (varsayımla: manager görev başına bir kez sorulur; sonrası kullanıcıya). Limit
@@ -280,7 +288,11 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
 - **Maliyet eşdeğerdir.** SDK'nın döndürdüğü `costUsd` API liste fiyatına göre hesaplanır; Claude Code
   aboneliğiyle **ücret kesilmez**, kota penceresi tükenir. UI her yerde `≈$` yazar ve bunu söyler. İş başına
   `maxCostUsd` tavanı isteğe bağlı kalır ve bu eşdeğer rakamla ölçülür (karşılaştırma için kullanışlı).
-- **Limit koruması** (asıl koruma): `config/settings.json → limitGuards { provider: yüzde }`, varsayılan
+- **Soruyu kim cevaplar (2026-09-21):** akışın `askRole` alanı. `null` = ajanın kendi `can_ask`'i (eski
+  davranış), `"user"` = doğrudan kullanıcı, ajan anahtarı = o ajan. Açık karar #4 böyle kapandı: `can_ask`
+  ajan özelliğiydi, dolayısıyla manager'ı olmayan bir akışta bile developer manager'a soruyor ve akışta
+  olmayan bir ajanı (ve maliyetini) işe sokuyordu.
+- **Limit koruması** (asıl koruma): ayarlarda `limitGuards { provider: yüzde }`, varsayılan
   **%99**, Ayarlar ekranında platform bazında değiştirilir. Her LLM çağrısından önce (`LimitGuard`) sağlayıcının
   aktif kota pencereleri (5 saat, hafta, modele özel) okunur (runtime 90 s önbellek); biri eşiğe ulaştıysa çağrı
   **yapılmaz**: çalışma `Paused` + `resumeAt` (pencerenin sıfırlanma zamanı), `limit` notu, bildirim zilinde
@@ -304,7 +316,7 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   `claude auth login` başlatmasıyla olur (yeni konsol penceresi + tarayıcı onayı); şifre/token
   hiçbir katmandan geçmez, CLI kendi OAuth akışını yürütür. UI girişten sonra 3 dakika boyunca
   5 s'de bir `refresh=true` ile yoklar ve tamamlanınca gösterir.
-- **Kullanım görünümü:** `GET /api/v1/usage` bizim kayıtlarımızdan (runs/ turları: tur, token,
+- **Kullanım görünümü:** `GET /api/v1/usage` bizim kayıtlarımızdan (kayıtlı turlar: tur, token,
   sağlayıcının bildirdiği maliyet) sağlayıcı+model bazında toplar.
 - **Kalan kullanım (üst bar, 2026-09-19 kullanıcı isteği):** `GET /api/v1/limits` aktif her sağlayıcı
   için kota pencerelerini verir (Anthropic: 5 saatlik oturum, haftalık, modele özel pencereler).
@@ -377,7 +389,7 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
 1. ~~Red geri dönüşü~~ → kapı başına, aradakiler yeniden koşar (yukarıda, varsayımla).
 2. `design` adımı görev başına çalışıyor (varsayımla); çalışma başına tek rehber istenirse akışa `design` görevi eklenir.
 3. ~~`implement`~~ → araçlarla, hedef dizinde; test komutu ajanın kendi kararı, kabul ölçütleri yol gösterir.
-4. `canAsk` hedefi akışta olmayan bir ajan olabilir mi (bugün: evet, denetlenmez; yürütücü 2026-09-20'de geldi, hedef ekipte olmalı — `agent.unknown_can_ask`).
+4. ~~`canAsk` hedefi akışta olmayan bir ajan olabilir mi~~ → kapandı (2026-09-21): hedef **akış** düzeyinde `askRole` ile verilir; `null` bırakılırsa ajanın `can_ask`'i kullanılır.
 5. `stage.officeRole` ile ajanın `office_roles` çakışması denetlenecek mi.
 6. `kind: handoff` adımı ile `handoffRole` ikiliği; birinin kaldırılması.
 7. Pano: çalışma düzeyindeki analiz için ayrı kart mı (bugün: analiz sütunu boş kalır, görevler

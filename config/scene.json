@@ -693,6 +693,38 @@
       "home": {
         "spot": "board"
       }
+    },
+    {
+      "key": "analist-developer",
+      "name": "Analist-Developer",
+      "sprite": "hipster",
+      "home": {
+        "seat": "deskC-left"
+      }
+    },
+    {
+      "key": "analist-tasarimci",
+      "name": "Analist-Tasarımcı",
+      "sprite": "blue-hoodie",
+      "home": {
+        "seat": "deskC-right"
+      }
+    },
+    {
+      "key": "developer-testci",
+      "name": "Developer-Testçi",
+      "sprite": "shirt-tie",
+      "home": {
+        "seat": "deskD-left"
+      }
+    },
+    {
+      "key": "solo",
+      "name": "Solo",
+      "sprite": "green-hoodie",
+      "home": {
+        "seat": "deskD-right"
+      }
     }
   ],
   "cat": {

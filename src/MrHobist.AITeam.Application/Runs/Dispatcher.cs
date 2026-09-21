@@ -111,7 +111,7 @@ public static class Dispatcher
         {
             PhaseStatus.Started => null,
             PhaseStatus.Failed => index >= 0 ? stages[index] : stages[0],
-            PhaseStatus.Rejected => Workflow.ImplementBefore(stages, last.Stage) ?? stages[0], // tek kaynak: Workflow
+            PhaseStatus.Rejected => Workflow.ProducerBefore(stages, last.Stage) ?? stages[0], // tek kaynak: Workflow
             _ => index >= 0 && index + 1 < stages.Count ? stages[index + 1] : null,
         };
     }

@@ -256,7 +256,7 @@ defineExpose({ canLeave })
 
       <section v-if="tab === 'work'" class="work">
         <div class="work-head">
-          <span class="sub">Bu ajanın çalışma başına yaptıkları: her LLM turunun gönderilen metni ve çıktısı, o anda kullanılan sağlayıcı/model/efor, aldığı ve verdiği notlar, faz geçişleri. Kaynak <code>runs/*/conversations/{{ agentKey }}.jsonl</code>.</span>
+          <span class="sub">Bu ajanın çalışma başına yaptıkları: her LLM turunun gönderilen metni ve çıktısı, o anda kullanılan sağlayıcı/model/efor, aldığı ve verdiği notlar, faz geçişleri. Kaynak: bu ajanın tur kayıtları.</span>
           <button type="button" class="small" @click="loadWork">Yenile</button>
         </div>
         <p v-if="workError" class="err">{{ workError }}</p>

@@ -18,11 +18,38 @@ public sealed record RuntimeTurnRequest(
     string? Cwd = null,
     int? MaxTurns = null,
     /// <summary>Canli arac akisi geri cagrisi (tek kullanimlik belirtecli loopback adres); null = akis yok.</summary>
-    string? ProgressUrl = null);
+    string? ProgressUrl = null,
+    /// <summary>
+    /// Sistem promptunun SDK'ya nasil verildigi (<see cref="SystemPromptModes"/>). Karar burada, .NET'te;
+    /// runtime yalniz esler. Yeni alan SONA eklendi (CLAUDE.md §5); yoksa eski davranis (<c>replace</c>).
+    /// </summary>
+    string SystemPromptMode = SystemPromptModes.Replace);
+
+/// <summary>
+/// Claude Code'un KENDI sistem promptu korunsun mu. Olculdu 2026-09-21 (ayni brief/model/efor):
+/// <list type="bullet">
+/// <item><c>replace</c>: SDK'ya duz string -> Claude Code'un "nasil verimli calisirim" kilavuzu SILINIR. Yurutme
+/// adiminda ajan ayni motorla ama kilavuzsuz kosar: tek kisilik akis 55 ic tur, Claude Code 11-16.</item>
+/// <item><c>claude_code</c>: kilavuz korunur, bizimki sonuna eklenir. Ama planlama turunda (buyuk, ic ice Spec
+/// semasi) model semayi dolduramadi: 5 denemede 'rules'/'tasks' eksik, bir kez de "rule1 / a.cs" taslagi.</item>
+/// </list>
+/// Dolayisiyla mod ADIM BASINA secilir: dosya yazan/komut kosan adimlar kilavuzu alir, plan ureten adimlar almaz.
+/// </summary>
+public static class SystemPromptModes
+{
+    public const string Replace = "replace";
+
+    public const string ClaudeCode = "claude_code";
+}
 
 public sealed record RuntimeMessage(string Role, string Content);
 
-public sealed record RuntimeUsage(int InputTokens, int OutputTokens, int ReasoningChars);
+/// <summary>
+/// Tur kullanimi. <paramref name="InputTokens"/> TOPLAMDIR: dogrudan + onbellege yazilan + onbellekten okunan.
+/// <paramref name="CacheReadTokens"/> ve <paramref name="CacheWriteTokens"/> o toplamin icindeki paylardir
+/// (ikisi de 0 = saglayici onbellek bildirmiyor). Yeni alanlar SONA eklendi (CLAUDE.md §5).
+/// </summary>
+public sealed record RuntimeUsage(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0);
 
 public sealed record RuntimeToolUse(string Tool, string? Target);
 

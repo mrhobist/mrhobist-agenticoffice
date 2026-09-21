@@ -22,7 +22,7 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `workflow.analyze_count` | 400 | Tam olarak bir `analyze` adımı olmalı |
 | `workflow.analyze_first` | 400 | `analyze` ilk sırada olmalı |
 | `workflow.no_implement` | 400 | En az bir `implement` adımı olmalı |
-| `workflow.review_before_implement` | 400 | `review` adımının önünde `implement` yok |
+| `workflow.review_before_implement` | 400 | `review` adımının önünde **üretici** adım (`design` ya da `implement`) yok |
 | `workflow.rounds_min` | 400 | `maxReviewRounds` en az 1 |
 | `workflow.duplicate_stage` | 400 | Yinelenen adım kimliği |
 | `workflow.invalid_stage` | 400 | Geçersiz `kind`, `officeRole`, boş `role` ya da boş liste |

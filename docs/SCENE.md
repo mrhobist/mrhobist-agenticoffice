@@ -203,7 +203,7 @@ kesikli bir hayalet not durur: pano yalnız şimdiyi değil işin nereye akacağ
 - **Three.js bırakıldı.** Referans görsel 2B pikseldir; sprite'lar 2B'dir. Canvas 2D tek
   bağımlılıksız çözümdür. Alternatif (Three.js sprite düzlemleri) ışık/gölge dışında bir şey
   katmıyordu.
-- **Olay kanalı bellek içi**, kalıcı değil. Sahne kozmetiktir; kalıcı gerçek `runs/` JSONL'dir.
+- **Olay kanalı bellek içi**, kalıcı değil. Sahne kozmetiktir; kalıcı gerçek veritabanındadır.
 - **V1'de sahne parçalardan kurulmuştu** (ana sahne PNG'si yoktu, olan da insan/kedi gömülüydü).
   V2 boş arka plan gelince ona geçildi: daha sadık görüntü, daha az koordinat. Prosedürel
   yol silinmedi; `background` verilmezse eski yol çalışır.

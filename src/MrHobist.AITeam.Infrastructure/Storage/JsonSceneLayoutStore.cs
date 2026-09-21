@@ -19,7 +19,7 @@ public sealed class JsonSceneLayoutStore(StoragePaths paths) : ISceneLayout
 
     private string File => paths.ConfigFile("scene.json");
 
-    public async Task UpsertAgentAsync(string key, string name, CancellationToken ct)
+    public async Task<bool> UpsertAgentAsync(string key, string name, CancellationToken ct)
     {
         var root = await ReadAsync(ct).ConfigureAwait(false);
         var agents = root["agents"] as JsonArray ?? throw new DomainException(ErrorCodes.ConfigFileInvalid, "scene.json: 'agents' dizisi yok.");
@@ -27,9 +27,15 @@ public sealed class JsonSceneLayoutStore(StoragePaths paths) : ISceneLayout
         var existing = agents.OfType<JsonObject>().FirstOrDefault(a => a["key"]?.GetValue<string>() == key);
         if (existing is not null)
         {
+            // Ad da ayniysa yazma: her ajan kaydinda scene.json'i bosuna degistirmeyelim.
+            if (existing["name"]?.GetValue<string>() == name)
+            {
+                return false;
+            }
+
             existing["name"] = name;
             await WriteAsync(root, ct).ConfigureAwait(false);
-            return;
+            return true;
         }
 
         var used = agents.OfType<JsonObject>().Select(a => a["sprite"]?.GetValue<string>() ?? "").ToHashSet(StringComparer.Ordinal);
@@ -47,6 +53,7 @@ public sealed class JsonSceneLayoutStore(StoragePaths paths) : ISceneLayout
 
         agents.Add(new JsonObject { ["key"] = key, ["name"] = name, ["sprite"] = sprite, ["home"] = home });
         await WriteAsync(root, ct).ConfigureAwait(false);
+        return true;
     }
 
     public async Task RemoveAgentAsync(string key, CancellationToken ct)
