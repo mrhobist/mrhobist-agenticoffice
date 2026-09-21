@@ -9,7 +9,7 @@ public sealed record SceneEvent(string Type, string Json, DateTimeOffset At);
 
 /// <summary>
 /// <see cref="ISceneEventPublisher"/>'in bellek ici uygulamasi: her SSE abonesi kendi kuyrugunu alir.
-/// Kalici degildir; sahne kozmetiktir, calisma gecmisi <c>runs/</c> JSONL'dedir.
+/// Kalici degildir; sahne kozmetiktir, calisma gecmisi veritabanindadir.
 /// </summary>
 public sealed class SceneEventBus : ISceneEventPublisher
 {

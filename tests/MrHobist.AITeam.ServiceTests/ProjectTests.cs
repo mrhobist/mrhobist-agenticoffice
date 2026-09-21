@@ -1,4 +1,5 @@
 using MrHobist.AITeam.Application.Abstractions;
+using MrHobist.AITeam.Application.Common;
 using MrHobist.AITeam.Application.Projects;
 using MrHobist.AITeam.Domain;
 using MrHobist.AITeam.Domain.Projects;
@@ -19,8 +20,8 @@ public sealed class ProjectTests : IDisposable
     [Fact]
     public async Task Proje_olusur_listelenir_guncellenir_silinir()
     {
-        var runs = new JsonlRunStore(_fx.Paths);
-        var svc = new ProjectService(new JsonProjectStore(_fx.Paths), new JsonWorkflowStore(_fx.Paths), runs, new WorkspaceLocator(_fx.Paths), new FakeLauncher());
+        var runs = _fx.Runs;
+        var svc = new ProjectService(_fx.Projects, new JsonWorkflowStore(_fx.Paths), runs, new WorkspaceLocator(_fx.Paths), new FakeLauncher());
 
         var card = await svc.CreateAsync(new CreateProjectRequest("hello-world", "Hello World Console", ".NET konsol", null, null), Ct);
         Assert.Equal(("default", "projects/hello-world", Project.LocalOwner, 0), (card.Workflow, card.TargetDir, card.OwnerId, card.Runs));
@@ -36,7 +37,7 @@ public sealed class ProjectTests : IDisposable
         var bad = await Assert.ThrowsAsync<DomainException>(() => svc.UpdateAsync("ikinci", new ProjectModel("İkinci", null, null, null, "kirmizi"), Ct));
         Assert.Equal(ErrorCodes.ProjectInvalidColor, bad.ErrorCode);
         await svc.DeleteAsync("ikinci", false, Ct);
-        Assert.True(File.Exists(Path.Combine(_fx.Paths.ProjectsDir, "hello-world.json")));
+        Assert.Equal("hello-world", (await _fx.Projects.LoadAsync("hello-world", Ct)).Key); // silinen komsu digerini goturmedi
 
         var ex = await Assert.ThrowsAsync<DomainException>(() => svc.CreateAsync(new CreateProjectRequest("hello-world", "x", null, null, null), Ct));
         Assert.Equal(ErrorCodes.ProjectExists, ex.ErrorCode);
@@ -65,7 +66,7 @@ public sealed class ProjectTests : IDisposable
     [Fact]
     public async Task Calisma_listesi_projeye_gore_suzulur()
     {
-        var runs = new JsonlRunStore(_fx.Paths);
+        var runs = _fx.Runs;
         await runs.CreateAsync(new Run("20260919-000001-a", "a", "b", Sensitivity.Anthropic, DateTimeOffset.UtcNow, RunStatus.Running, Project: "p1"), Ct);
         await runs.CreateAsync(new Run("20260919-000002-b", "b", "b", Sensitivity.Anthropic, DateTimeOffset.UtcNow, RunStatus.Running, Project: "p2"), Ct);
         await runs.CreateAsync(new Run("20260919-000003-c", "c", "b", Sensitivity.Anthropic, DateTimeOffset.UtcNow, RunStatus.Running, Project: "p1"), Ct);
@@ -79,9 +80,9 @@ public sealed class ProjectTests : IDisposable
     [Fact]
     public async Task Silme_suren_isi_engeller_bitmis_gecmisi_ve_istenirse_dosyalari_siler()
     {
-        var runs = new JsonlRunStore(_fx.Paths);
+        var runs = _fx.Runs;
         var locator = new WorkspaceLocator(_fx.Paths);
-        var svc = new ProjectService(new JsonProjectStore(_fx.Paths), new JsonWorkflowStore(_fx.Paths), runs, locator, new FakeLauncher());
+        var svc = new ProjectService(_fx.Projects, new JsonWorkflowStore(_fx.Paths), runs, locator, new FakeLauncher());
         var card = await svc.CreateAsync(new CreateProjectRequest("silinecek", "Silinecek", null, null, "apps/silinecek"), Ct);
         var root = locator.RootOf(new Project(card.Key, card.Title, "", card.Workflow, card.TargetDir, Project.LocalOwner, card.CreatedAt, card.Color));
         await File.WriteAllTextAsync(Path.Combine(root, "run.cmd"), "@echo off", Ct);
@@ -101,7 +102,7 @@ public sealed class ProjectTests : IDisposable
         Assert.False(Directory.Exists(root));
         Assert.Null(await runs.GetAsync("20260920-000000-a1", Ct));
         Assert.NotNull(await runs.GetAsync("20260920-000000-b1", Ct));
-        Assert.False(File.Exists(_fx.Paths.ProjectFile("silinecek")));
+        await Assert.ThrowsAsync<NotFoundException>(() => _fx.Projects.LoadAsync("silinecek", Ct));
 
         // Dosyalar istenmezse hedef dizin yerinde kalir.
         var keep = await svc.CreateAsync(new CreateProjectRequest("kalan", "Kalan", null, null, "apps/kalan"), Ct);
@@ -115,7 +116,7 @@ public sealed class ProjectTests : IDisposable
     public async Task Klasor_secici_depo_icini_listeler_gizlileri_atlar_disari_cikmaz()
     {
         var locator = new WorkspaceLocator(_fx.Paths);
-        var svc = new ProjectService(new JsonProjectStore(_fx.Paths), new JsonWorkflowStore(_fx.Paths), new JsonlRunStore(_fx.Paths), locator, new FakeLauncher());
+        var svc = new ProjectService(_fx.Projects, new JsonWorkflowStore(_fx.Paths), _fx.Runs, locator, new FakeLauncher());
         var repo = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(_fx.Paths.ConfigRoot))!;
         Directory.CreateDirectory(Path.Combine(repo, "apps", "alpha", "src"));
         Directory.CreateDirectory(Path.Combine(repo, "apps", "alpha", "bin"));

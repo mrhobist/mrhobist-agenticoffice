@@ -13,10 +13,47 @@ public sealed class SceneLayoutTests : IDisposable
     private JsonDocument Scene() => JsonDocument.Parse(File.ReadAllText(_fx.Paths.ConfigFile("scene.json")));
 
     [Fact]
+    public async Task Ekipte_olup_sahnede_olmayan_ajan_kayitta_kendiliginden_yerlesir()
+    {
+        // Md dosyasi elle eklendiyse sahne kaydi yoktur ve ajan ofiste gorunmez. Sahne kaydi TURETILMIS
+        // durumdur: herhangi bir kayit onu onarmali (2026-09-21). Onceden yalniz AD degisince yaziliyordu.
+        var store = new JsonSceneLayoutStore(_fx.Paths);
+        var ct = CancellationToken.None;
+
+        Assert.True(await store.UpsertAgentAsync("yeni-ajan", "Yeni Ajan", ct));   // eklendi
+        Assert.False(await store.UpsertAgentAsync("yeni-ajan", "Yeni Ajan", ct));  // degisiklik yok → yazma yok
+        Assert.True(await store.UpsertAgentAsync("yeni-ajan", "Baska Ad", ct));    // ad degisti
+
+        var json = System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(_fx.Paths.ConfigFile("scene.json"), ct))!;
+        var agents = json["agents"]!.AsArray();
+        var added = agents.First(a => a!["key"]!.GetValue<string>() == "yeni-ajan")!;
+        Assert.Equal("Baska Ad", added["name"]!.GetValue<string>());
+        Assert.False(string.IsNullOrWhiteSpace(added["sprite"]!.GetValue<string>()));
+
+        // Sprite ve masa ATANMIS olmali. Benzersizlik degismez DEGILDIR: havuz tukenince sprite bilincli
+        // olarak tekrar kullanilir, masa kalmayinca ajan "ziyaretci" olur (docs/SCENE.md → Ajan yerlesimi).
+    }
+
+    [Fact]
     public async Task Yeni_ajan_bos_sprite_ve_bos_masa_alir_masa_bitince_ziyaretci_olur_silinince_duser()
     {
         var store = new JsonSceneLayoutStore(_fx.Paths);
         var ct = CancellationToken.None;
+
+        // Sevk edilen sahnede bos masa OLMAYABILIR (2026-09-21: 10 ajan, 9 masa). Kural masa sayisina bagli
+        // degil: bos masa varsa alinir, bitince ziyaretci. Testi kurala baglamak icin once en az iki masa acilir.
+        using (var initial = Scene())
+        {
+            var agents = initial.RootElement.GetProperty("agents").EnumerateArray().ToList();
+            var seatCount = initial.RootElement.GetProperty("seats").EnumerateObject().Count();
+            var seated = agents.Where(a => a.GetProperty("home").TryGetProperty("seat", out _)).Select(a => a.GetProperty("key").GetString()!).ToList();
+            // Sondan basa: en az 2 masa bosalana kadar koltuklu ajan kaldir.
+            while (seated.Count > 0 && seatCount - seated.Count < 2)
+            {
+                await store.RemoveAgentAsync(seated[^1], ct);
+                seated.RemoveAt(seated.Count - 1);
+            }
+        }
 
         int baseCount;
         List<string> freeSeats;

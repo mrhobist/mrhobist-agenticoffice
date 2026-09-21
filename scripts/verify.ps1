@@ -18,6 +18,10 @@ function Step {
     Write-Host ""
     Write-Host "== $Name" -ForegroundColor Cyan
     try {
+        # Onceki adimdan sizan cikis kodu yeni adimi dusurmesin: saf PowerShell govdeleri
+        # $LASTEXITCODE'a dokunmaz, dolayisiyla eski deger kalirsa alakasiz adimlar da
+        # BASARISIZ raporlanir (2026-09-21: bir test hatasi dort hata gibi gorundu).
+        $global:LASTEXITCODE = 0
         & $Body
         if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
             throw "cikis kodu $LASTEXITCODE"

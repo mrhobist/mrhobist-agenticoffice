@@ -1,0 +1,49 @@
+{
+  "title": "Tam kadro",
+  "maxReviewRounds": 3,
+  "handoffRole": "organizer",
+  "stages": [
+    {
+      "id": "analiz",
+      "title": "Analiz",
+      "kind": "analyze",
+      "role": "analyst",
+      "officeRole": "pm",
+      "description": "Brief çözümlenir; plan manager onayına gider."
+    },
+    {
+      "id": "tasarim",
+      "title": "Tasarım",
+      "kind": "design",
+      "role": "designer",
+      "officeRole": "designer",
+      "description": "Tasarım rehberi üretir."
+    },
+    {
+      "id": "tasarim-onay",
+      "title": "Tasarım onayı",
+      "kind": "review",
+      "role": "manager",
+      "officeRole": "gate",
+      "description": "Tasarımı onaylar; red → tasarımcıya döner."
+    },
+    {
+      "id": "gelistirme",
+      "title": "Geliştirme",
+      "kind": "implement",
+      "role": "developer",
+      "officeRole": "dev",
+      "description": "Tasarıma göre kodlar."
+    },
+    {
+      "id": "test",
+      "title": "Test",
+      "kind": "review",
+      "role": "tester",
+      "officeRole": "qa",
+      "description": "Testleri koşar ve teslim eder; red → geliştirmeye döner."
+    }
+  ],
+  "askRole": "manager",
+  "planApprover": "manager"
+}

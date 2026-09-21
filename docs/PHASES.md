@@ -419,3 +419,267 @@ değiştirilip kaydedilince sonraki çalışmada davranış gözle görülür bi
 - Ölçüm: `verify.ps1` yeşil — birim 34, servis 59 (yeni: `Ajani_dolu_calisma_bekler_ajan_bosalinca_yeniden_dagitima_konur`), ui typecheck.
   Sonraki: `ExecuteStepAsync`'i adım türü başına yürütücülere bölmek, `BusyInOtherRunsAsync` I/O'sunu azaltmak,
   `build-sprites.py`'de 9-dilim sınır denetimi ve `cafe.board`/`stretch.dst` tek kaynak.
+
+## Kalıcılık: dosya deposundan SQLite'a (2026-09-21, kullanıcı kararı) ✅
+
+**İstek:** "projeye db katmanı ekleyelim" — CLAUDE.md §2'nin "veritabanı yoktur" kuralı ve
+§Sapmalar'daki budama bilinçli olarak geri alındı. Motor **SQLite**, erişim **EF Core 10**,
+sınır **yalnız çalışma zamanı durumu** (kullanıcı kararları).
+
+**Neyin nereye gittiği:**
+
+| Önce | Sonra |
+|---|---|
+| `runs/<id>/run.json` | `run` satırı (durum, adım, maliyet, soru, plan, akış kopyası sütunları) |
+| `runs/<id>/spec.json`, `workflow.json` | `run.spec`, `run.workflow_snapshot` (JSON sütun) |
+| `runs/<id>/conversations/{ajan}.jsonl` | `run_turn` (sağlayıcı/model/hedef/maliyet/token sütun, gövde JSON) |
+| `runs/<id>/messages.jsonl` | `run_message` |
+| `runs/<id>/tasks/{görev}/phases.jsonl` | `run_phase` |
+| `config/projects/{key}.json` | `project` |
+| `config/settings.json` | `app_settings` (tek satır) |
+| `config/agents/*.md`, `knowledge/*.md`, `workflows/*.json`, `scene.json` | **değişmedi** — git'te kalır |
+
+**Örüntü kaynağı [sst/opencode](https://github.com/sst/opencode):** sorgulanan alanlar sütun +
+taşınan yük `data` JSON sütunu; monoton kimlikle sıra (JSONL satır sırasının karşılığı, ileride
+SSE'nin imleci — opencode'un ayrı `seq` sayacı alınmadı: istek yolu ile iş kanalı aynı çalışmaya aynı anda
+yazabildiği için `MAX+1` yarışır, AUTOINCREMENT `id` yeter); `onDelete: cascade`; ileri yönlü migration defteri; mutlak yolun veritabanına hiç
+girmemesi. opencode'un yapılandırmayı dosyada bırakan ayrımı da birebir alındı.
+
+**Şema yönetimi (ARCHITECTURE.md §8):** `scripts/sql/changes/0001_create_core_tables.sql` derlemeye
+gömülür; `SchemaMigrator` uygulanmamışları sözlük sırasında, her birini kendi işleminde koşar ve
+`schema_change_log(script_name, checksum, applied_at, applied_by)` defterine yazar. **Uygulanmış bir
+betiğin checksum'ı değişirse kalkış durur.** EF migration yok; EF yalnız eşler, sütun adları elle verilir.
+
+**Sapma:** ARCHITECTURE §8.3 DDL'i ayrı bir dağıtım rolüne verir ve replikaların kalkışta DDL
+koşmasını yasaklar. Burada tek makinede tek süreç var, dağıtım adımı yok → şema kalkışta uygulanır.
+Çok kopya gerekirse bu kaldırılır ve betikler dışarıdan koşulur.
+
+**Kazanılanlar:** çalışma kimliği artık dosya adına dönüşmediği için `runs/` dışına çıkma
+(path traversal) hata sınıfı **tamamen** kalktı; silme tutarlılığı FK cascade'e devredildi;
+kullanım/maliyet sorgusu dosya taramadan çıktı.
+
+**Biten sayılır / ölçüldü (2026-09-21):** `verify.ps1` tüm adımlarda geçti — build 0 uyarı,
+**34 birim + 68 servis** testi (dosya deposu testleri yerine: ekleme sırası, bozuk gövde kurtarma,
+cascade silme, defter + WAL + checksum uyuşmazlığında durma, toleranslı damga okuma, tek sorgulu kullanım
+özeti, ayar gidiş-dönüşü, drift denetimi `ProbeDatabaseAsync`), Python 43, UI typecheck.
+
+**Code review (2026-09-21, aynı gün):** 10 bulgu, 10'u uygulandı. En önemlisi `seq` sayacının kaldırılması
+(istek yolu ile iş kanalı aynı çalışmaya aynı anda yazabiliyor; `MAX+1` yarışıyordu), `UsageReader`'ın tek
+sorguya inmesi ve eski `runs/` klasörü için kalkışta uyarı.
+Servis testleri artık depoları elle değil **DI'dan** alıyor: kayıt yanlışsa test de düşer.
+
+**Sıradaki iş:** MAF (`Microsoft.Agents.AI`) Compaction ile `compact` — geçmiş artık `run_turn`'den
+okunacak. Bulut oturumundaki araştırma kararları: MAF yalnız kütüphane olarak, LLM çağrısı ve
+orkestrasyon için değil.
+
+## Akış çoğaltma: rol sayısı ve bağlam taşıma (2026-09-21, kullanıcı isteği) ✅
+
+**İstek:** üç akış — (1) tek kişi: analiz + geliştirme + test, sorular insana; (2) ikili:
+analist/tasarımcı ve developer/testçi; (3) tam kadro: analist → manager onayı → tasarımcı →
+manager onayı → developer → testçi. Hepsi **UI'dan yönetilebilir** olacak.
+
+**Ölçüm gerekçesi:** 2026-09-21 hello-world koşusunda $4,02'nin $2,07'si (%51) aynı doğrulamanın
+iki kez yapılmasına gitti — testçi ve manager ikisi de `ls -R` + tüm dosyaları `cat` + `build` +
+`test` koştu (11'er iç tur, 9'ar Bash). Sebep: manager'a testçinin kararı değil **görevin kendisi**
+veriliyordu ve `ToolAccess.ForKind(Review) => Full` ile yazma araçları alıyordu.
+
+**Akış düzeyine taşınan iki karar** (ajan düzeyinde olmaları yanlıştı: aynı ajan farklı akışlarda
+farklı davranmalı):
+
+| Alan | Değerler | Neden akışta |
+|---|---|---|
+| `planApprover` | `user` (varsayılan) · ajan | `analyze` çalışma başına bir kez koşar, görev başına değil — görev düzeyindeki `review` ile ifade edilemez |
+| `askRole` | `null` (ajanın `can_ask`'i) · `user` · ajan | Manager'ı olmayan bir akışta developer manager'a soruyor, akışta olmayan ajanı (ve maliyetini) işe sokuyordu (**açık karar #4 kapandı**) |
+
+**Geri dönüş kuralı genelleştirildi:** `ImplementBefore` → `ProducerBefore` — reddedilen iş
+kendinden önceki en yakın **üretici** adıma döner (`design` ya da `implement`). Önceden yalnız
+`implement` aranıyordu, bu yüzden "tasarımı onayla, reddedersen tasarımcıya dön" kurulamıyordu.
+`analyze` üretici sayılmaz (çalışma düzeyi). Kural hâlâ tek kaynakta.
+
+**Ajan md'leri çoğaltıldı**, her akışın şekline göre yazıldı:
+`analist-developer` (tek kişi: üç adım + sorular kullanıcıya), `analist-tasarimci` (plan tarafı,
+tasarımın gerekli olup olmadığına kendi karar verir), `developer-testci` (yapım tarafı, kendi işini
+denetlerken kendine karşı yumuşak olma riski prompt'ta açıkça adlandırılır).
+
+**Yol boyunca çıkan dört ayrı hata:**
+
+1. **`developer.md` bayat ve çelişkiliydi:** "sadece kod bloklarını üret, blok dışında açıklama
+   yazma" diyordu. `FileBlockParser` kodda yok; `Implement` şeması `filesChanged`/`commandsRun`
+   istiyor, yani developer dosyaları araçlarla kendisi yazıyor. Model iki zıt talimat alıyordu.
+2. **Sahne kaydı kendini onarmıyordu:** `AgentService.UpdateAsync` sahneyi yalnız **ad değişince**
+   yazıyordu; md'si elle eklenen bir ajan ofiste sonsuza dek görünmez kalıyordu. Artık her kayıtta
+   `UpsertAgentAsync` çağrılır (idempotent, değişiklik yoksa dosya yazılmaz) ve `bool` döner.
+3. **`verify.ps1` yanlış teşhis üretiyordu:** `$LASTEXITCODE` önceki adımdan sızdığı için bir test
+   hatası üç alakasız denetimi de BAŞARISIZ gösteriyordu. Adım başına sıfırlanır.
+4. **`EXTRA_ROLE_HEX` yazılmış ama hiç bağlanmamıştı:** sonradan eklenen ajanların renk noktası boş
+   kalıyordu. `roleHex(key)` anahtardan türetir — aynı ajan her açılışta aynı rengi alır.
+
+**Biten sayılır / ölçüldü (2026-09-21):** `verify.ps1` tüm adımlarda geçti — **38 birim + 70 servis**
+testi, Python 44, UI typecheck. Üç akış da API'den kabul edildi ve UI'daki Takımlar sekmesinde
+düzenlenebiliyor; dokuz ajanın hepsi sahneye yerleşti.
+
+**Ölçülmedi:** üç akışın gerçek maliyeti. Aynı hello-world brief'iyle koşulup `default` ($4,02) ile
+karşılaştırılmalı. Beklenti: tek kişi ~3 tur, ikili 4 adım, tam kadro 5 adım.
+
+## Üç akışın ölçümü + organizatör maliyetsizleşti (2026-09-21) ✅
+
+**Kullanıcı kararları:** organizatör LLM turu harcamasın (yalnız aktarım yapsın) · insan sadece
+sorulara cevap versin (plan onayı için durdurulmasın) · varsayılan akış **tek kişi** olsun.
+
+**Yapılanlar:** `Prompts.HandoffNote` devir notunu kodda üretir, `HandoffAsync` artık model çağırmaz
+(bütçe kontrolü de gerekmez) · `planApprover: auto` üçüncü seçenek olarak geldi (onay kapısı yok) ·
+`default` akışı tek kişilik oldu, `organizer` her akışa `handoffRole` olarak atandı.
+
+**Ölçüm** — aynı brief, aynı model (ölçüm süresince hepsi `claude-sonnet-5`, haftalık Opus penceresi
+%92 dolu olduğu için kullanıcı kararıyla):
+
+| | Tek kişi | İkili | Tam kadro |
+|---|---|---|---|
+| Sonuç | **Completed** | **Completed** | AwaitingInput (yarım) |
+| Maliyet | **$1,38** | $1,61 | $1,70 |
+| Ajan turu | 3 | 7 | 12 |
+| Girdi token | 2.517.080 | 2.076.348 | 1.054.901 |
+| **Önbellek okuma** | **%92,9** | %87,3 | %71,1 |
+| Organizatör | **$0** (1 devir) | **$0** (2 devir) | **$0** |
+| Çıktı | build 0 uyarı, test geçer | build 0 uyarı, test geçer | kod yok |
+
+**Önbellek oranı rol sayısıyla birebir düşüyor** (1 ajan %92,9 → 2 ajan %87,3 → 3 ajan %71,1).
+Bu, "her rol değişimi önbellek ön ekini kırar" tezinin doğrudan ölçümü: tek ajan tek ön ek demek.
+
+**Yol boyunca çıkan hata (gerçek koşuda yakalandı):** otomatik ve ajan onayında durum `Running`
+yazılıyor ama **iş kuyruğa konmuyordu** — üç çalışma birden sonsuza kadar bekledi. Eski akışta bunu
+kullanıcının "Onayla" isteği (uç → `ScheduleAndAccept`) yapıyordu. `scheduler.Schedule` üç geçişe de
+eklendi; üç yeni test bunu kilitliyor (`Otomatik_onayda_dagitim_kuyruga_girer`, ajan onayı kabul/red).
+
+**Tam kadro yakınsamadı:** manager tasarımı **3 kez reddetti** (tavan 3) ve iş kullanıcıya düştü;
+$1,70 harcandı, kod üretilmedi. Tasarım kapısı hello-world ölçeğinde fazla sıkı. Ayar gerektirir:
+ya `maxReviewRounds` ya manager'ın tasarım için kabul ölçütü.
+
+**Testler ürünün varsayılanından ayrıldı:** servis testleri artık kendi `klasik` akışını kuruyor
+(`default` değiştiğinde kırılmasınlar diye); `WorkflowStoreTests` şekle değil değişmezlere bakıyor.
+
+**Ölçüldü:** `verify.ps1` tüm adımlarda geçti — **38 birim + 73 servis**, Python 44, UI typecheck.
+
+### Claude Code ile kıyas — aynı model, aynı efor (2026-09-21)
+
+Aynı brief (Türkçe), `claude-sonnet-5`, efor `high`, aynı araç seti, boş dizin:
+
+| | **Claude Code** | Tek kişi | İkili | Tam kadro |
+|---|---|---|---|---|
+| Sonuç | ✅ | ✅ | ✅ | ⚠️ yarım |
+| Maliyet | **$0,426** | $1,384 | $1,606 | $1,700 |
+| İç tur | **16** | 55 | 58 | 40 |
+| Girdi token | **876.793** | 2.517.080 | 2.076.348 | 1.054.901 |
+| Süre | **68 sn** | ~3,5 dk | ~4 dk | ~5,5 dk |
+| Önbellek okuma | %93,4 | %92,9 | %87,3 | %71,1 |
+
+**Tek kişi akışı Claude Code'un 3,25 katı.** Ama fark **önbellek değil**: tek ajanda oran zaten
+eşitlendi (%92,9 ≈ %93,4). Fark **iş hacmi**: 55 iç tur / 16.
+
+Sebep, adım sınırları. Tek kişi akışında aynı ajan üç adımı da koşuyor ama her adım ayrı bir
+`CallAsync` ve tek mesajlık geçmişle başlıyor — yani ajan **kendi bağlamını kendi adımları arasında
+atıyor**. Dökümü: analiz 4 iç tur · geliştirme 32 · **test 19**. Test adımı, geliştirme adımının az
+önce yazdığı dosyaları sıfırdan okuyup doğruluyor. Claude Code bunu tek sürekli konuşmada yapıyor,
+yazdığını zaten biliyor.
+
+**Compact için sonuç:** sıkıştırma bu farkı kapatmaz — kapatacak olan, aynı ajanın adımları arasında
+**bağlamın taşınması**. Compact'in yeri bu taşınan bağlam büyüyünce onu sınırlamaktır.
+
+### Adımlar arası bağlam taşıma (2026-09-21) ✅
+
+**Gerekçe:** Claude Code kıyası, farkın önbellek değil **iş hacmi** olduğunu gösterdi (55 iç tur / 16).
+Sebep: her adım tek mesajlık geçmişle başlıyordu, yani aynı ajan kendi bağlamını **kendi adımları
+arasında** atıyordu. Test adımı, geliştirme adımının az önce yazdığı dosyaları sıfırdan okuyordu.
+
+**Kural:** bir ajan, **aynı görevdeki** kendi önceki turlarının **çıktısını** görür
+(`RunService.AgentTaskHistoryAsync`). Taşınan şey çıktı; önceki **istem** taşınmaz — istem zaten
+görev bağlamını (plan, kurallar, notlar) içerir, tekrarı her turda bedel ödetirdi. Kapsam görev
+başına: başka görevin geçmişi taşınmaz.
+
+**Ölçüm** (aynı brief, `claude-sonnet-5`, efor `high`). İki koşu birebir kıyaslanamaz — analist
+farklı planladı (1 görev / 2 görev), o yüzden **görev başına** bakılır:
+
+| Görev t1 | Taşıma yok | Taşıma var | Fark |
+|---|---|---|---|
+| geliştirme iç tur | 32 | **15** | −%53 |
+| test iç tur | 19 | **16** | −%16 |
+| toplam iç tur | 51 | **31** | **−%39** |
+| girdi token | 2.407.296 | **1.191.095** | **−%51** |
+
+Toplam maliyet **iki kat iş yapılmasına rağmen** $1,3838 → $1,3180. Önbellek okuma %92,9 → %94,6.
+Çıktı doğrulandı: build 0 uyarı, `Merhaba, dünya!`, test geçiyor.
+
+**Compact'in yeri artık belli:** taşınan geçmiş red turlarıyla büyür (implement → review → implement…).
+Sıkıştırma bu büyüyen geçmişi sınırlamak içindir — taşıma olmadan sıkıştıracak bir şey yoktu.
+
+### Claude Code'un sistem promptu: ölçüldü, iddia tutmadı (2026-09-21)
+
+**Hipotez:** SDK'ya `system_prompt` düz string verildiğinde Claude Code'un kendi çalışma kılavuzu
+siliniyor; kılavuz korunursa (`preset: claude_code` + `append`) yürütme verimi Claude Code'a yaklaşır.
+Doğrulandı: SDK iki biçimi de kabul ediyor (`SystemPromptPreset`).
+
+**Ölçüm 1 — global preset:** analist iki koşuda da plan üretemedi. Bir kez "summary: test, rule1, a.cs"
+taslağı (3 `StructuredOutput` denemesi), bir kez *"Failed to provide valid structured output after 5
+attempts — must have required property 'rules', 'tasks'"*. Developer aynı preset altında geçerli yapısal
+çıktı verdi. Yani preset yapısal çıktıyı genel olarak değil, **büyük iç içe plan şemasını** bozuyor.
+
+**Uygulanan:** mod adım başına, karar .NET'te (`ToolAccess.IsExecution` → `SystemPromptModes`), Python yalnız
+eşler. Write araçlı adımlar `claude_code`, plan üreten adımlar `replace`. Testler: Python 45, .NET 38 + 75.
+
+**Ölçüm 2 — adım başına mod, aynı brief/model/efor:**
+
+| | A: string, taşıma yok | B: string, taşıma var | C: adım başına mod |
+|---|---|---|---|
+| Maliyet | $1,38 | $1,32 (2 görev) | **$0,93** (1 görev) |
+| İç tur | 55 | 68 | 34 |
+| **t1 geliştirme + test** | 32 + 19 = 51 | 15 + 16 = **31** | 16 + 15 = **31** |
+| Önbellek okuma | %92,9 | %94,6 | %90,7 |
+
+**Sonuç:** görev başına iç tur B ile C'de **birebir aynı (31)**. C'nin ucuzluğu analistin 1 görev planlamasından;
+preset'ten değil. Preset ayrıca büyük ön ekini her yürütme adımında bir kez yazdığı için önbellek oranını hafif
+düşürdü. **51 → 31'i taşıma açıkladı; preset n=1'de sıfır kazanç.** Kalan 31 vs Claude Code 11-16 farkı
+yapısal: ayrı test adımı (15 tur), ayrı analiz turu, adım başına yapısal çıktı — ürünün kendi tasarımı.
+
+**Varsayımla ilerlenir:** mod altyapısı duruyor (düşük risk: planlamada kapalı, testli). Bir ikinci örnek de
+görev başına fark göstermezse `claude_code` yolu kaldırılır; ölçüm altyapısı olmadan bu karar verilemezdi.
+
+### Solo akış: Claude Code seviyesi (2026-09-21, kullanıcı isteği) ✅
+
+**Fikir:** yapısal farkı ölçüm göstermişti — ayrı test adımı, ayrı analiz turu, adım başına şema. En yalın
+yasal akış kuruldu: `analyze` (değişmez gereği zorunlu) + tek `implement`; **ayrı test adımı yok**, doğrulama
+işin içinde. Ajan `solo`: "asgari plan, tek görev, yaz-çalıştır-doğrula-bitir; aynı komutu iki kez koşma".
+`planApprover: auto`, `askRole: user`, `handoffRole: organizer` (maliyetsiz).
+
+**Ölçüm** — aynı brief, `claude-sonnet-5`, efor `high`:
+
+| | Claude Code (2 örnek) | **Solo** | Tek kişi (3 adım, taşımalı) |
+|---|---|---|---|
+| İç tur | 11 · 16 | **16** (analiz 3 + iş 13) | 34 |
+| Maliyet | $0,21 · $0,43 | **$0,34** | $0,93 |
+| Girdi token | 485k · 877k | **566k** | 1,49M |
+| Önbellek okuma | %95 · %93 | **%92,2** | %90,7 |
+| Süre | 55 · 68 sn | **~90 sn** | ~2,5 dk |
+| Çıktı | build/run/test ✔ | build/run/test ✔ | build/run/test ✔ |
+
+**Sonuç:** Solo, Claude Code'un aralığının içinde; üstüne yazılı plan + kabul ölçütleri + tam kayıt veriyor
+(Claude Code'da yok). Fark artık kapanmış sayılır. Ayrı denetim kapısı isteyen işler için `default`
+(tek kişi, 3 adım) ve `ikili`/`tam-kadro` duruyor; **hız/maliyet için `solo`**.
+
+## Compact: MAF Compaction taşınan geçmişe (2026-09-21) ✅
+
+**Yer:** `RunService.AgentTaskHistoryAsync`'in taşıdığı önceki çıktılar. Red turlarıyla büyür (her implement
+turu öncekilerin çıktısını taşır; `maxReviewRounds: 3` ile 6 mesaja kadar). Yeni istem sıkıştırmaya **girmez**.
+
+**Yerleşim:** politika Application'da — `IHistoryCompactor` + `CompactionBudget.TaskHistory` (4 mesaj / ~12k
+token); uygulama Infrastructure'da — `MafHistoryCompactor`, `Microsoft.Agents.AI` 1.22.0'ın **statik**
+`CompactionProvider.CompactAsync`'i (agent runtime yok, `AIAgent` yok). Stratejiler modelsiz:
+`Truncation(TokensExceed)` → `SlidingWindow(MessagesExceed)` pipeline'ı. Özetleme yok: bir model turu
+ister, CLAUDE.md §4 gereği kayda ve bütçeye girmeli — ayrı karar. `[Experimental]` → `NoWarn MAAI001;MEAI001`.
+
+**Ölçüm (deterministik, sahte runtime):** 6 zorla red turu → developer 6. turda 10 mesaj taşıyacaktı,
+**4'e** indi; ilk tur 1 mesaj, 3. tur 5 (bütçe içinde, dokunulmadı); istem daima sonda ve tam; roller almaşık.
+Sentetik: 10 tur → 4 mesaj, en yeni korunur en eski düşer; bütçe içindeyse aynı örnek geri döner; 50k token'lık
+tek çıktı kırpılır, en yeni geri bildirim kalır. Testler: 38 birim + **79** servis.
+
+**Gerçek koşuda ölçülmedi:** hello-world'de hiç red olmadı; geçmiş 4 mesajı aşmadı. Kazanç yalnız uzun red
+döngülerinde görünür. Doğrulanmış olan: doğru yerde, doğru sınırla, hiçbir şeyi bozmadan devrede.

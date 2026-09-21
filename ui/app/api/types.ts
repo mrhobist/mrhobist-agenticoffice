@@ -365,6 +365,10 @@ export interface WorkflowDetail {
   maxReviewRounds: number
   handoffRole: string | null
   stages: Array<{ id: string; title: string; kind: string; role: string; officeRole: string; description: string }>
+  /** Takilan ajanin sorusunu kim cevaplar: null = ajanin kendi can_ask'i · 'user' = kullanici · ajan anahtari. */
+  askRole: string | null
+  /** Analistin planini kim onaylar: null / 'user' = kullanici · ajan anahtari. */
+  planApprover: string | null
 }
 
 /** GET /api/v1/runs/{id} */

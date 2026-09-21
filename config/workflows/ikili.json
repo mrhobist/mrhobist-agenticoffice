@@ -1,0 +1,41 @@
+{
+  "title": "İkili",
+  "maxReviewRounds": 3,
+  "handoffRole": "organizer",
+  "stages": [
+    {
+      "id": "analiz",
+      "title": "Analiz",
+      "kind": "analyze",
+      "role": "analist-tasarimci",
+      "officeRole": "pm",
+      "description": "Brief plana çevrilir."
+    },
+    {
+      "id": "tasarim",
+      "title": "Tasarım",
+      "kind": "design",
+      "role": "analist-tasarimci",
+      "officeRole": "designer",
+      "description": "Gerekliyse arayüz rehberi üretir."
+    },
+    {
+      "id": "gelistirme",
+      "title": "Geliştirme",
+      "kind": "implement",
+      "role": "developer-testci",
+      "officeRole": "dev",
+      "description": "Planı uygular."
+    },
+    {
+      "id": "test",
+      "title": "Test",
+      "kind": "review",
+      "role": "developer-testci",
+      "officeRole": "qa",
+      "description": "Kendi işini denetler; red → geliştirmeye döner."
+    }
+  ],
+  "askRole": "user",
+  "planApprover": "auto"
+}

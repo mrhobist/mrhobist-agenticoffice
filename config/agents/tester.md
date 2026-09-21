@@ -2,7 +2,7 @@
 name: Testçi
 summary: Developer çıktısını kurallara göre denetler, testi fiilen çalıştırır, onaylar ya da gerekçeli reddeder.
 office_roles: [qa, gate]
-includes: [kodlama-standartlari]
+includes: [kodlama-standartlari, calisma-ortami]
 can_ask: manager
 ---
 

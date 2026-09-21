@@ -6,6 +6,7 @@ using MrHobist.AITeam.Domain;
 using MrHobist.AITeam.Domain.Agents;
 using MrHobist.AITeam.Domain.Projects;
 using MrHobist.AITeam.Domain.Runs;
+using MrHobist.AITeam.Infrastructure.Compaction;
 using MrHobist.AITeam.Infrastructure.Storage;
 
 namespace MrHobist.AITeam.ServiceTests;
@@ -20,33 +21,182 @@ public sealed class RunServiceTests : IDisposable
     private readonly FakeRuntime _runtime = new();
     private readonly FakeScene _scene = new();
     private readonly FakeScheduler _scheduler = new();
-    private readonly JsonlRunStore _store;
+    private readonly IRunStore _store;
     private readonly RunReader _reader;
-    private readonly JsonProjectStore _projects;
+    private readonly IProjectStore _projects;
     private readonly RunService _svc;
 
     public RunServiceTests()
     {
-        _store = new JsonlRunStore(_fx.Paths);
+        _store = _fx.Runs;
         var agents = new MarkdownAgentStore(_fx.Paths);
         var workflows = new JsonWorkflowStore(_fx.Paths);
         _reader = new RunReader(_store);
-        _projects = new JsonProjectStore(_fx.Paths);
-        _projects.SaveAsync(new Project("test", "Test", "", "default", "projects/test", Project.LocalOwner, DateTimeOffset.UtcNow), Ct).GetAwaiter().GetResult();
-        _svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
+        _projects = _fx.Projects;
+        // Testlerin akisi URUNUN varsayilanina bagli DEGILDIR: burada kurulur. Varsayilan akis
+        // (2026-09-21'de tek kisilik oldu) degistiginde bu testlerin kirilmamasi icin.
+        workflows.SaveAsync(KlasikAkis, Ct).GetAwaiter().GetResult();
+        _projects.SaveAsync(new Project("test", "Test", "", KlasikKey, "projects/test", Project.LocalOwner, DateTimeOffset.UtcNow), Ct).GetAwaiter().GetResult();
+        // Gercek sikistirici: tasinan gecmis butceyi asarsa kirpilir; testler bu yolu da kossun.
+        _svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene, new WorkspaceLocator(_fx.Paths), _scheduler, new MafHistoryCompactor());
     }
 
     public void Dispose() => _fx.Dispose();
 
+    /// <summary>Testlerin dayandigi tam kadro akis: analiz → gelistirme → test → karar, devir organizatorde, plani kullanici onaylar.</summary>
+    private const string KlasikKey = "klasik";
+
+    private static Domain.Workflows.Workflow KlasikAkis => new(
+        KlasikKey, "Klasik", 3, "organizer",
+        [
+            new("analiz", "Analiz", Domain.Workflows.StageKind.Analyze, "analyst", "pm", "Brief çözümlenir."),
+            new("gelistirme", "Geliştirme", Domain.Workflows.StageKind.Implement, "developer", "dev", "Görev kodlanır."),
+            new("test", "Test", Domain.Workflows.StageKind.Review, "tester", "qa", "Testler koşulur."),
+            new("karar", "Karar", Domain.Workflows.StageKind.Review, "manager", "gate", "Son onay."),
+        ]);
+
     private static readonly CancellationToken Ct = CancellationToken.None;
+
+    /// <summary>
+    /// Onay kapisi olmayan akis (planApprover: auto): plan uretilir uretilmez DAGITIM KUYRUGA GIRER.
+    /// 2026-09-21'de bu kacirildi ve uc calisma birden "Running" gorunup sonsuza kadar bekledi:
+    /// durum yazilmisti ama is kanali bostu. Durum gecisi TEK BASINA yetmez, isi kuyruga koyan da olmali.
+    /// </summary>
+    /// <summary>
+    /// Ayni ajan ardisik adimlarda kosunca kendi ciktisini GORUR (baglam tasima, 2026-09-21).
+    /// Olculdu: tasima yokken test adimi, gelistirme adiminin az once yazdigi dosyalari sifirdan
+    /// okuyup dogruluyordu -- tek kisilik akista 19 ic tur. Tasinan sey ajanin CIKTISIDIR, onceki
+    /// istemi degil: istem zaten gorev baglamini tasiyor, tekrari her turda bedel oduretirdi.
+    /// </summary>
+    [Fact]
+    public async Task Ayni_ajan_kendi_onceki_adiminin_ciktisini_gorur()
+    {
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        await workflows.SaveAsync(new Domain.Workflows.Workflow(
+            "tek", "Tek kişi", 3, null,
+            [
+                new("analiz", "Analiz", Domain.Workflows.StageKind.Analyze, "developer", "dev", ""),
+                new("gelistirme", "Geliştirme", Domain.Workflows.StageKind.Implement, "developer", "dev", ""),
+                new("test", "Test", Domain.Workflows.StageKind.Review, "developer", "qa", ""),
+            ],
+            AskRole: Domain.Workflows.Workflow.UserRole,
+            PlanApprover: Domain.Workflows.Workflow.AutoApprove), Ct);
+
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Workflow: "tek", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        await _svc.DispatchAsync(run.Id, Ct);
+
+        // Test adimi cagrisi: istem SON mesaj, onunde gelistirme adiminin ciktisi asistan rolunde durur.
+        var review = _runtime.Calls.Last(c => c.SchemaJson?.Contains("verdict", StringComparison.Ordinal) == true);
+        Assert.True(review.Messages.Count > 1, "test adimina gecmis tasinmadi");
+        Assert.Equal("user", review.Messages[^1].Role);
+        Assert.Contains(review.Messages, m => m.Role == "assistant" && m.Content.Contains("filesChanged", StringComparison.Ordinal));
+        Assert.Contains(review.Messages, m => m.Role == "user" && m.Content.Contains("Bu adımda verdiğin çıktı", StringComparison.Ordinal));
+
+        // Ilk adimda tasinacak gecmis YOK: tek mesaj.
+        var implement = _runtime.Calls.First(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true);
+        Assert.Single(implement.Messages);
+    }
+
+    /// <summary>
+    /// Sistem promptu modu ADIM TURUNE gore secilir ve karar .NET'tedir (CLAUDE.md §1). Olculdu 2026-09-21:
+    /// Claude Code'un kendi kilavuzu yurutme adiminda 55 → ~16 ic tur kazandiriyor ama plan ureten adimda
+    /// buyuk Spec semasini dolduramiyor (5 denemede 'rules'/'tasks' eksik). Ikisi birden gerekli.
+    /// </summary>
+    [Fact]
+    public async Task Sistem_promptu_modu_yurutme_adiminda_claude_code_planlamada_replace()
+    {
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        await _svc.DispatchAsync(run.Id, Ct);
+
+        var analyze = _runtime.Calls.First(c => c.SchemaJson?.Contains("\"tasks\"", StringComparison.Ordinal) == true);
+        var implement = _runtime.Calls.First(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true);
+        var review = _runtime.Calls.First(c => c.SchemaJson?.Contains("verdict", StringComparison.Ordinal) == true);
+
+        Assert.Equal(SystemPromptModes.Replace, analyze.SystemPromptMode);      // plan uretir: kilavuz semayi bozuyor
+        Assert.Equal(SystemPromptModes.ClaudeCode, implement.SystemPromptMode); // dosya yazar: kilavuz korunur
+        Assert.Equal(SystemPromptModes.ClaudeCode, review.SystemPromptMode);    // komut kosar: kilavuz korunur
+    }
+
+    /// <summary>
+    /// Red turlari tasinan gecmisi buyutur (her implement turu oncekilerin ciktisini tasir). Butce
+    /// (<see cref="CompactionBudget.TaskHistory"/>: 4 mesaj) asilinca en eski turlar duser; yeni istem daima
+    /// son mesaj ve tam. 6 red turu → developer 6. turda 5 onceki cikti (10 mesaj) tasiyacakti; 4'e iner.
+    /// </summary>
+    [Fact]
+    public async Task Red_turlari_buyuyen_gecmisi_butce_sinirlar()
+    {
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        await workflows.SaveAsync(KlasikAkis with { Key = "uzun-red", MaxReviewRounds = 6 }, Ct);
+        _runtime.RejectTests = true;
+
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Workflow: "uzun-red", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.AwaitingInput, run.Status); // 6 red → kullaniciya
+
+        var implementCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true && c.Messages[^1].Content.Contains("# Görev t1", StringComparison.Ordinal)).ToList();
+        Assert.Equal(6, implementCalls.Count);
+
+        Assert.Single(implementCalls[0].Messages);                       // ilk tur: tasinan gecmis yok
+        Assert.Equal(5, implementCalls[2].Messages.Count);               // 3. tur: 2 cikti (4 mesaj) + istem, butce icinde
+        Assert.True(implementCalls[5].Messages.Count <= 5, $"6. tur {implementCalls[5].Messages.Count} mesaj; butce 4 + istem"); // sikistirildi
+        Assert.Equal("user", implementCalls[5].Messages[^1].Role);      // istem daima sonda ve tam
+        Assert.Contains("# Görev t1", implementCalls[5].Messages[^1].Content, StringComparison.Ordinal);
+        for (var i = 1; i < implementCalls[5].Messages.Count; i++)
+        {
+            Assert.NotEqual(implementCalls[5].Messages[i - 1].Role, implementCalls[5].Messages[i].Role); // almasik
+        }
+    }
+
+    [Fact]
+    public async Task Otomatik_onayda_dagitim_kuyruga_girer()
+    {
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var wf = await workflows.LoadAsync(KlasikKey, Ct);
+        await workflows.SaveAsync(wf with { Key = "otomatik", PlanApprover = Domain.Workflows.Workflow.AutoApprove, AskRole = Domain.Workflows.Workflow.UserRole }, Ct);
+
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Workflow: "otomatik", Brief: "brief"), Ct);
+        _scheduler.Scheduled.Clear();
+
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Running, run.Status);          // kullaniciya SORULMAZ
+        Assert.Equal(RunStep.Dispatch, run.Step);
+        Assert.Contains((run.Id, RunStep.Dispatch), _scheduler.Scheduled); // ve is kuyruga KONDU
+    }
+
+    /// <summary>Plani ajan onaylar: kabul → dagitim kuyrukta, red → analiz kuyrukta. Ikisi de kullaniciya sormaz.</summary>
+    [Theory]
+    [InlineData(false, RunStep.Dispatch)]
+    [InlineData(true, RunStep.Analyze)]
+    public async Task Ajan_plan_onayinda_sonraki_adim_kuyruga_girer(bool reddet, RunStep beklenen)
+    {
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var wf = await workflows.LoadAsync(KlasikKey, Ct);
+        await workflows.SaveAsync(wf with { Key = "ajan-onay", PlanApprover = "manager" }, Ct);
+
+        _runtime.RejectPlan = reddet;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Workflow: "ajan-onay", Brief: "brief"), Ct);
+        _scheduler.Scheduled.Clear();
+
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Running, run.Status);
+        Assert.Equal(beklenen, run.Step);
+        Assert.Contains((run.Id, beklenen), _scheduler.Scheduled);
+    }
 
     [Fact]
     public async Task Analiz_plani_uretir_ve_onay_bekler()
     {
         var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "Türkçe slugify fonksiyonu yaz"), Ct);
         Assert.Equal(RunStatus.Running, run.Status);
-        Assert.Equal("default", run.Workflow);
-        Assert.True(File.Exists(Path.Combine(_fx.Paths.RunsRoot, run.Id, "workflow.json")));
+        Assert.Equal(KlasikKey, run.Workflow);
+        Assert.NotNull(await _store.ReadWorkflowAsync(run.Id, Ct)); // akis kopyasi calismayla birlikte donduruldu
 
         run = await _svc.AnalyzeAsync(run.Id, Ct);
 
@@ -63,7 +213,7 @@ public sealed class RunServiceTests : IDisposable
         Assert.Equal("high", call.ReasoningEffort);
         Assert.NotNull(call.SchemaJson);
 
-        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.WorkflowSet && e.Json.Contains("\"default\"", StringComparison.Ordinal));
+        Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.WorkflowSet && e.Json.Contains(KlasikKey, StringComparison.Ordinal));
         Assert.Contains(_scene.Events, e => e.Type == SceneEventTypes.AgentState && e.Json.Contains("\"analyst\"", StringComparison.Ordinal) && e.Json.Contains("\"done\"", StringComparison.Ordinal));
         Assert.DoesNotContain(_scene.Events, e => e.Type == SceneEventTypes.BoardSet);
     }
@@ -115,10 +265,11 @@ public sealed class RunServiceTests : IDisposable
         Assert.Contains("Write", dev.Tools!);
         Assert.EndsWith(Path.Combine("projects", "test"), dev.Cwd!, StringComparison.Ordinal);
         Assert.True(Directory.Exists(dev.Cwd));
-        var handoff = _runtime.Calls.First(c => c.Model == "claude-haiku-4-5-20251001");
-        Assert.Null(handoff.Tools);
+        // Organizator MODEL CAGIRMAZ (2026-09-21): devir notu kodda uretilir. Ucuz model onun icindi;
+        // baska hicbir adim haiku kullanmadigi icin tek bir haiku cagrisi bile olmamali.
+        Assert.DoesNotContain(_runtime.Calls, c => c.Model == "claude-haiku-4-5-20251001");
 
-        // Rapor ve kabul notlari messages.jsonl'de; devir notu YALNIZ implement atamasinda (2 gorev → 2 not); arac kullanimi turda.
+        // Rapor ve kabul notlari kayitta; devir notu YALNIZ implement atamasinda (2 gorev → 2 not); arac kullanimi turda.
         var messages = await _store.ReadMessagesAsync(run.Id, Ct);
         Assert.Equal(2, messages.Count(m => m.Kind == MessageKind.Handoff));
         Assert.Equal(2, messages.Count(m => m.Subject == "implement-report"));
@@ -161,7 +312,7 @@ public sealed class RunServiceTests : IDisposable
         Assert.All(feedback, m => Assert.Equal(("tester", "developer", "t1"), (m.From, m.To, m.Task)));
         // Ikinci developer turu geri bildirimi gordu.
         var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).ToList();
-        Assert.Contains("review-feedback", devCalls[1].Messages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("review-feedback", devCalls[1].Messages[^1].Content, StringComparison.Ordinal);
 
         // Gelen kutusu: soru. Gecersiz secim 400.
         var o = await _reader.GetOverviewAsync(Ct);
@@ -214,10 +365,10 @@ public sealed class RunServiceTests : IDisposable
         run = await _svc.DispatchAsync(run.Id, Ct);
         Assert.Equal(RunStatus.Completed, run.Status);
         // Manager cevabi developer'in 2. turunda, kullanici cevabi 3. turunda notlar arasinda; engel fazlari Failed, ayni adim.
-        var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true && c.Messages[0].Content.Contains("# Görev t1", StringComparison.Ordinal)).ToList();
+        var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true && c.Messages[^1].Content.Contains("# Görev t1", StringComparison.Ordinal)).ToList();
         Assert.Equal(3, devCalls.Count); // t1: engel, manager cevabiyla engel, kullanici cevabiyla bitti
-        Assert.Contains("Küçük i kullan; Türkçe", devCalls[1].Messages[0].Content, StringComparison.Ordinal);
-        Assert.Contains("küçük i kullan", devCalls[2].Messages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("Küçük i kullan; Türkçe", devCalls[1].Messages[^1].Content, StringComparison.Ordinal);
+        Assert.Contains("küçük i kullan", devCalls[2].Messages[^1].Content, StringComparison.Ordinal);
         var t1 = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
         Assert.Equal([PhaseStatus.Started, PhaseStatus.Failed, PhaseStatus.Started, PhaseStatus.Failed, PhaseStatus.Started, PhaseStatus.Done], t1.Take(6).Select(p => p.Status));
         Assert.StartsWith("soru → manager", t1[1].Detail, StringComparison.Ordinal);
@@ -229,7 +380,7 @@ public sealed class RunServiceTests : IDisposable
     {
         var agents = new MarkdownAgentStore(_fx.Paths);
         var workflows = new JsonWorkflowStore(_fx.Paths);
-        var settings = new JsonSettingsStore(_fx.Paths);
+        var settings = _fx.Settings;
         var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, new LimitGuard(_runtime, settings));
         var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
 
@@ -281,8 +432,8 @@ public sealed class RunServiceTests : IDisposable
         await _projects.SaveAsync(new Project("tasarim-projesi", "T", "", "tasarimli", "projects/t", Project.LocalOwner, DateTimeOffset.UtcNow), Ct);
         var run = await _svc.CreateAsync(new RunRequest(Project: "tasarim-projesi", Brief: "brief"), Ct);
         Assert.Equal(("tasarimli", "tasarim-projesi", Project.LocalOwner), (run.Workflow, run.Project, run.OwnerId));
-        var explicitWf = await _svc.CreateAsync(new RunRequest(Project: "tasarim-projesi", Brief: "brief", Workflow: "default"), Ct);
-        Assert.Equal("default", explicitWf.Workflow);
+        var explicitWf = await _svc.CreateAsync(new RunRequest(Project: "tasarim-projesi", Brief: "brief", Workflow: KlasikKey), Ct);
+        Assert.Equal(KlasikKey, explicitWf.Workflow);
     }
 
     [Fact]
@@ -443,7 +594,7 @@ public sealed class RunServiceTests : IDisposable
         await _svc.AnalyzeAsync(run.Id, Ct);
         var detail = await _reader.GetDetailAsync(run.Id, Ct);
         Assert.Equal("etiket", detail.Label);
-        Assert.Equal("default", detail.WorkflowDef!.Key);
+        Assert.Equal(KlasikKey, detail.WorkflowDef!.Key);
         Assert.Equal(4, detail.WorkflowDef.Stages.Count);
         Assert.Equal(["t1", "t2"], detail.Order);
         Assert.Empty(detail.Tasks);
@@ -520,9 +671,9 @@ public sealed class RunServiceTests : IDisposable
         // Manager yalniz okuma araciyla cagrildi; cevap developer'in 2. turunda; manager turu conversations'ta.
         var managerCall = Assert.Single(_runtime.Calls, c => c.SchemaJson?.Contains("escalate", StringComparison.Ordinal) == true);
         Assert.Equal(["Read", "Glob", "Grep"], managerCall.Tools!);
-        Assert.Contains("i mi I mı", managerCall.Messages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("i mi I mı", managerCall.Messages[^1].Content, StringComparison.Ordinal);
         var devCalls = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).ToList();
-        Assert.Contains("manager → developer · answer", devCalls[1].Messages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("manager → developer · answer", devCalls[1].Messages[^1].Content, StringComparison.Ordinal);
         Assert.NotEmpty(await _store.ReadTurnsAsync(run.Id, "manager", Ct));
     }
 
@@ -579,6 +730,9 @@ public sealed class RunServiceTests : IDisposable
         /// <summary>Testci (review) hep reddetsin.</summary>
         public bool RejectTests { get; set; }
 
+        /// <summary>Plani onaylayan ajan (manager) reddetsin. Testciden AYRI: ikisi de ayni verdict semasini kullanir.</summary>
+        public bool RejectPlan { get; set; }
+
         /// <summary>Developer engellensin (blocked + soru).</summary>
         public bool BlockImplement { get; set; }
 
@@ -631,7 +785,8 @@ public sealed class RunServiceTests : IDisposable
             if (request.SchemaJson.Contains("verdict", StringComparison.Ordinal))
             {
                 var isTester = request.SystemPrompt.Contains("TESTÇİ", StringComparison.Ordinal);
-                var review = RejectTests && isTester
+                var isPlanGate = request.SystemPrompt.Contains("MANAGER", StringComparison.Ordinal);
+                var review = (RejectTests && isTester) || (RejectPlan && isPlanGate)
                     ? """{"verdict":"reject","testsRun":true,"findings":["kural 1 ihlal"],"feedback":"kural 1'i düzelt","commandsRun":["pytest: 1 failed"]}"""
                     : """{"verdict":"accept","testsRun":true,"findings":[],"feedback":"temiz","commandsRun":["pytest: 3 passed"]}""";
                 return Task.FromResult(new RuntimeTurnResponse("", review, request.Provider, request.Model, destination, new RuntimeUsage(50, 20, 0), 0.01m, 2.0, 1, [new RuntimeToolUse("Bash", "pytest")], 4));

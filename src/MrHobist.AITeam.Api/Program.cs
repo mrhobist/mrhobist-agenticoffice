@@ -41,8 +41,13 @@ builder.Services.AddExceptionHandler<ProblemMapping>();
 var paths = StoragePaths.Discover(
     builder.Environment.ContentRootPath,
     builder.Configuration["AITeam:ConfigRoot"],
-    builder.Configuration["AITeam:RunsRoot"]);
-builder.Services.AddFileStorage(paths);
+    builder.Configuration["AITeam:DataRoot"]);
+
+// Sema, servisler ayaga kalkmadan once uygulanir (ARCHITECTURE.md §8): eksik/bayat sema ilk sorguda
+// degil burada patlar. Uygulanmis bir betik degistirilmisse kalkis durur.
+var appliedScripts = DependencyInjection.MigrateDatabase(paths);
+
+builder.Services.AddAiTeamStorage(paths);
 
 var runtimeUrl = new Uri(builder.Configuration["AITeam:RuntimeUrl"] ?? "http://127.0.0.1:5090");
 if (!runtimeUrl.IsLoopback)
@@ -96,6 +101,23 @@ app.MapScene();
 app.MapRuns();
 app.MapProjects();
 app.MapGet("/api/v1/jobs/health", (JobChannel q) => Results.Ok(new { status = "ok", pending = q.Pending }));
+
+if (appliedScripts > 0)
+{
+    Log.SchemaApplied(app.Logger, appliedScripts, paths.DatabaseFile);
+}
+
+// Dosya deposu doneminden kalanlar (2026-09-21 gecisi) sessizce yok sayilmaz, soylenir (LESSONS: sessiz kabul).
+var legacyRuns = Path.Combine(paths.RepoRoot, "runs");
+if (Directory.Exists(legacyRuns) && Directory.EnumerateDirectories(legacyRuns).Any())
+{
+    Log.LegacyRunsFound(app.Logger, legacyRuns);
+}
+
+if (builder.Configuration["AITeam:RunsRoot"] is not null)
+{
+    Log.LegacyRunsRootSetting(app.Logger);
+}
 
 // Surec yeniden basladi: yarim kalan Running calismalar Interrupted, ajan bekleyenler kuyruga geri (docs/DOMAIN.md). Isci henuz baslamadi, tek yazici biziz.
 var interrupted = await app.Services.GetRequiredService<IRunService>().MarkInterruptedAsync(CancellationToken.None).ConfigureAwait(false);

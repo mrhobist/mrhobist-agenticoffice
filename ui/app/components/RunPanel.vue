@@ -551,7 +551,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
               <h3>Günlük</h3>
               <button type="button" class="small" @click="showLog = !showLog">{{ showLog ? 'Gizle' : 'Göster' }}</button>
               <button v-if="showLog" type="button" class="small" @click="loadTurns">Yenile</button>
-              <span class="sub">LLM turları (tam prompt ve çıktı), devir ve hata notları, faz geçişleri. Kaynak: <code>runs/{{ run.id }}/</code></span>
+              <span class="sub">LLM turları (tam prompt ve çıktı), devir ve hata notları, faz geçişleri. Kaynak: bu çalışmanın tur, mesaj ve faz kayıtları.</span>
             </div>
             <template v-if="showLog">
               <p v-if="turnsError" class="err">{{ turnsError }}</p>

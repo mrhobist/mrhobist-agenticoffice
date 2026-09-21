@@ -26,7 +26,7 @@ public interface IRunReader
     Task<RunsOverview> GetOverviewAsync(CancellationToken ct);
 }
 
-/// <summary>runs/ altindaki kayitlari <see cref="RunDetail"/> olarak toplar. Yazmaz, LLM cagirmaz, sahneye dokunmaz.</summary>
+/// <summary>Calisma kayitlarini <see cref="RunDetail"/> olarak toplar. Yazmaz, LLM cagirmaz, sahneye dokunmaz.</summary>
 public sealed class RunReader(IRunStore runs) : IRunReader
 {
     public Task<IReadOnlyList<Run>> ListAsync(int limit, CancellationToken ct, string? project = null)

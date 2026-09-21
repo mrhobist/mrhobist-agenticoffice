@@ -26,8 +26,64 @@ public sealed class WorkflowTests
         wf.Validate();
         Assert.True(wf.IsDefault);
         Assert.Equal(3, wf.TaskStages.Count);
-        Assert.Equal("gelistirme", wf.ImplementBefore(wf.Stages[3]).Id);
+        Assert.Equal("gelistirme", wf.ProducerBefore(wf.Stages[3]).Id);
         Assert.Equal(["analyst", "designer", "developer", "tester", "organizer"], wf.Roles);
+    }
+
+    [Fact]
+    public void Review_tasarimi_reddederse_tasarimciya_doner()
+    {
+        // 2026-09-21 genellemesi: geri donus "en yakin onceki URETICI adim" (design | implement).
+        // Onceden yalniz implement araniyordu, dolayisiyla tasarim kapisi ya kurulamiyor ya yanlis hedefe donuyordu.
+        var wf = new Workflow("tam-kadro", "Tam kadro", 3, null,
+        [
+            S("analiz", StageKind.Analyze, "analyst", "pm"),
+            S("tasarim", StageKind.Design, "designer", "designer"),
+            S("tasarim-onay", StageKind.Review, "manager", "gate"),
+            S("gelistirme", StageKind.Implement),
+            S("test", StageKind.Review, "tester", "qa"),
+        ]);
+        wf.Validate();
+
+        Assert.Equal("tasarim", wf.ProducerBefore(wf.Stages[2]).Id);   // tasarim reddi → tasarimciya
+        Assert.Equal("gelistirme", wf.ProducerBefore(wf.Stages[4]).Id); // kod reddi → developer'a
+    }
+
+    [Fact]
+    public void Review_oncesinde_uretici_adim_yoksa_reddedilir()
+    {
+        var wf = Wf(S("analiz", StageKind.Analyze, "analyst", "pm"), S("kapi", StageKind.Review, "manager", "gate"), S("gelistirme", StageKind.Implement));
+        var ex = Assert.Throws<DomainException>(wf.Validate);
+        Assert.Equal(ErrorCodes.WorkflowReviewBeforeImplement, ex.ErrorCode);
+    }
+
+    [Fact]
+    public void Soru_hedefi_ve_plan_onaylayani_akista_tutulur()
+    {
+        // Kullanici degerleri ekipte aranmaz; ajan anahtarlari aranir (akista olmayan ajan ise sokulmasin).
+        var user = Valid() with { AskRole = Workflow.UserRole, PlanApprover = Workflow.UserRole };
+        user.Validate();
+        Assert.Null(user.PlanApproverAgent);
+        Assert.DoesNotContain(Workflow.UserRole, user.Roles);
+
+        var byManager = Valid() with { AskRole = "manager", PlanApprover = "manager" };
+        byManager.Validate();
+        Assert.Equal("manager", byManager.PlanApproverAgent);
+        Assert.Contains("manager", byManager.Roles);
+
+        var bad = Valid() with { AskRole = "Gecersiz Anahtar" };
+        Assert.Equal(ErrorCodes.WorkflowInvalidStage, Assert.Throws<DomainException>(bad.Validate).ErrorCode);
+    }
+
+    [Fact]
+    public void Eski_akis_yeni_alanlar_olmadan_gecerli()
+    {
+        // Geriye uyum: alanlar yoksa null = eski davranis (ajanin can_ask'i, plani kullanici onaylar).
+        var wf = Valid();
+        wf.Validate();
+        Assert.Null(wf.AskRole);
+        Assert.Null(wf.PlanApprover);
+        Assert.Null(wf.PlanApproverAgent);
     }
 
     [Theory]

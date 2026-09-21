@@ -12,6 +12,8 @@ import { errorText } from '~/api/errors'
  *  - ready + available=false: saglayici vermiyor, neden yaninda (oturum yok, 429, ayristirilamadi...)
  */
 const emit = defineEmits<{ open: [] }>()
+/** Girisi olmayan saglayicilar (app.vue → GET /providers). Kota alinamama sebebi bunlarda "giris yok"tur. */
+const props = withDefaults(defineProps<{ signedOut?: string[] }>(), { signedOut: () => [] })
 const api = useApiClient()
 
 const items = ref<ProviderLimits[] | null>(null)
@@ -63,7 +65,9 @@ function shortLabel(l: UsageLimit): string {
   return k.slice(0, 6)
 }
 /** Kota alinamadiginda tek kelimelik neden: API anahtari · oturum yok · 429 · yok. */
-function shortReason(detail: string): string {
+function shortReason(provider: string, detail: string): string {
+  // Giris yoksa kota zaten alinamaz; kullaniciya kok sebep soylenir, tureyen degil.
+  if (props.signedOut.includes(provider)) return 'giriş yok'
   const d = detail.toLowerCase()
   if (d.includes('api anahtar')) return 'API anahtarı · kota yok'
   if (d.includes('oturum')) return 'giriş yok'
@@ -106,9 +110,9 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
         </span>
         <span v-if="!p.limits.length" class="sub">—</span>
       </button>
-      <button v-for="p in unavailable" :key="p.provider" type="button" class="prov off" :title="p.detail" @click="emit('open')">
+      <button v-for="p in unavailable" :key="p.provider" type="button" class="prov off" :title="props.signedOut.includes(p.provider) ? `${providerLabel(p.provider)}: giriş yok. Kullanmıyorsanız gerekmez; kullanacaksanız Ayarlar'dan giriş yapın.` : p.detail" @click="emit('open')">
         <span class="name">{{ providerLabel(p.provider) }}</span>
-        <span class="sub short">{{ shortReason(p.detail) }}</span>
+        <span class="sub short">{{ shortReason(p.provider, p.detail) }}</span>
       </button>
     </template>
     <span v-else-if="state === 'loading'" class="sub">kalan hak…</span>

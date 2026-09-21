@@ -9,7 +9,7 @@ Enum'lar JSON'da **adıyla** taşınır. Hostlar yalnız `127.0.0.1`.
 
 | Host | Port | Sorumluluk |
 |---|---|---|
-| Api | 5080 | tüm uçlar, SSE yayını, iş kanalı (`runs/` JSONL'e yazan tek yazıcı) |
+| Api | 5080 | tüm uçlar, SSE yayını, iş kanalı (veritabanına yazan tek yazıcı) |
 | runtime (Python) | 5090 | yalnız LLM çağrısı ve sağlayıcı kimliği; UI doğrudan konuşmaz |
 
 ## Ajanlar — `config/agents/*.md`
@@ -71,6 +71,14 @@ Birden çok akış tutulur; `default` her zaman vardır ve silinemez. Bir çalı
 seçilir (`POST /runs { workflow }`), seçilmezse `default` kullanılır. Adımlar sırayla çalışır;
 `handoffRole` verilmişse o ajan **her adım geçişinde** devir notu üretir (organizatör).
 
+İki karar **akış düzeyindedir** (2026-09-21), ajan düzeyinde değil — çünkü aynı ajan farklı
+akışlarda farklı davranmalıdır:
+
+| Alan | Değerler | Anlamı |
+|---|---|---|
+| `planApprover` | yok/`null` ya da `"user"` · ajan anahtarı | Analistin planını kim onaylar. Ajan seçilirse kullanıcıya sorulmaz: ajan reddederse geri bildirim revize notu olur ve analiz yeniden koşar (`maxReviewRounds` turdan sonra karar kullanıcıya düşer) |
+| `askRole` | yok/`null` · `"user"` · ajan anahtarı | Takılan ajanın sorusunu kim cevaplar. `null` = ajanın kendi `can_ask`'i (eski davranış); `"user"` = doğrudan kullanıcı. Manager'ı olmayan bir akışın manager'ı (ve maliyetini) işe sokmaması için vardır |
+
 | Uç | Dönen | Not |
 |---|---|---|
 | `GET /api/v1/workflows` | `WorkflowListItem[]` `{ key, title, isDefault, stageCount, roles[] }` | `roles` = adımlarda + `handoffRole`'de geçen ajanlar |
@@ -81,6 +89,8 @@ seçilir (`POST /runs { workflow }`), seçilmezse `default` kullanılır. Adıml
 ```jsonc
 // Workflow
 { "title": "Varsayılan", "maxReviewRounds": 3, "handoffRole": "organizer",
+  "planApprover": "user",   // plan kullanıcıya sorulur (varsayılan)
+  "askRole": null,          // takılan ajan kendi can_ask hedefine sorar
   "stages": [
     { "id": "analiz",     "title": "Analiz",     "kind": "analyze",   "role": "analyst",   "officeRole": "pm",   "description": "…" },
     { "id": "gelistirme", "title": "Geliştirme", "kind": "implement", "role": "developer", "officeRole": "dev",  "description": "…" },
@@ -90,7 +100,8 @@ seçilir (`POST /runs { workflow }`), seçilmezse `default` kullanılır. Adıml
 ```
 
 Değişmezler (400): tam 1 `analyze` ve ilk sırada (`workflow.analyze_count`, `workflow.analyze_first`),
-≥1 `implement` (`workflow.no_implement`), `review` öncesinde `implement` (`workflow.review_before_implement`),
+≥1 `implement` (`workflow.no_implement`), `review` öncesinde bir **üretici** adım — `design` ya da
+`implement` (`workflow.review_before_implement`),
 `maxReviewRounds ≥ 1` (`workflow.rounds_min`), yinelenen adım (`workflow.duplicate_stage`), geçersiz
 `kind` / `officeRole` / boş `role` (`workflow.invalid_stage`), `role` ya da `handoffRole` ekipte yok
 (`workflow.unknown_role`).
@@ -124,9 +135,9 @@ Kimliksiz istek **401 `auth.required`**. SSE yalnız `scene/events?access_token=
 | `POST /api/v1/providers/{provider}/login` `ProviderLoginRequest { mode?: claudeai\|console\|chatgpt\|apikey, email?, apiKey? }` | `LoginStarted` `{ provider, started, detail }` | Runtime, sağlayıcının **kendi** giriş akışını kullanıcının makinesinde başlatır (Anthropic `claudeai`/`console`: `claude auth login`; OpenAI `chatgpt`: `codex login`; yeni konsol + tarayıcı). Şifre/token bu uçtan geçmez. **`apikey`** istisna: anahtar runtime'a iletilir, runtime sağlayıcıda doğrular (`GET /v1/models`, token harcamaz) ve kullanıcı profiline yazar; Api saklamaz, günlüklemez; `started=true` = doğrulandı ve kaydedildi, `detail` maskeli son. Tamamlanma `GET /providers?refresh=true` ile görülür |
 | `POST /api/v1/providers/{provider}/logout` | `ProviderStatus`'un kimlik kısmı `{ provider, loggedIn, account, detail, method }` | Kayıtlı API anahtarı varsa **önce o silinir** (CLI oturumuna dönülür); yoksa Anthropic `claude auth logout`, OpenAI `codex logout`. Ortam değişkeninden gelen anahtar silinemez, `detail` söyler |
 | `GET /api/v1/limits?refresh=` | `ProviderLimits[]` `{ provider, available, detail, subscription, fetchedAt, limits: [{ kind, group, percent, severity, resetsAt, scope, isActive }] }` | **Kalan kullanım** (üst bar): sağlayıcının kota pencereleri; `percent` kullanılan yüzde. Anthropic: Claude Code'un `/usage` ekranının okuduğu uç, CLI'nin makinede sakladığı oturumla; belirteç hiçbir yanıta yazılmaz. Runtime 90 s önbellekler. Sağlayıcı vermiyorsa ya da yanıt ayrıştırılamıyorsa `available=false` + neden (runtime **500 dönmez**). Runtime'ın kendisi 5xx dönerse Api **502** `runtime.error` (kapalı değil, uç bozuk); ulaşılamıyorsa 503 `runtime.unavailable` |
-| `GET /api/v1/usage?runs=200` | `UsageItem[]` `{ provider, model, turns, runs, inputTokens, outputTokens, costUsd, lastAt }` | Son N çalışmanın `conversations/*.jsonl` turlarından toplanır. **Abonelik limiti / kalan kota değil**: sağlayıcı bunu CLI'a açmıyor; UI bunu söyler |
+| `GET /api/v1/usage?runs=200` | `UsageItem[]` `{ provider, model, turns, runs, inputTokens, outputTokens, costUsd, lastAt }` | Son N çalışmanın tur kayıtlarından toplanır. **Abonelik limiti / kalan kota değil**: sağlayıcı bunu CLI'a açmıyor; UI bunu söyler |
 
-## Projeler — `config/projects/{key}.json`
+## Projeler — `project` tablosu
 
 İş yalnız bir projenin içinde başlar (`docs/DOMAIN.md` → Projeler).
 
@@ -142,7 +153,7 @@ Kimliksiz istek **401 `auth.required`**. SSE yalnız `scene/events?access_token=
 | `POST /api/v1/projects/reorder` `{ keys: [] }` | `ProjectCard[]` | Verilen anahtarlar 0..n sırasını alır, kalanlar arkaya; ray ve Kanban bu sırayı okur. `ProjectCard.color` / `order` alanları sona eklendi; `POST/PUT` gövdesinde `color?` (`#rrggbb`, değilse 400 `project.invalid_color`) |
 | `POST /api/v1/projects/{key}/launch` | **202** `LaunchResult` `{ key, processId, launcher }` | Kökteki `run.cmd` yeni konsolda (docs/DOMAIN.md → Projeyi başlatma). Yoksa 404 `project.launch_missing`; koşamazsa 400 `project.launch_failed`. `ProjectCard.launchable` düğmenin durumu |
 
-## Çalışmalar — `runs/<id>/`
+## Çalışmalar — `run` ve alt tabloları
 
 Davranış `docs/DOMAIN.md` (yaşam döngüsü, plan onayı, dağıtım). Yazma uçları hızlı doğrular (400/409 hemen),
 uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve **202** döner; ilerleme `GET /runs/{id}` ile izlenir.
@@ -152,7 +163,7 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 | `POST /api/v1/runs` `{ project, brief, workflow?, sensitivity?, label?, maxCostUsd? }` | **202** `RunSummary` | `project` zorunlu (400 `run.project_required`, 404 `project.not_found`); `workflow` yoksa projenin varsayılanı; `sensitivity` yoksa `anthropic`; boş `brief` 400 `run.brief_empty` |
 | `GET /api/v1/runs?limit=20&project=` | `RunSummary[]` | yeni → eski; `project` ile süzülür |
 | `GET /api/v1/runs/{id}` | `RunDetail` | 404 `run.not_found` |
-| `GET /api/v1/runs/{id}/turns?agent=` | `Turn[]` | Tüm ajanların LLM turları, **tam prompt ve çıktı** ile, zamana göre (`conversations/*.jsonl`). Günlük ekranı |
+| `GET /api/v1/runs/{id}/turns?agent=` | `Turn[]` | Tüm ajanların LLM turları, **tam prompt ve çıktı** ile, sırasıyla (`run_turn`). Günlük ekranı |
 | `POST /api/v1/runs/{id}/approve` | **202** `RunSummary` | yalnız `AwaitingApproval`; değilse 409 `run.not_awaiting_approval` |
 | `POST /api/v1/runs/{id}/revise` `{ note }` | **202** `RunSummary` | boş `note` 400 `run.note_empty`; 409 gibi yukarıda |
 | `POST /api/v1/runs/{id}/answer` `{ choice, note? }` | **202** `RunSummary` | yalnız `awaitingInput` (409 `run.not_awaiting_input`); `choice` sorunun `options[].id`'lerinden biri (`retry \| skip \| cancel`; değilse 400 `run.invalid_choice`); seçenek `needsNote` ise boş not 400 `run.note_empty`. `Running` dönerse dağıtım kuyruğa girer (docs/DOMAIN.md → Takılma) |
@@ -161,7 +172,7 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 | `GET /api/v1/runs/overview` | `RunsOverview` | **İşler** ekranı ve üst bar: kaç iş var, kaçı ne durumda, kaçı kullanıcıdan bir şey bekliyor (`inbox`). UI 5 s'de bir yoklar |
 | `GET /api/v1/jobs/health` | `{ status, pending }` | iş kanalında bekleyen iş sayısı (kimliksiz) |
 | `POST /api/v1/progress/{token}` `{ tool, target? }` | **204** | Runtime'ın canlı araç bildirimi (kimliksiz; tek kullanımlık `token` yetkidir, tur bitince düşer). Api `agent.tool` sahne olayı yayımlar. Bilinmeyen belirteç sessizce 204 |
-| `GET /api/v1/settings` · `PUT /api/v1/settings` `{ limitGuards: { anthropic: 99 } }` | `SettingsDto` | Limit koruması eşiği, sağlayıcı başına % (1–100; değilse 400 `settings.invalid`). `config/settings.json` |
+| `GET /api/v1/settings` · `PUT /api/v1/settings` `{ limitGuards: { anthropic: 99 } }` | `SettingsDto` | Limit koruması eşiği, sağlayıcı başına % (1–100; değilse 400 `settings.invalid`). `app_settings` |
 
 `RunsOverview.awaitingInput`: takılıp seçim bekleyen çalışma sayısı (sona eklendi; `awaitingApproval` yalnız plan onayı).
 `RunSummary` ek alanlar: `question` (`awaitingInput`'ta `{ ts, agent, text, options: [{ id, label, detail, needsNote }], task, stage, context }`),
@@ -177,7 +188,7 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 
 // RunDetail = RunSummary + dondurulan akış + plan + faz/mesaj kayıtları
 { ...RunSummary,
-  "workflowDef": { /* Workflow, runs/<id>/workflow.json */ },
+  "workflowDef": { /* Workflow, calismayla birlikte dondurulan kopya */ },
   "spec": { "summary": "…", "architecture": "…", "rules": ["…"],
             "tasks": [{ "id": "t1", "title": "…", "description": "…", "files": ["…"], "acceptance": ["…"], "dependsOn": [] }] },
   "order": ["t1", "t2"],                       // topolojik yürütme sırası

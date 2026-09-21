@@ -8,8 +8,12 @@ namespace MrHobist.AITeam.Application.Abstractions;
 /// </summary>
 public interface ISceneLayout
 {
-    /// <summary>Ajani sahneye ekler (yoksa) ya da adini gunceller (varsa). Sprite ve masa secimi burada; is kurali degil, yerlesim.</summary>
-    Task UpsertAgentAsync(string key, string name, CancellationToken ct);
+    /// <summary>
+    /// Ajani sahneye ekler (yoksa) ya da adini gunceller (varsa). Sprite ve masa secimi burada; is kurali degil, yerlesim.
+    /// Cagrilmasi UCUZDUR ve tekrarlanabilir: sahne kaydi TURETILMIS durumdur, ekipte olup sahnede olmayan ajan
+    /// her kayitta kendiliginden yerlesir. Doner: sahne fiilen degisti mi (UI'a yeniden kurma yayini bunun icin).
+    /// </summary>
+    Task<bool> UpsertAgentAsync(string key, string name, CancellationToken ct);
 
     Task RemoveAgentAsync(string key, CancellationToken ct);
 }

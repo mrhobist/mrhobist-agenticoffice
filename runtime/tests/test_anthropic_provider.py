@@ -115,6 +115,30 @@ async def test_turn_schema_yoksa_output_format_yok(monkeypatch, cli_present):
     assert captured["options"].effort is None
 
 
+async def test_sistem_promptu_modu_sdk_sekline_eslenir(monkeypatch, cli_present):
+    """Mod .NET'in karari; runtime yalniz esler. `claude_code` -> preset + append (kilavuz korunur),
+    `replace` (varsayilan) -> duz string. Olculdu 2026-09-21: kilavuz yurutme adiminda 55 -> ~16 ic tur
+    kazandiriyor, ama plan ureten adimda buyuk semayi bozuyor -- o yuzden ikisi de gerekli."""
+    async def call(mode):
+        captured: dict = {}
+        monkeypatch.setattr(claude_agent_sdk, "query", _fake_query(captured, messages=[_result(result="ok", usage={})]))
+        req = TurnRequest(system_prompt="Sen bir DEVELOPER'sin.", messages=[{"role": "user", "content": "x"}],
+                          provider="anthropic", model="claude-sonnet-5", reasoning_effort="high",
+                          system_prompt_mode=mode)
+        await AnthropicProvider().complete(req)
+        return captured["options"].system_prompt
+
+    preset = await call("claude_code")
+    assert preset == {"type": "preset", "preset": "claude_code", "append": "Sen bir DEVELOPER'sin."}
+
+    plain = await call("replace")
+    assert plain == "Sen bir DEVELOPER'sin."
+
+    # Alan verilmezse eski davranis: duz string.
+    default_req = TurnRequest(system_prompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m")
+    assert default_req.system_prompt_mode == "replace"
+
+
 async def test_turn_giris_yoksa_503(monkeypatch, cli_present):
     async def fake(*, prompt, options=None, transport=None):
         raise claude_agent_sdk.ProcessError("Not logged in", exit_code=1)
@@ -231,8 +255,34 @@ def test_http_turn_anthropic_yonlenir(monkeypatch, cli_present):
     assert r.status_code == 200
     body = r.json()
     assert body["text"] == "ok" and body["costUsd"] == 0.5
-    assert body["usage"] == {"inputTokens": 1, "outputTokens": 2, "reasoningChars": 0}
+    assert body["usage"] == {"inputTokens": 1, "outputTokens": 2, "reasoningChars": 0,
+                             "cacheReadTokens": 0, "cacheWriteTokens": 0}
     assert body["destination"] == "anthropic"
+
+
+def test_onbellek_kirilimi_tasinir(monkeypatch, cli_present):
+    """inputTokens TOPLAMDIR; kirilim ayrica tasinir, yoksa "baglam bosa mi gitti" sorusu cevapsiz kalir."""
+    monkeypatch.setattr(claude_agent_sdk, "query", _fake_query({}, messages=[
+        AssistantMessage(content=[TextBlock(text="ok")], model="m"),
+        _result(total_cost_usd=0.5, usage={
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 200,
+            "cache_read_input_tokens": 3000,
+            "output_tokens": 5,
+        }),
+    ]))
+    client = TestClient(main.app)
+    body = client.post("/v1/turn", json={
+        "systemPrompt": "s", "messages": [{"role": "user", "content": "x"}],
+        "provider": "anthropic", "model": "claude-haiku-4-5-20251001",
+    }).json()
+
+    usage = body["usage"]
+    # Toplam uc parcanin toplamidir; parcalar da ayri ayri gorulur.
+    assert usage["inputTokens"] == 3210
+    assert usage["cacheReadTokens"] == 3000
+    assert usage["cacheWriteTokens"] == 200
+    assert usage["outputTokens"] == 5
 
 
 def test_auth_refresh_onbellegi_atlar(monkeypatch, cli_present):
