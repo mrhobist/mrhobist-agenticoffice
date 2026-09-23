@@ -29,7 +29,7 @@ public sealed class RuntimeTimeoutTests
     [Fact]
     public async Task Zaman_asimi_iptal_degil_gorunur_runtime_hatasidir()
     {
-        var ex = await Assert.ThrowsAsync<RuntimeErrorException>(() => Client(TimeSpan.FromMilliseconds(100)).TurnAsync(Request(), CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<RuntimeTimeoutException>(() => Client(TimeSpan.FromMilliseconds(100)).TurnAsync(Request(), CancellationToken.None));
         Assert.Contains("zaman asimi", ex.Message, StringComparison.Ordinal);
     }
 

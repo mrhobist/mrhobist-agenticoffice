@@ -277,7 +277,7 @@ export interface RunSummary {
 export type RunStep = 'analyze' | 'approval' | 'dispatch'
 
 /** Fazi kim kapatti: `agent` ajanin sonucu; digerleri sistem kaynakli (tur sayilmaz). Eski kayitlarda yok. */
-export type PhaseCause = 'agent' | 'limit' | 'cancelled' | 'interrupted'
+export type PhaseCause = 'agent' | 'limit' | 'cancelled' | 'interrupted' | 'timeout'
 
 export interface QuestionOption { id: string; label: string; detail: string; needsNote: boolean }
 export interface UserQuestion {

@@ -570,6 +570,43 @@ public sealed class RunServiceTests : IDisposable
         _runtime.FailTransientTimes = 0;
     }
 
+    /// <summary>
+    /// 2026-09-23: sabit 12 dk HTTP suresi calisan Opus turunu kesti, zaman asimi "kullanici iptali" sanilip yutuldu ve calisma
+    /// Running'de asili kaldi. Artik: bekci hareketsiz turu keser → faz Timeout (sistem), calisma Failed; "Yeniden dene" ayni
+    /// adimi DEVAM notuyla kosar (ajan diskteki yarim isi bastan yazmaz).
+    /// </summary>
+    [Fact]
+    public async Task Hareketsiz_tur_zaman_asimina_duser_yeniden_dene_devam_notuyla_surer()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, watch: new TurnWatch(TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(50)));
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
+
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        _runtime.HangImplementTimes = 1;
+        run = await svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Failed, run.Status); // asili Running degil
+        Assert.True(run.IsRetryable);
+        Assert.Contains("zaman aşımı", run.Detail, StringComparison.Ordinal);
+        var t1 = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
+        Assert.Equal((PhaseStatus.Failed, PhaseCause.Timeout), (t1[^1].Status, t1[^1].Cause));
+        Assert.True(t1[^1].IsSystemFailure && t1[^1].IsCutShort);
+
+        var before = _runtime.Calls.Count;
+        await svc.RetryAsync(run.Id, Ct);
+        run = await svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        var resumed = _runtime.Calls.Skip(before).First(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true);
+        Assert.Contains("DEVAM", resumed.Messages[^1].Content, StringComparison.Ordinal);
+        // Yalniz kesilen gorev devam notu alir; t2 temiz baslar.
+        var fresh = _runtime.Calls.Skip(before).Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).Skip(1).First();
+        Assert.DoesNotContain("DEVAM", fresh.Messages[^1].Content, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Yeniden_baslatmada_running_calismalar_interrupted()
     {
@@ -813,9 +850,24 @@ public sealed class RunServiceTests : IDisposable
         /// <summary>Saglayici CAGRI SIRASINDA kota reddi versin (LimitGuard'in onbellegi kacirdiginda olan).</summary>
         public int LimitMidCallTimes { get; set; }
 
+        /// <summary>Ilk N gelistirme turu hic donmesin (iptal edilene kadar asili): tur bekcisi testi.</summary>
+        public int HangImplementTimes { get; set; }
+
+        private static async Task<RuntimeTurnResponse> HangAsync(CancellationToken ct)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            throw new InvalidOperationException("ulasilmaz");
+        }
+
         public Task<RuntimeTurnResponse> TurnAsync(RuntimeTurnRequest request, CancellationToken ct)
         {
             Calls.Add(request);
+            if (HangImplementTimes > 0 && request.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true)
+            {
+                HangImplementTimes--;
+                return HangAsync(ct);
+            }
+
             if (LimitMidCallTimes > 0)
             {
                 LimitMidCallTimes--;

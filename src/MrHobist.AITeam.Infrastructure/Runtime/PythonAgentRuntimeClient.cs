@@ -195,7 +195,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             // HttpClient zaman asimi TaskCanceledException olarak gelir; kullanici iptaliyle ayni tip. Ayirt edilmezse
             // is kanali "iptal" sanip sessizce biter, calisma sonsuza dek Running kalir (2026-09-23: 12 dk'da kesilen
             // Opus turu). Kalici hata: tekrar denemek ayni uzun turu bastan kostururdu; karar kullanicinin ("Yeniden dene").
-            throw new RuntimeErrorException($"runtime turu {http.Timeout.TotalMinutes:0} dk icinde bitmedi (zaman asimi): {ex.Message}");
+            throw new RuntimeTimeoutException($"runtime turu {http.Timeout.TotalMinutes:0} dk icinde bitmedi (zaman asimi): {ex.Message}");
         }
 
         if (!response.IsSuccessStatusCode)

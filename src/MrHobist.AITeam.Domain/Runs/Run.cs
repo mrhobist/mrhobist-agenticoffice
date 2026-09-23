@@ -62,6 +62,8 @@ public enum PhaseCause
     Limit,
     Cancelled,
     Interrupted,
+    /// <summary>Tur hareketsiz kaldi ya da ust sinira dayandi (2026-09-23). Yazilan dosyalar diskte: "devam et" ile surer.</summary>
+    Timeout,
 }
 
 /// <summary>
@@ -201,7 +203,10 @@ public sealed record Phase(
     string? Snapshot = null)
 {
     /// <summary>Sistemden dogan faz (limit, iptal, kesinti): ajanin hatasi degil; tur sayilmaz, tavana girmez.</summary>
-    public bool IsSystemFailure => Status == PhaseStatus.Failed && Cause is PhaseCause.Limit or PhaseCause.Cancelled or PhaseCause.Interrupted;
+    public bool IsSystemFailure => Status == PhaseStatus.Failed && Cause is PhaseCause.Limit or PhaseCause.Cancelled or PhaseCause.Interrupted or PhaseCause.Timeout;
+
+    /// <summary>Onceki deneme yarida kesildi (yeniden baslatma, zaman asimi, cagri sirasinda limit): dizinde yarim is olabilir.</summary>
+    public bool IsCutShort => Status == PhaseStatus.Failed && Cause is PhaseCause.Interrupted or PhaseCause.Timeout or PhaseCause.Limit;
 }
 
 /// <summary>Bir ajanin tek bir LLM cagrisi: <c>runs/{id}/conversations/{agent}.jsonl</c>. Tam metinler ayri alanlarda.</summary>

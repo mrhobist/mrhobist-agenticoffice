@@ -671,7 +671,10 @@ public sealed class RunService(
                 {
                     // Yazmadan ONCEKI hal: red tavaninda kullanici "geri al" derse donulecek nokta (ornek: opencode snapshot).
                     var before = await (snapshots ?? new NoWorkspaceSnapshot()).TrackAsync(root, ct).ConfigureAwait(false);
-                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round), ct).ConfigureAwait(false);
+                    // Onceki deneme yarida kesildiyse (zaman asimi, yeniden baslatma) dizinde onun isi var: ajan bastan yazmasin, devam etsin.
+                    var cutShort = (await runs.ReadPhasesAsync(run.Id, a.Task.Id, ct).ConfigureAwait(false))
+                        .LastOrDefault(p => p.Stage == a.Stage.Id && p.Status != PhaseStatus.Started) is { IsCutShort: true };
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort), ct).ConfigureAwait(false);
                     var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
@@ -808,6 +811,12 @@ public sealed class RunService(
         {
             await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis("limit: " + ex.Message, 200), ct, PhaseCause.Limit).ConfigureAwait(false);
             return await PauseForLimitAsync(run, a.Agent, $"{a.Stage.Title}: {a.Task.Id}", ex, ct).ConfigureAwait(false);
+        }
+        catch (RuntimeTimeoutException ex)
+        {
+            // Sistem kaynakli: tur sayilmaz, tavana girmez. "Yeniden dene" ayni adimi "devam et" notuyla surdurur (IsCutShort).
+            await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis("zaman aşımı: " + ex.Message, 200), ct, PhaseCause.Timeout).ConfigureAwait(false);
+            return await FailAsync(run, a.Agent, a.Stage.Id, a.Task.Id, $"{a.Stage.Title} ({a.Task.Id}) zaman aşımı — yazılanlar diskte, \"Yeniden dene\" kaldığı yerden sürdürür", ex, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

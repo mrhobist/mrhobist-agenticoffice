@@ -893,4 +893,13 @@ uyguluyordu / tüm-modeller penceresini saymıyordu (`3cee1ad`); depo dışı he
 Windows komut satırını aşıp "Access is denied" veriyordu (`045fbfb`); düşen işte "Yeniden dene" görünmüyordu (`045fbfb`).
 12 dk'lık runtime zaman aşımı geliştirme turunu kesti; `TaskCanceledException` iş kanalında "kullanıcı iptali"
 sanılıp yutuldu, çalışma sessizce Running'de asılı kaldı. Zaman aşımı artık görünür hata (`RuntimeErrorException`,
-iş Failed → "Yeniden dene"), süre 60 dk. Ajan t1'i yine de bitirmişti: diskte build temiz, 22 test geçiyor.
+iş Failed → "Yeniden dene"). Ajan t1'i yine de bitirmişti: diskte build temiz, 22 test geçiyor.
+
+**Zaman aşımı yaşanmasın, yaşanırsa devam edilsin (kullanıcı isteği, aynı gün):**
+- **Sabit süre yerine tur bekçisi** (`TurnWatch`, `AgentCaller`): ajan araç çağırdıkça sayaç sıfırlanır; 15 dk hiç hareket
+  yoksa ya da tur 180 dk'ya dayanırsa kesilir. HTTP süresi (200 dk) yalnız son emniyet. Çalışan uzun tur artık kesilmez.
+- **Kesilme görünür:** faz `Timeout` nedeniyle (sistem, tur sayılmaz) kapanır, çalışma Failed; ayrıntıda "yazılanlar diskte,
+  Yeniden dene kaldığı yerden sürdürür". `PhaseCause.Timeout` sona eklendi (§5), UI tipleri üretildi.
+- **Devam et:** önceki denemesi yarıda kesilen görev (`Phase.IsCutShort`: zaman aşımı, yeniden başlatma, çağrı sırasında
+  limit) yeniden koşarken ajana "DEVAM: baştan yazma, durumu çıkar, eksikleri tamamla" notu gider. Aynı turu iki kez ödememek için.
+- Test: hareketsiz tur zaman aşımına düşer → Failed/Timeout → Yeniden dene DEVAM notuyla tamamlanır; kesilmeyen görev notsuz.

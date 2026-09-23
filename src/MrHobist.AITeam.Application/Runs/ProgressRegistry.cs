@@ -21,6 +21,9 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
 {
     private readonly ConcurrentDictionary<string, ProgressContext> _live = new(StringComparer.Ordinal);
 
+    /// <summary>Belirtec basina son hareket: kayit ani ya da son bildirim. Hareketsizlik bekcisi (AgentCaller) buna bakar.</summary>
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _seen = new(StringComparer.Ordinal);
+
     /// <summary>Api'nin runtime'a verecegi geri cagri koku (<c>http://127.0.0.1:5080/api/v1/progress</c>); Api acilista yazar. Bos = akis kapali.</summary>
     public string? BaseUrl { get; set; }
 
@@ -28,10 +31,18 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
     {
         var token = RandomNumberGenerator.GetHexString(32, lowercase: true);
         _live[token] = ctx;
+        _seen[token] = DateTimeOffset.UtcNow;
         return token;
     }
 
-    public void Release(string token) => _live.TryRemove(token, out _);
+    public void Release(string token)
+    {
+        _live.TryRemove(token, out _);
+        _seen.TryRemove(token, out _);
+    }
+
+    /// <summary>Turun son hareketi; belirtec yoksa (tur bitti) null.</summary>
+    public DateTimeOffset? LastSeen(string token) => _seen.TryGetValue(token, out var t) ? t : null;
 
     /// <summary>Runtime bildirdi: baglam biliniyorsa sahneye <c>agent.tool</c> gider. Bilinmeyen belirtec sessizce yutulur (tur bitmis).</summary>
     public bool Report(string token, ProgressEvent e)
@@ -40,6 +51,8 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
         {
             return false;
         }
+
+        _seen[token] = DateTimeOffset.UtcNow;
 
         scene.Publish(SceneEventTypes.AgentTool, JsonSerializer.Serialize(new
         {

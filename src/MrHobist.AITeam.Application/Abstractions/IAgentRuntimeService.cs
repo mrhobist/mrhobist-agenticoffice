@@ -117,6 +117,13 @@ public sealed class RuntimeUnavailableException(string message) : Exception(mess
 public sealed class RuntimeErrorException(string message) : Exception(message);
 
 /// <summary>
+/// Tur zamaninda bitmedi: hareketsiz kaldi ya da ust sinira dayandi (2026-09-23). Kullanici iptali DEGIL -- o
+/// <see cref="OperationCanceledException"/> olarak kalir. Faz <c>Timeout</c> nedeniyle kapanir; yazilan dosyalar diskte
+/// oldugu icin "Yeniden dene" gorevi "devam et" notuyla surdurur. Otomatik tekrar YOK: ayni uzun turu bastan kostururdu.
+/// </summary>
+public sealed class RuntimeTimeoutException(string message) : Exception(message);
+
+/// <summary>
 /// Saglayici turu kota penceresi doldugu icin reddetti (<c>runtime.provider_limit</c>). Hata degil BEKLEMEDIR:
 /// <see cref="Runs.LimitGuard"/> cagri oncesi bakar ama yuzdeler 90 s onbelleklidir, pencere tam o aralikta
 /// dolabilir. <c>AgentCaller</c> bunu <c>LimitReachedException</c>'a cevirir ki calisma Failed degil Paused olsun

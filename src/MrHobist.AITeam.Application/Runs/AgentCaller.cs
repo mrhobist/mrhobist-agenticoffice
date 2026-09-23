@@ -72,13 +72,26 @@ public sealed record RetryPolicy(int Attempts, TimeSpan BaseDelay)
 }
 
 /// <summary>
+/// Tur bekcisi (2026-09-23): sabit HTTP suresi yerine HAREKETSIZLIK. Ajan arac cagirdikca (ilerleme bildirimi) sayac sifirlanir;
+/// <see cref="Idle"/> boyunca hic hareket yoksa ya da tur <see cref="HardCap"/>'e dayanirsa kesilir. Olcum: sabit 12 dk
+/// Opus 5.5 high'in 58 dosyalik iskelet turunu, ajan hala dosya yazarken kesti. Araci olmayan turda ilerleme yoktur;
+/// orada <see cref="Idle"/> turun baslangicindan sayilir (plan turu ~5 dk).
+/// </summary>
+public sealed record TurnWatch(TimeSpan Idle, TimeSpan HardCap, TimeSpan Poll)
+{
+    public static readonly TurnWatch Default = new(TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(180), TimeSpan.FromSeconds(30));
+}
+
+/// <summary>
 /// Bir ajan adina LLM cagrisi: ekipten ajani bulur, prompt'u kurar, hassasiyet politikasini cagridan ONCE denetler,
 /// runtime'i cagirir, turu calismanin tur kaydina yazar. Is kurali burada yok; yalniz "nasil cagrilir".
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
-public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null)
+public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null)
 {
+    private readonly TurnWatch _watch = watch ?? TurnWatch.Default;
+
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AgentLocks = new(StringComparer.Ordinal);
 
     private readonly RetryPolicy _retry = retry ?? RetryPolicy.Default;
@@ -133,7 +146,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 await limits.CheckAsync(target.Provider, target.Model, ct).ConfigureAwait(false);
             }
 
-            var response = await CallWithRetryAsync(run, agentKey, request, ct).ConfigureAwait(false);
+            var response = await CallWatchedAsync(run, agentKey, request, progressToken, ct).ConfigureAwait(false);
 
             // Runtime'in soyledigi hedef de politikaya uymali: adaptor yanlis yere gittiyse burada yakalanir.
             if (!SensitivityPolicy.Allows(run.Sensitivity, response.Response.Destination))
@@ -185,6 +198,62 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     }
 
     private sealed record Attempted(RuntimeTurnResponse Response, TimeSpan Elapsed);
+
+    /// <summary>
+    /// Turu bekci altinda kosar (<see cref="TurnWatch"/>). Bekci keserse <see cref="RuntimeTimeoutException"/>: is kanalinin
+    /// "kullanici iptali" yoluna (OperationCanceled) DUSMEZ -- dusseydi calisma sessizce Running'de asili kalirdi.
+    /// </summary>
+    private async Task<Attempted> CallWatchedAsync(Run run, string agentKey, RuntimeTurnRequest request, string? progressToken, CancellationToken ct)
+    {
+        using var turn = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var stopDog = new CancellationTokenSource();
+        string? reason = null;
+        var started = DateTimeOffset.UtcNow;
+        var dog = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    while (reason is null)
+                    {
+                        await Task.Delay(_watch.Poll, stopDog.Token).ConfigureAwait(false);
+                        var now = DateTimeOffset.UtcNow;
+                        var last = progressToken is null ? started : progress?.LastSeen(progressToken) ?? started;
+                        if (now - started > _watch.HardCap)
+                        {
+                            reason = $"tur {_watch.HardCap.TotalMinutes:0} dk üst sınırına dayandı";
+                        }
+                        else if (now - last > _watch.Idle)
+                        {
+                            reason = progressToken is null
+                                ? $"tur {_watch.Idle.TotalMinutes:0} dk içinde bitmedi"
+                                : $"ajan {_watch.Idle.TotalMinutes:0} dk boyunca hiçbir araç çağırmadı (hareketsiz)";
+                        }
+                    }
+
+                    await turn.CancelAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // tur bitti, bekci durduruldu
+                }
+            },
+            CancellationToken.None);
+
+        try
+        {
+            return await CallWithRetryAsync(run, agentKey, request, turn.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (reason is not null && !ct.IsCancellationRequested)
+        {
+            throw new RuntimeTimeoutException(reason);
+        }
+        finally
+        {
+            await stopDog.CancelAsync().ConfigureAwait(false);
+            await dog.ConfigureAwait(false);
+        }
+    }
 
     private async Task<Attempted> CallWithRetryAsync(Run run, string agentKey, RuntimeTurnRequest request, CancellationToken ct)
     {

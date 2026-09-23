@@ -140,7 +140,7 @@ public static class Prompts
     }
 
     /// <summary>Developer: araclarla dosyalari yazar, build'i kosar, sonunda rapor semasini doldurur.</summary>
-    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round)
+    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round, bool resumed = false)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
@@ -149,6 +149,13 @@ public static class Prompts
         sb.AppendLine(round > 1
             ? $"Bu görevin {round}. turu: yukarıdaki geri bildirimi (red/hata notu) MADDE MADDE gider, sonra kabul ölçütlerini yeniden doğrula."
             : "Görevi uygula: dosyaları Write/Edit ile yaz, gerekiyorsa Bash ile build/test kos ve çıktısını kontrol et.");
+        if (resumed)
+        {
+            // 2026-09-23: kesilen tur diskte bitmis is birakmisti (build temiz, testler gecer); ajan bastan yazsaydi ayni turu iki kez odenirdi.
+            sb.AppendLine("DEVAM: bu görevin önceki denemesi yarıda KESİLDİ (zaman aşımı ya da süreç yeniden başladı), raporu alınamadı. Dizindeki dosyalar o denemeden kaldı ve büyük ölçüde senin işin: BAŞTAN YAZMA. "
+                + "Önce durumu çıkar (dosyalara bak, build/test koş), yalnız eksik ya da bozuk olanı tamamla, sonra kabul ölçütlerini doğrula ve raporu ver.");
+        }
+
         sb.AppendLine("Önce dizine bak (Glob/Read); var olan dosyayı ezmeden değiştir. Kabul ölçütlerindeki komutları FİİLEN çalıştır ve geçtiğini gör.");
         // Var olan bir depoya (kendi CLAUDE.md'si, kendi baslatma yolu olan) run.cmd eklemek o depoyu kirletiyordu (2026-09-23).
         sb.AppendLine("Ofisteki \"Projeyi başlat\" düğmesi proje kökündeki `run.cmd` dosyasını YENİ BİR KONSOL PENCERESİNDE çalıştırır. Uygulamayı SIFIRDAN kuruyorsan, çalıştırılabilir hâle gelince bu dosyayı yaz ya da güncelle. "

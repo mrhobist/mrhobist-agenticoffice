@@ -1789,10 +1789,12 @@ export interface components {
             durationS?: null | number | string;
             detail?: null | string;
             cause?: null | components["schemas"]["PhaseCause"];
+            snapshot?: null | string;
             isSystemFailure?: boolean;
+            isCutShort?: boolean;
         };
         /** @enum {unknown} */
-        PhaseCause: "agent" | "limit" | "cancelled" | "interrupted" | null;
+        PhaseCause: "agent" | "limit" | "cancelled" | "interrupted" | "timeout" | null;
         /** @enum {unknown} */
         PhaseStatus: "started" | "done" | "rejected" | "failed" | "skipped";
         ProgressEvent: {
