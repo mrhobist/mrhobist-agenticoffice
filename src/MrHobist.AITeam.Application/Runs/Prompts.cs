@@ -27,7 +27,13 @@ public static class Prompts
         sb.AppendLine("Verilen JSON şemasına birebir uyan bir plan: summary, architecture, rules[], tasks[].");
         sb.AppendLine("Görev kimlikleri kısa ve küçük harf (t1, api-ucu). Görevler tek bir ajanın tek oturumda bitirebileceği büyüklükte olsun; gereksiz parçalama yapma (hello world tek görevdir).");
         sb.AppendLine("Kabul ölçütleri çalıştırılabilir olsun (build/test komutu, beklenen çıktı). dependsOn yalnız gerçek bağımlılıkları içersin; sıralama bundan türetilir.");
-        sb.AppendLine("Bu plan bir insanın onayına sunulacak; onaylanmadan hiçbir iş başlamaz. Belirsizlikte en makul varsayımı seç ve rules içinde açıkça yaz.");
+        // Onay cumlesi akisa bagli: `auto` akista "insan onaylayacak" demek ajani yaniltiyordu (2026-09-23 incelemesi).
+        sb.AppendLine(wf.PlanNeedsUser
+            ? "Bu plan bir insanın onayına sunulacak; onaylanmadan hiçbir iş başlamaz."
+            : wf.PlanApproverAgent is { } approver
+                ? $"Bu planı `{approver}` onaylayacak; onaylanmadan hiçbir iş başlamaz."
+                : "Bu plan onaya sunulmaz: üretilir üretilmez uygulanır. Kimse gözden geçirmeyecek, planı buna göre sağlam kur.");
+        sb.AppendLine("Belirsizlikte en makul varsayımı seç ve rules içinde açıkça yaz.");
         return sb.ToString();
     }
 
@@ -144,7 +150,9 @@ public static class Prompts
             ? $"Bu görevin {round}. turu: yukarıdaki geri bildirimi (red/hata notu) MADDE MADDE gider, sonra kabul ölçütlerini yeniden doğrula."
             : "Görevi uygula: dosyaları Write/Edit ile yaz, gerekiyorsa Bash ile build/test kos ve çıktısını kontrol et.");
         sb.AppendLine("Önce dizine bak (Glob/Read); var olan dosyayı ezmeden değiştir. Kabul ölçütlerindeki komutları FİİLEN çalıştır ve geçtiğini gör.");
-        sb.AppendLine("Ofisteki \"Projeyi başlat\" düğmesi proje kökündeki `run.cmd` dosyasını YENİ BİR KONSOL PENCERESİNDE çalıştırır: uygulama çalıştırılabilir hâle gelince bu dosyayı yaz ya da güncelle (yoksa kullanıcı projeyi açamaz). "
+        // Var olan bir depoya (kendi CLAUDE.md'si, kendi baslatma yolu olan) run.cmd eklemek o depoyu kirletiyordu (2026-09-23).
+        sb.AppendLine("Ofisteki \"Projeyi başlat\" düğmesi proje kökündeki `run.cmd` dosyasını YENİ BİR KONSOL PENCERESİNDE çalıştırır. Uygulamayı SIFIRDAN kuruyorsan, çalıştırılabilir hâle gelince bu dosyayı yaz ya da güncelle. "
+            + "Kendi başlatma yolu olan var olan bir depoda (kökte `CLAUDE.md`, betikler, launch ayarları) `run.cmd` yoksa EKLEME — o depo kullanıcının kendi yoluyla başlatılır. "
             + "İçeriği ASCII olsun; `@echo off`, `cd /d \"%~dp0\"`, sonra uygulamayı başlatan komut (konsol uygulaması: `dotnet run --project ...` ve bitince `pause`; web: sunucuyu başlat ve `start http://127.0.0.1:PORT`; masaüstü/oyun: exe). Kurulum gereken projede (npm install, restore) bunu da run.cmd yapsın.");
         sb.AppendLine("Kural çelişkisi ya da eksik bilgi varsa TAHMİN ETME: blocked=true ve question ile sor; işi yarım bırak.");
         sb.AppendLine("Bitince verilen JSON şemasına uyan raporu ver: summary, filesChanged (göreli yollar), commandsRun, blocked, question.");

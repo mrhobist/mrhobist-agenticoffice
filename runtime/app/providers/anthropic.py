@@ -53,6 +53,8 @@ from ..contracts import (
 
 PROVIDER_NAME = "anthropic"
 
+#: Yalniz ek kesif: listelenen modellerin tek dogru kaynagi .NET'in config/models.json'udur (ModelListService);
+#: yeni model icin burayi degil o dosyayi guncelle.
 ANTHROPIC_MODELS: list[str] = [
     "claude-fable-5-1",
     "claude-opus-5",

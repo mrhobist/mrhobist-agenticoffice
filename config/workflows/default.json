@@ -14,11 +14,11 @@
     },
     {
       "id": "gelistirme",
-      "title": "Geliştirme",
+      "title": "Geliştirme + Test",
       "kind": "implement",
       "role": "tek-kisilik-dev-kadro",
       "officeRole": "dev",
-      "description": "Yaz, çalıştır, doğrula, bitir."
+      "description": "Yaz, testi yaz ve koş, kabul ölçütlerini doğrula, bitir. Ayrı test adımı yok."
     }
   ],
   "askRole": "user",

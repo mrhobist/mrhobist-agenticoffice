@@ -1,0 +1,10 @@
+{
+  "_comment": "Ajan panelinde ve Ayarlar'da listelenen modeller; saglayici basina, bu sirayla. Yeni model cikinca buraya satir eklenir, kod degismez: Api her istekte okur. Runtime'in kendi bildigi modeller (ör. OPENAI_MODELS) listenin sonuna eklenir. Ajan md'sinde listede olmayan bir model de yazilabilir.",
+  "anthropic": [
+    "claude-opus-5-5",
+    "claude-fable-5-1",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-4-5-20251001"
+  ]
+}

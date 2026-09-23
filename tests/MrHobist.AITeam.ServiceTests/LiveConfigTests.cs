@@ -33,5 +33,7 @@ public sealed class LiveConfigTests
         }
 
         Assert.All(team.Agents.Values, a => Assert.All(a.Includes, k => Assert.Contains(k, team.Knowledge.Keys)));
+        // Model katalogu okunabilir olmali (bozuksa /models ve /providers patlar).
+        await new JsonModelCatalog(paths).LoadAsync(CancellationToken.None);
     }
 }

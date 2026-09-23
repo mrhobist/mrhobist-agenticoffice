@@ -45,14 +45,15 @@ public static class ConfigEndpoints
             => reader.GetAgentWorkAsync(key, runs ?? 30, ct));
 
         // Sorgu parametresi tel adiyla gelir ("nvidia"); enum baglayici buyuk/kucuk harfe duyarli oldugu icin metin alinir.
-        g.MapGet("/models", (string? provider, IAgentRuntimeService runtime, CancellationToken ct)
-            => runtime.ListModelsAsync(Providers.Parse(provider), ct));
+        // Liste config/models.json'dan (.NET), erisilebilirlik runtime'dan (docs/API.md → Modeller).
+        g.MapGet("/models", (string? provider, IModelListService models, CancellationToken ct)
+            => models.ListAsync(Providers.Parse(provider), ct));
 
         // UI ilk yuklemede bakar: giris var mi, hangi modeller (docs/DOMAIN.md → Model, efor ve kimlik).
-        g.MapGet("/providers", async (bool? refresh, IAgentRuntimeService runtime, CancellationToken ct) =>
+        g.MapGet("/providers", async (bool? refresh, IAgentRuntimeService runtime, IModelListService modelList, CancellationToken ct) =>
         {
             var auth = await runtime.ListAuthAsync(null, refresh ?? false, ct).ConfigureAwait(false);
-            var models = await runtime.ListModelsAsync(null, ct).ConfigureAwait(false);
+            var models = await modelList.ListAsync(null, ct).ConfigureAwait(false);
             return auth.Select(a => new ProviderStatus(
                 a.Provider, a.LoggedIn, a.Account, a.Detail,
                 models.Where(m => m.Provider == a.Provider).ToList(), a.Method)).ToList();

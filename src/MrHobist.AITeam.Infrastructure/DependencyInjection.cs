@@ -32,6 +32,7 @@ public static class DependencyInjection
 
         services.AddSingleton<IAgentStore, MarkdownAgentStore>();
         services.AddSingleton<IWorkflowStore, JsonWorkflowStore>();
+        services.AddSingleton<IModelCatalog, JsonModelCatalog>();
         services.AddSingleton<ISceneLayout, JsonSceneLayoutStore>();
 
         services.AddSingleton<IProjectStore, SqliteProjectStore>();
@@ -40,6 +41,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IProjectService, ProjectService>();
         services.AddSingleton<IAgentService, AgentService>();
+        // Transient: runtime istemcisi typed HttpClient, singleton'a hapsedilmesin.
+        services.AddTransient<IModelListService, ModelListService>();
         services.AddSingleton<IWorkflowService, WorkflowService>();
         services.AddSingleton<IRunReader, RunReader>();
         services.AddSingleton<IUsageReader, UsageReader>();
