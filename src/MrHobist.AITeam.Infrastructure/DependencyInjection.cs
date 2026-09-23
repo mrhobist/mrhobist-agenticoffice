@@ -102,8 +102,9 @@ public static class DependencyInjection
         services.AddHttpClient<IAgentRuntimeService, PythonAgentRuntimeClient>(client =>
         {
             client.BaseAddress = baseAddress;
-            // Bir LLM turu dakikalar surebilir (LESSONS: NVIDIA 180 s x 3 deneme runtime icinde).
-            client.Timeout = TimeSpan.FromMinutes(12);
+            // Bir LLM turu dakikalar surebilir (LESSONS: NVIDIA 180 s x 3 deneme runtime icinde). Aracli gelistirme turu
+            // cok daha uzun: 2026-09-23'te Opus 5.5 high 58 dosyalik iskeleti 12 dk'da bitiremedi, cagri kesildi.
+            client.Timeout = TimeSpan.FromMinutes(60);
         });
         return services;
     }

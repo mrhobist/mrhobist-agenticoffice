@@ -869,3 +869,28 @@ vermiyor); bu yüzden frontend bilgisi denetimi ajanın kendisinin koşacağı t
 
 **Doğrulama:** 38 birim + 99 servis testi (yeni `LiveConfigTests` dahil) geçti; Api canlı config'le hatasız kalkıyor.
 
+## İlk gerçek iş — bekleyen geliştirme talepleri (2026-09-23, kullanıcı notları) 🔶 iş sürüyor
+
+İlk gerçek iş (Tek Kişilik Dev Kadro, Opus 5.5 high, hedef depo dışı klasör) koşarken kullanıcının aldırdığı notlar.
+İş bitince talep olarak ele alınacak; kapsam/öncelik o zaman netleşir.
+
+1. **Anlık düşünce akışı:** aktif iş sırasında ajanın düşüncesi (reasoning/metin) canlı okunabilsin. Maliyetsizse
+   anlık; ek maliyet doğuruyorsa gecikmeli olabilir. Bugün yalnız araç çağrıları canlı (`agent.tool` SSE), tam tur
+   metni tur bitince günlükte.
+2. **Kanbandan iş detayı:** Sprint panosundaki çalışan kartından doğrudan işin detayına (çalışma paneli, canlı
+   araç şeridi, günlük) gidilebilsin. Bugün kart yalnız alt şeritte özet gösteriyor; "Çalışmayı aç" genel düğme.
+3. **Kim ne kadar harcadı:** haftalık kota ortak — ofisteki ajan ile yöneten Claude Code oturumu aynı hesaptan
+   harcıyor. Başlangıç: haftalık %85 (11:50), eşik %90. İş sonunda ofis payı (kayıtlı turlar: token + eşdeğer $)
+   ile oturum payı ayrıştırılıp raporlanacak; ayrışmayan kısım "ölçülemedi" diye yazılır.
+4. **Ajan bağlamını görmek:** çalışan ajanın o an elindeki bağlam (sistem istemi + ek bilgiler + görev bağlamı +
+   geçmiş, boyutuyla) görülebilsin. Bugün tam istem yalnız tur bitince günlükte; tur sürerken görünmüyor.
+5. **"Çalışıyor" gerçekten çalışıyor mu:** 12:20'de tur kesildi ama kayıt "Çalışıyor" kaldı, ekran bunu ayırt
+   edemedi (kullanıcı fark etti). Canlılık göstergesi gerekir: son araç çağrısından bu yana geçen süre, ajan
+   süreci yaşıyor mu. Kök hata düzeltildi (aşağıda), gösterge talep olarak duruyor.
+
+Koşu sırasında çıkan ve düzeltilen hatalar (ayrıntı commit'lerde): limit koruması modele özel pencereyi herkese
+uyguluyordu / tüm-modeller penceresini saymıyordu (`3cee1ad`); depo dışı hedef dizin (`d047c70`); uzun sistem istemi
+Windows komut satırını aşıp "Access is denied" veriyordu (`045fbfb`); düşen işte "Yeniden dene" görünmüyordu (`045fbfb`).
+12 dk'lık runtime zaman aşımı geliştirme turunu kesti; `TaskCanceledException` iş kanalında "kullanıcı iptali"
+sanılıp yutuldu, çalışma sessizce Running'de asılı kaldı. Zaman aşımı artık görünür hata (`RuntimeErrorException`,
+iş Failed → "Yeniden dene"), süre 60 dk. Ajan t1'i yine de bitirmişti: diskte build temiz, 22 test geçiyor.
