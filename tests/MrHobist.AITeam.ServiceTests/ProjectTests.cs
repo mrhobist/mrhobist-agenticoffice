@@ -103,6 +103,47 @@ public sealed class ProjectTests : IDisposable
         Assert.Equal((12.5m, (long?)1_000_000), (kart.MaxCostUsd, kart.MaxTokens));
     }
 
+    [Theory]
+    [InlineData("D:/Work/Anket", true)]
+    [InlineData("D:\\Work\\Anket\\", true)]
+    [InlineData("projects/anket", false)]
+    [InlineData("C:/", false)]                 // surucu koku hedef olamaz
+    [InlineData("D:/Work/../Windows", false)]
+    [InlineData("/etc/x", false)]
+    public void Depo_disi_hedef_yalniz_suruculu_tam_yol(string dir, bool external)
+        => Assert.Equal(external, Project.IsExternalDir(dir));
+
+    [Fact]
+    public async Task Depo_disi_hedef_kabul_edilir_bariyer_yazilmaz_dosyalari_silinmez()
+    {
+        var external = Path.Combine(Path.GetTempPath(), "aiteam-external", Guid.NewGuid().ToString("N"));
+        var locator = new WorkspaceLocator(_fx.Paths);
+        var svc = new ProjectService(_fx.Projects, new JsonWorkflowStore(_fx.Paths), _fx.Runs, locator, new FakeLauncher());
+        try
+        {
+            var card = await svc.CreateAsync(new CreateProjectRequest("disari", "Dışarı", null, null, external), Ct);
+            Assert.Equal(external.Replace('\\', '/'), card.TargetDir);
+
+            var root = locator.RootOf(await _fx.Projects.LoadAsync("disari", Ct));
+            Assert.Equal(Path.GetFullPath(external), root);
+            Assert.False(File.Exists(Path.Combine(root, "Directory.Build.props"))); // kullanicinin temiz klasorune ofis dosyasi girmez
+
+            var deleted = await svc.DeleteAsync("disari", deleteFiles: true, Ct);
+            Assert.False(deleted.FilesDeleted);
+            Assert.True(Directory.Exists(root)); // "dosyalar da silinsin" depo disinda uygulanmaz
+
+            var bad = await Assert.ThrowsAsync<DomainException>(() => svc.CreateAsync(new CreateProjectRequest("kok", "x", null, null, "C:/"), Ct));
+            Assert.Equal(ErrorCodes.ProjectTargetDirInvalid, bad.ErrorCode);
+        }
+        finally
+        {
+            if (Directory.Exists(external))
+            {
+                Directory.Delete(external, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public async Task Calisma_listesi_projeye_gore_suzulur()
     {

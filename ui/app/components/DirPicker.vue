@@ -8,6 +8,8 @@ import { errorText } from '~/api/errors'
  * `GET /projects/dirs?path=` ile bir seviye bir seviye gezilir; deger her zaman depo kokune gore ileri bolulu yoldur.
  * Iki secim yolu: var olan bir klasoru "burayi sec" ya da gezilen klasorun icinde `<key>` adli yeni klasor.
  * Bos deger = varsayilan (`projects/<key>`); sunucu bosu oyle yorumlar.
+ * Ucuncu yol (2026-09-23): depo DISI suruculu tam yol (ör. `D:/Work/Anket`) elle yazilir; secici oralari gezmez.
+ * Sunucu dogrular (surucu koku ve `..` reddedilir); depo disi klasor uygulamadan hic silinmez.
  */
 const props = defineProps<{ modelValue: string; projectKey: string; id?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [v: string] }>()
@@ -18,6 +20,9 @@ const path = ref('')
 const listing = ref<DirectoryListing | null>(null)
 const error = ref<string | null>(null)
 const busy = ref(false)
+const external = ref('')
+/** Suruculu tam yol mu (sunucudaki Project.IsExternalDir ile ayni kural; son karar sunucunun). */
+const externalOk = computed(() => /^[A-Za-z]:[\\/].+$/.test(external.value.trim()) && !external.value.includes('..'))
 
 const defaultDir = computed(() => `projects/${props.projectKey || 'anahtar'}`)
 const shown = computed(() => props.modelValue || defaultDir.value)
@@ -45,6 +50,10 @@ function toggle() {
     const cur = props.modelValue || 'projects'
     void go(cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : cur)
   }
+}
+
+function pickExternal() {
+  if (externalOk.value) pick(external.value.trim().replace(/\\/g, '/').replace(/\/+$/, ''))
 }
 
 function pick(v: string) {
@@ -90,6 +99,11 @@ const crumbs = computed(() => {
         <button v-if="path" type="button" class="small strong" @click="pick(path)">Burayı seç: <code>{{ path }}</code></button>
         <button type="button" class="small" @click="pick(newHere)">Yeni klasör: <code>{{ newHere }}</code></button>
       </div>
+      <div class="external">
+        <label class="sub" :for="`${id ?? 'dir'}-ext`">Depo dışı tam yol</label>
+        <input :id="`${id ?? 'dir'}-ext`" v-model="external" type="text" placeholder="D:\Work\Klasor" spellcheck="false" @keydown.enter.prevent="pickExternal">
+        <button type="button" class="small" :disabled="!externalOk" @click="pickExternal">Bu yolu kullan</button>
+      </div>
       <p v-if="error" class="err" role="alert">{{ error }}</p>
     </div>
   </div>
@@ -117,5 +131,7 @@ const crumbs = computed(() => {
 .empty { padding: 6px 8px; }
 .choose { display: flex; flex-wrap: wrap; gap: 6px; }
 .choose code { font-size: 11px; }
+.external { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border-top: 1px dashed #e3ded0; padding-top: 6px; }
+.external input { font: inherit; font-size: 12px; flex: 1 1 180px; min-width: 0; padding: 4px 7px; border: 1px solid #c9c3b3; border-radius: 4px; background: #fff; }
 .err { margin: 0; color: #b3261e; font-size: 12px; }
 </style>

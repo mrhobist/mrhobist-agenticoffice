@@ -17,7 +17,12 @@ public sealed class WorkspaceLocator(StoragePaths paths) : IWorkspaceLocator
         ArgumentNullException.ThrowIfNull(project);
         var full = Resolve(project.TargetDir, project.Key);
         Directory.CreateDirectory(full);
-        EnsureMsBuildBarrier(full);
+        // Bariyer yalniz depo ICINDE gerekir (bu deponun props'lari miras kalmasin); depo disi projeye dosya eklemez.
+        if (!Domain.Projects.Project.IsExternalDir(project.TargetDir))
+        {
+            EnsureMsBuildBarrier(full);
+        }
+
         return full;
     }
 
@@ -82,6 +87,14 @@ public sealed class WorkspaceLocator(StoragePaths paths) : IWorkspaceLocator
     public bool DeleteRoot(Domain.Projects.Project project)
     {
         ArgumentNullException.ThrowIfNull(project);
+
+        // Depo disi dizin uygulamadan ASLA silinmez: kullanicinin kendi klasoru, "dosyalar da silinsin" isareti
+        // verilse bile bir tikla gitmesin. Proje kaydi silinir, dosyalar yerinde kalir.
+        if (Domain.Projects.Project.IsExternalDir(project.TargetDir))
+        {
+            return false;
+        }
+
         var full = Resolve(project.TargetDir, project.Key);
         if (!Directory.Exists(full))
         {
@@ -97,6 +110,12 @@ public sealed class WorkspaceLocator(StoragePaths paths) : IWorkspaceLocator
     /// <summary>Depo kokune gore yolu mutlaklar; kokun kendisi ya da disina cikan yol reddedilir.</summary>
     private string Resolve(string relative, string subject)
     {
+        // Suruculu tam yol: depo disi hedef (Project.IsExternalDir); klasor secici bunu gezmez, yalniz proje kokunde kullanilir.
+        if (Domain.Projects.Project.IsExternalDir(relative))
+        {
+            return Path.GetFullPath(relative.Replace('/', Path.DirectorySeparatorChar));
+        }
+
         var repo = Repo();
         var full = Path.GetFullPath(Path.Combine(repo, relative.Replace('/', Path.DirectorySeparatorChar)));
         if (!full.StartsWith(repo + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
