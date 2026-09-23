@@ -944,3 +944,4 @@ compactor, build/test çıktı kırpma (israf döngüsü yok).
 - **Bilgi dosyaları:** "paketi sürümüyle kur" (ajan PrimeVue 5 kurmuştu) ön yüz ve arka yüz dosyalarına eklendi.
 - **`.env*` yasağı:** ofis ajanı artık kullanıcının Claude Code ayarlarını devralmıyor (`setting_sources=[]`), o
   yasak ajana uygulanmıyor. Ofis kuralı olarak eklenmedi; sırlar zaten kurum desenine göre user-secrets'ta.
+
