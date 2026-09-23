@@ -2,6 +2,9 @@
 name: Tek Kişilik Dev Kadro
 summary: "Claude Code gibi çalışır: analist + developer + tester tek kişide. Asgari plan, tek görev, yaz-test et-doğrula-bitir."
 office_roles: [pm, dev, qa]
+provider: anthropic
+model: claude-opus-5-5
+effort: high
 includes: [backend-developer, frontend-developer-nuxt]
 ---
 

@@ -38,10 +38,16 @@ public sealed class LimitReachedException(Provider provider, double percent, int
 /// aktif kota pencerelerine bakar; herhangi biri ayarlardaki esige (varsayilan %99) ulastiysa <see cref="LimitReachedException"/>.
 /// Runtime yuzdeleri 90 s onbellekler; kota ucu vermiyorsa (available=false) koruma sessizce gecer — akisi kilitlemek yerine
 /// varsayimla ilerlenir; sonuc ust barda zaten "kalan kullanim yok" olarak gorunur.
+///
+/// <b>Hangi pencere sayilir (2026-09-23 duzeltmesi):</b> cagrinin modeline UYGULANAN her pencere -- kapsamsiz olanlar
+/// (oturum, haftalik tum modeller) her zaman, modele ozel olanlar (<c>scope: "Fable"</c>) yalniz o model ailesinde.
+/// Once yalniz saglayicinin <c>isActive</c> isaretine bakiliyordu: Fable'a ozel pencere %99'da "aktif"ken Opus cagrisi
+/// da duruyor, haftalik tum-modeller penceresi (%85) ise "aktif" olmadigi icin hic sayilmiyordu -- esik %90'a cekilse
+/// bile bekletmezdi. Model bilinmiyorsa (md'de bos: saglayici varsayilani) modele ozel pencereler de sayilir: temkinli taraf.
 /// </summary>
 public sealed class LimitGuard(IAgentRuntimeService runtime, ISettingsStore settings)
 {
-    public async Task CheckAsync(Provider provider, CancellationToken ct)
+    public async Task CheckAsync(Provider provider, string? model, CancellationToken ct)
     {
         var threshold = (await settings.LoadAsync(ct).ConfigureAwait(false)).GuardFor(provider);
         IReadOnlyList<RuntimeProviderLimits> limits;
@@ -56,11 +62,20 @@ public sealed class LimitGuard(IAgentRuntimeService runtime, ISettingsStore sett
 
         foreach (var l in limits.Where(l => l.Provider == provider && l.Available))
         {
-            var hit = l.Limits.Where(x => x.IsActive && x.Percent >= threshold).OrderByDescending(x => x.Percent).FirstOrDefault();
+            var hit = l.Limits.Where(x => AppliesTo(x, model) && x.Percent >= threshold).OrderByDescending(x => x.Percent).FirstOrDefault();
             if (hit is not null)
             {
                 throw new LimitReachedException(provider, hit.Percent, threshold, hit.ResetsAt);
             }
         }
+    }
+
+    /// <summary>Pencere bu modelin cagrisini sinirliyor mu: kapsamsizsa evet; kapsamliysa model adi kapsami iceriyorsa (claude-fable-5-1 ~ Fable).</summary>
+    public static bool AppliesTo(RuntimeUsageLimit limit, string? model)
+    {
+        ArgumentNullException.ThrowIfNull(limit);
+        return string.IsNullOrWhiteSpace(limit.Scope)
+            || string.IsNullOrWhiteSpace(model)
+            || model.Contains(limit.Scope.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 }

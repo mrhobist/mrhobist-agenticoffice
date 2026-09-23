@@ -130,7 +130,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             // Limit korumasi cagridan ONCE: esik asildiysa LimitReachedException; RunService calismayi bekletir.
             if (limits is not null)
             {
-                await limits.CheckAsync(target.Provider, ct).ConfigureAwait(false);
+                await limits.CheckAsync(target.Provider, target.Model, ct).ConfigureAwait(false);
             }
 
             var response = await CallWithRetryAsync(run, agentKey, request, ct).ConfigureAwait(false);
