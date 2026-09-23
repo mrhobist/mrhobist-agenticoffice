@@ -14,6 +14,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,6 +69,23 @@ AUTH_CACHE_TTL_S = 60.0
 LIMITS_CACHE_TTL_S = 90.0
 #: Kota ucu 429 verdiyse bu sure yeniden sorulmaz (uc sik sorguyu cezalandiriyor); son iyi deger gosterilir.
 LIMITS_BACKOFF_429_S = 600.0
+
+
+#: Bu uzunlugu asan sistem istemi komut satiri yerine gecici dosyadan verilir. Windows'ta komut satiri ~32k karakter:
+#: 2026-09-23'te iki ek bilgi dosyasi + ajan md'si (~24 KB) + --json-schema siniri asti ve surec "Access is denied"
+#: (40 KB'ta "claude.exe bulunamadi") diye YANILTICI bir hatayla hic baslamadi. Esik kucuk tutuldu: kisa istemler eskisi gibi.
+PROMPT_FILE_THRESHOLD = 8000
+
+
+def _write_prompt_file(text: str) -> str | None:
+    """Uzun istemi gecici dosyaya yazar, yolunu dondurur; kisaysa None. Tasima ayrintisi: cagri bitince silinir,
+    durum degildir (CLAUDE.md §1: runtime is ciktisi yazmaz -- bu dosya tek cagrinin argumanidir)."""
+    if len(text) <= PROMPT_FILE_THRESHOLD:
+        return None
+    fd, path = tempfile.mkstemp(prefix="aiteam-prompt-", suffix=".md")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
 
 
 def _limits_cache_file() -> Path:
@@ -236,7 +254,7 @@ class AnthropicProvider:
     def cli(self) -> str | None:
         return self._cli_path or find_claude_cli()
 
-    def _options(self, request: TurnRequest) -> ClaudeAgentOptions:
+    def _options(self, request: TurnRequest, prompt_file: str | None = None) -> ClaudeAgentOptions:
         tools = list(request.tools or [])
         opts: dict[str, Any] = {
             "model": request.model,
@@ -253,6 +271,13 @@ class AnthropicProvider:
             "effort": request.reasoning_effort,
             "cli_path": self.cli,
         }
+        if prompt_file:
+            # Uzun istem komut satirina sigmaz (bkz. PROMPT_FILE_THRESHOLD): ayni metin dosyadan okunur.
+            if request.system_prompt_mode == "claude_code":
+                opts["system_prompt"] = {"type": "preset", "preset": "claude_code"}
+                opts["extra_args"] = {"append-system-prompt-file": prompt_file}
+            else:
+                opts["system_prompt"] = {"type": "file", "path": prompt_file}
         if tools:
             # Aracli tur (kullanici karari 2026-09-19: developer/testci dosyayi kendisi yazar, testi kendisi kosar).
             # Izin listesi ve dizin .NET'ten gelir; runtime secmez. Sunucu etkilesimsizdir, izin sorusu soracak
@@ -357,10 +382,11 @@ class AnthropicProvider:
         turns = 1
         started = time.monotonic()
 
+        prompt_file = _write_prompt_file(request.system_prompt)
         try:
             prompt_text = self._prompt(request)
             prompt: Any = self._stream(prompt_text) if request.tools else prompt_text
-            async for msg in sdk.query(prompt=prompt, options=self._options(request)):
+            async for msg in sdk.query(prompt=prompt, options=self._options(request, prompt_file)):
                 if isinstance(msg, AssistantMessage):
                     if msg.error:
                         err_text = f"Claude hatası: {msg.error}"
@@ -394,6 +420,9 @@ class AnthropicProvider:
             raise
         except ClaudeSDKError as exc:
             raise _classify(exc) from exc
+        finally:
+            if prompt_file:
+                Path(prompt_file).unlink(missing_ok=True)
 
         return TurnResponse(
             text="\n".join(parts).strip(),

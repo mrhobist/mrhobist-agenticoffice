@@ -427,6 +427,10 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <span class="lbl">Şu an</span>
             <span v-for="t in props.liveTools.slice(-6)" :key="t.ts" class="tool" :class="t.tool.toLowerCase()" :title="`${agentName(t.agent)} · ${t.tool} · ${t.target ?? ''}`"><b>{{ TOOL_SHORT[t.tool] ?? t.tool }}</b> {{ t.target ?? '' }}</span>
             <span class="sub">{{ props.liveTools.length }} çağrı</span>
+          </div>
+          <!-- Akis/maliyet + eylemler her durumda gorunur: once canli araç şeridinin icinde kaliyordu, dusmus iste
+               "Yeniden dene" hic cikmiyordu (2026-09-23). -->
+          <div class="runactions">
             <span class="sub right">{{ run.workflow }} · <span :title="COST_TITLE">{{ fmtCost(run.totalCostUsd, 4) }}</span><template v-if="run.maxCostUsd"> / {{ fmtCost(run.maxCostUsd) }}</template><template v-if="run.retries"> · {{ run.retries }}× yeniden</template></span>
             <button v-if="canRetry" type="button" class="small" :disabled="acting" @click="retry">Yeniden dene</button>
             <button v-if="canCancel" type="button" class="small danger" :disabled="acting" @click="cancel">{{ canRetry ? 'Kapat (iptal)' : 'İptal et' }}</button>
@@ -648,6 +652,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 .status.running { background: #4fa3e0; color: #fff; }
 .status.paused { background: #a889e6; color: #fff; }
 .status.awaitingInput { background: #d23b3b; color: #fff; }
+.runactions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.runactions .right { margin-right: auto; }
 .livetools { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 6px; padding: 6px 8px; background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; }
 .livetools .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #4a5068; }
 .livetools .tool { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #e5e7ee; color: #23283a; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -453,6 +453,25 @@ def test_apikey_reddedilirse_saklanmaz(cli_present):
     assert not r.started and credentials.api_key("anthropic") is None
 
 
+def test_uzun_istem_komut_satiri_yerine_dosyadan_verilir(cli_present):
+    """2026-09-23: ~24 KB istem + sema Windows komut satirini asti, surec 'Access is denied' ile hic baslamadi."""
+    assert mod._write_prompt_file("kisa") is None
+    long_text = "ğ" * (mod.PROMPT_FILE_THRESHOLD + 1)
+    path = mod._write_prompt_file(long_text)
+    try:
+        with open(path, encoding="utf-8") as f:
+            assert f.read() == long_text
+        base = {"systemPrompt": long_text, "messages": [], "provider": "anthropic", "model": "m"}
+        replace = AnthropicProvider()._options(TurnRequest.model_validate(base), path)
+        assert replace.system_prompt == {"type": "file", "path": path}
+        preset = AnthropicProvider()._options(TurnRequest.model_validate({**base, "systemPromptMode": "claude_code"}), path)
+        assert preset.system_prompt == {"type": "preset", "preset": "claude_code"}
+        assert preset.extra_args == {"append-system-prompt-file": path}
+    finally:
+        import os
+        os.unlink(path)
+
+
 def test_apikey_yokken_options_env_tasimaz(cli_present):
     opts = AnthropicProvider()._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m"}))
     assert not opts.env
