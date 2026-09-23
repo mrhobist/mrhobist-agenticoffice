@@ -602,6 +602,15 @@ public sealed class RunService(
             busy.UnionWith(AgentCaller.BusyAgents);
 
             var assignments = Dispatcher.Plan(wf, spec, phasesByTask, busy);
+            if (assignments.Count == 0 && busy.Count == 0 && Dispatcher.Plan(wf, spec, phasesByTask, new HashSet<string>()).Count == 0)
+            {
+                // Kimse dolu degil ve yine de hazir gorev yok: bekleme degil TAKILMA. Once "ajan bekleniyor" diye sessizce
+                // asili kaliyordu (2026-09-23, Skipped sayilmayinca). Gorunur dus; karar kullanicinin ("Yeniden dene").
+                run = run with { Status = RunStatus.Failed, FinishedAt = DateTimeOffset.UtcNow, WaitingSince = null, Detail = "ilerleyebilecek görev yok (dağıtım takıldı)" };
+                await runs.UpdateAsync(run, ct).ConfigureAwait(false);
+                return run;
+            }
+
             if (assignments.Count == 0)
             {
                 // Hazir gorev var ama ajanlari baska calismalarda dolu: is kuyruktan cikar, WaitingSince isaretlenir;

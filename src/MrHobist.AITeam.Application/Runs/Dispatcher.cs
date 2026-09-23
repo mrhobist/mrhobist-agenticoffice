@@ -75,7 +75,12 @@ public static class Dispatcher
         return busy;
     }
 
-    /// <summary>Gorevin son adimi Done ise gorev bitmistir.</summary>
+    /// <summary>
+    /// Gorevin son adimi Done ya da Skipped ise gorev bitmistir. Skipped = kullanici "bu adimi gec / elle hallettim" dedi.
+    /// 2026-09-23'e kadar yalniz Done sayiliyordu: son adimi atlanan gorev ne bitmis ne dagitilabilir oluyordu, ona bagli
+    /// gorevler hic hazir olmuyordu ve calisma "ajan bekleniyor" diye sonsuza dek asili kaliyordu (tek adimli akista ilk
+    /// "Bu adimi gec" cevabinda yasandi).
+    /// </summary>
     public static bool IsDone(IReadOnlyList<Stage> stages, IReadOnlyList<Phase> phases)
     {
         if (stages.Count == 0)
@@ -84,7 +89,7 @@ public static class Dispatcher
         }
 
         var lastStage = stages[^1];
-        return phases.Any(p => p.Stage == lastStage.Id && p.Status == PhaseStatus.Done);
+        return phases.Any(p => p.Stage == lastStage.Id && p.Status is PhaseStatus.Done or PhaseStatus.Skipped);
     }
 
     /// <summary>
