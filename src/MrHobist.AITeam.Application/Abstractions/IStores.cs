@@ -101,6 +101,12 @@ public interface IRunStore
     /// </summary>
     Task<IReadOnlyList<CalibrationSample>> ReadCalibrationSamplesAsync(string provider, string model, int limit, CancellationToken ct);
 
+    /// <summary>
+    /// MCP kullanim raporu icin son <paramref name="runLimit"/> calismanin MCP'li turlari: ajana acilan sunucular ve arac
+    /// cagrilari. Prompt/cikti metni okunmaz. MCP'siz turlar donmez.
+    /// </summary>
+    Task<IReadOnlyList<McpTurnUsage>> ReadMcpUsageAsync(int runLimit, CancellationToken ct);
+
     /// <summary>Bu calismada LLM cagirmis ajanlar (silinmis ajanlar dahil).</summary>
     Task<IReadOnlyList<string>> ListConversationsAsync(string runId, CancellationToken ct);
 
@@ -120,6 +126,9 @@ public interface IRunStore
 
 /// <summary>Bir turun kullanim ozeti satiri: <see cref="IRunStore.ReadUsageAsync"/>. Tam <see cref="Turn"/> degil, yalniz toplanan alanlar.</summary>
 public sealed record TurnUsage(string RunId, string Provider, string Model, int? InputTokens, int? OutputTokens, decimal? CostUsd, DateTimeOffset Ts);
+
+/// <summary>Bir turun MCP ozeti: acilan sunucular (eski kayitlarda null) ve araclari (tam SDK adi, ör. <c>mcp__gh__create_issue</c>).</summary>
+public sealed record McpTurnUsage(string RunId, string Agent, DateTimeOffset Ts, IReadOnlyList<string>? McpServers, IReadOnlyList<string> Tools);
 
 /// <summary>Kalibrasyon ornegi: turun istemi (sistem + mesajlar, karakter), girdi tokeni (ic turlarin toplami) ve ic tur sayisi.</summary>
 public sealed record CalibrationSample(int PromptChars, int InputTokens, int Turns);

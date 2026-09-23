@@ -46,6 +46,13 @@ public static class DependencyInjection
         services.AddSingleton<IProjectService, ProjectService>();
         services.AddSingleton<IAgentService, AgentService>();
         services.AddTransient<IMcpService, McpService>();
+        services.AddSingleton<IMcpUsageReader, McpUsageReader>();
+        // OAuth: istemci IHttpClientFactory ile her cagrida HttpClient alir, bu yuzden singleton olabilir (AgentCaller singleton'u tutar).
+        services.AddHttpClient(McpOAuthHttpClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
+        services.AddSingleton<IMcpOAuthClient, McpOAuthHttpClient>();
+        services.AddSingleton<McpOAuthPending>();
+        services.AddSingleton<McpOAuthService>();
+        services.AddSingleton<IMcpTokenRefresher>(sp => sp.GetRequiredService<McpOAuthService>());
         // Transient: runtime istemcisi typed HttpClient, singleton'a hapsedilmesin.
         services.AddTransient<IModelListService, ModelListService>();
         services.AddSingleton<IWorkflowService, WorkflowService>();

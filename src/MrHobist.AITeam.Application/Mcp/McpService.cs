@@ -15,6 +15,9 @@ public sealed record McpSecretEntry(string Name, bool HasValue);
 /// </summary>
 public sealed record McpSecretInput(string Name, string? Value = null);
 
+/// <summary>OAuth durumu (belirtec degil): giris yapildi mi, ne zamana kadar, istemci dinamik kayitla mi alindi.</summary>
+public sealed record McpOAuthState(bool LoggedIn, DateTimeOffset? ExpiresAt, bool Registered, string? Scope, bool CanRefresh);
+
 /// <summary><c>GET /mcp</c> ogesi. <see cref="Agents"/>: bu sunucuya yetkili ajanlar (md frontmatter <c>mcp</c>).</summary>
 public sealed record McpServerView(
     string Key,
@@ -28,7 +31,23 @@ public sealed record McpServerView(
     IReadOnlyList<McpSecretEntry> Headers,
     bool Enabled,
     DateTimeOffset? UpdatedAt,
-    IReadOnlyList<string> Agents);
+    IReadOnlyList<string> Agents,
+    /// <summary>Ajana acilan araclar; null = hepsi. Sona eklendi (CLAUDE.md §5).</summary>
+    IReadOnlyList<string>? Tools = null,
+    /// <summary>Son basarili baglanti denemesinde gorulen araclar; hic denenmediyse null.</summary>
+    IReadOnlyList<McpKnownTool>? KnownTools = null,
+    DateTimeOffset? ToolsCheckedAt = null,
+    /// <summary>OAuth ile baglanan sunucuda giris durumu; OAuth yoksa null.</summary>
+    McpOAuthState? OAuth = null);
+
+/// <summary><c>PUT /mcp/{key}/tools</c> govdesi: ajana acilacak araclar; <c>null</c> = hepsi (secim kalkar).</summary>
+public sealed record McpToolsRequest(IReadOnlyList<string>? Tools);
+
+/// <summary>
+/// Ajana acilacak MCP sunuculari ve modelden gizlenecek araclar (<see cref="McpService.Resolve"/>). <see cref="Skipped"/>:
+/// md'de olup kayitli/acik olmayan ya da OAuth girisi olmayan anahtarlar (neden metniyle); cagiran kayda yazar.
+/// </summary>
+public sealed record ResolvedMcp(IReadOnlyDictionary<string, RuntimeMcpServer> Servers, IReadOnlyList<string> Disallowed, IReadOnlyList<string> Skipped);
 
 /// <summary><c>POST /mcp</c> ve <c>PUT /mcp/{key}</c> govdesi (PUT'ta <see cref="Key"/> yoldan gelir, govdedeki yok sayilir).</summary>
 public sealed record McpServerRequest(
@@ -75,6 +94,9 @@ public interface IMcpService
     /// <summary>Runtime sunucuyu acip araclarini listeler. Runtime kapaliysa 503; baglanti hatasi <see cref="McpTestResult.Ok"/> = false.</summary>
     Task<McpTestResult> TestAsync(string key, CancellationToken ct);
 
+    /// <summary>Ajana acilacak araclari secer (<c>null</c> = hepsi). Bilinen listede olmayan ad <c>mcp.invalid</c>.</summary>
+    Task<McpServerView> SetToolsAsync(string key, McpToolsRequest request, CancellationToken ct);
+
     /// <summary>Hazir sunucular (<c>config/mcp-catalog.json</c>). Sir tasimaz.</summary>
     Task<IReadOnlyList<McpCatalogEntry>> CatalogAsync(CancellationToken ct);
 
@@ -88,8 +110,8 @@ public interface IMcpService
 /// </summary>
 public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntimeService runtime, IMcpCatalog? catalog = null) : IMcpService
 {
-    /// <summary><c>/mcp/catalog</c> sabit yolu bu anahtarli bir sunucuyu golgelerdi.</summary>
-    private const string ReservedKey = "catalog";
+    /// <summary><c>/mcp/catalog</c>, <c>/mcp/usage</c>, <c>/mcp/oauth</c> sabit yollari bu anahtarli bir sunucuyu golgelerdi.</summary>
+    private static readonly string[] ReservedKeys = ["catalog", "usage", "oauth"];
 
     public async Task<IReadOnlyList<McpCatalogEntry>> CatalogAsync(CancellationToken ct)
         => catalog is null ? [] : await catalog.LoadAsync(ct).ConfigureAwait(false);
@@ -115,8 +137,8 @@ public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntim
     private static string RequireFreeKey(string key)
     {
         Identifiers.Require(key, ErrorCodes.McpInvalidKey, "MCP sunucusu");
-        return key == ReservedKey
-            ? throw new DomainException(ErrorCodes.McpInvalidKey, $"'{ReservedKey}' ayrilmis bir ad; baska bir anahtar ver.")
+        return ReservedKeys.Contains(key, StringComparer.Ordinal)
+            ? throw new DomainException(ErrorCodes.McpInvalidKey, $"'{key}' ayrilmis bir ad; baska bir anahtar ver.")
             : key;
     }
 
@@ -207,12 +229,38 @@ public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntim
         return await GetAsync(server.Key, ct).ConfigureAwait(false);
     }
 
+    public async Task<McpServerView> SetToolsAsync(string key, McpToolsRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var current = await FindAsync(key, ct).ConfigureAwait(false);
+        var tools = request.Tools?.Select(t => t.Trim()).Where(t => t.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        var next = current with { Tools = tools };
+        next.ValidateTools();
+        await store.SaveAsync(next, ct).ConfigureAwait(false);
+        return await GetAsync(current.Key, ct).ConfigureAwait(false);
+    }
+
     public async Task<McpTestResult> TestAsync(string key, CancellationToken ct)
     {
         var server = await FindAsync(key, ct).ConfigureAwait(false);
         try
         {
-            var probe = await runtime.ProbeMcpAsync(ToRuntime(server), ct).ConfigureAwait(false);
+            // Deneme izin listesinden bagimsiz: secim ekrani sunucunun TUM araclarini gormeli.
+            var probe = await runtime.ProbeMcpAsync(ToRuntime(server) with { Tools = null }, ct).ConfigureAwait(false);
+            if (probe.Ok)
+            {
+                // Gorulen araclar secim ekrani icin saklanir. Sunucudan kalkmis araclar secimden de duser (olmayan araci
+                // "izinli" tutmak yeni ayni adli bir aracin sessizce acilmasi demekti).
+                var known = probe.Tools.Select(t => new McpKnownTool(t.Name, t.Description)).ToList();
+                var names = known.Select(t => t.Name).ToHashSet(StringComparer.Ordinal);
+                await store.SaveAsync(server with
+                {
+                    KnownTools = known,
+                    ToolsCheckedAt = DateTimeOffset.UtcNow,
+                    Tools = server.Tools?.Where(names.Contains).ToList(),
+                }, ct).ConfigureAwait(false);
+            }
+
             return new McpTestResult(probe.Ok, probe.Detail, probe.Tools, probe.ServerName, probe.ServerVersion);
         }
         catch (InvalidOperationException ex)
@@ -223,38 +271,61 @@ public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntim
     }
 
     /// <summary>
-    /// Ajana acilacak sunucular: md'deki anahtarlardan KAYITLI ve ACIK olanlar. Silinmis/kapali anahtar sessizce degil,
-    /// <paramref name="skipped"/> ile doner (cagiran kayda yazar).
+    /// Ajana acilacak sunucular: md'deki anahtarlardan KAYITLI, ACIK ve (OAuth'luysa) GIRIS YAPILMIS olanlar; secilmeyen araclar
+    /// <see cref="ResolvedMcp.Disallowed"/>'da. Atlanan anahtar sessizce degil, nedeniyle <see cref="ResolvedMcp.Skipped"/>'ta doner.
     /// </summary>
-    public static IReadOnlyDictionary<string, RuntimeMcpServer> Resolve(Agent agent, IReadOnlyList<McpServer> servers, out IReadOnlyList<string> skipped)
+    public static ResolvedMcp Resolve(Agent agent, IReadOnlyList<McpServer> servers, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(agent);
         ArgumentNullException.ThrowIfNull(servers);
         var byKey = servers.ToDictionary(s => s.Key, StringComparer.Ordinal);
         var result = new Dictionary<string, RuntimeMcpServer>(StringComparer.Ordinal);
-        var missing = new List<string>();
+        var denied = new List<string>();
+        var skipped = new List<string>();
         foreach (var key in agent.McpServers)
         {
-            if (byKey.TryGetValue(key, out var s) && s.Enabled)
+            if (!byKey.TryGetValue(key, out var s))
             {
-                result[key] = ToRuntime(s);
+                skipped.Add($"{key} (kayıtlı değil)");
+            }
+            else if (!s.Enabled)
+            {
+                skipped.Add($"{key} (kapalı)");
+            }
+            else if (s.OAuth is { } o && !o.HasToken(now))
+            {
+                skipped.Add($"{key} (OAuth girişi yok ya da süresi doldu)");
+            }
+            else if (s.Tools is { Count: 0 })
+            {
+                skipped.Add($"{key} (hiçbir araç seçilmedi)");
             }
             else
             {
-                missing.Add(key);
+                result[key] = ToRuntime(s);
+                denied.AddRange(s.DisallowedToolNames());
             }
         }
 
-        skipped = missing;
-        return result;
+        return new ResolvedMcp(result, denied, skipped);
     }
 
+    /// <summary>Kayit → runtime bicimi. OAuth belirteci varsa <c>Authorization: Bearer</c> basligi olarak eklenir.</summary>
     public static RuntimeMcpServer ToRuntime(McpServer s)
     {
         ArgumentNullException.ThrowIfNull(s);
-        return s.Transport == McpTransport.Stdio
-            ? new RuntimeMcpServer(McpServer.Wire(s.Transport), Command: s.Command, Args: s.Args, Env: s.Env)
-            : new RuntimeMcpServer(McpServer.Wire(s.Transport), Url: s.Url, Headers: s.Headers);
+        if (s.Transport == McpTransport.Stdio)
+        {
+            return new RuntimeMcpServer(McpServer.Wire(s.Transport), Command: s.Command, Args: s.Args, Env: s.Env, Tools: s.Tools);
+        }
+
+        var headers = new Dictionary<string, string>(s.Headers, StringComparer.OrdinalIgnoreCase);
+        if (s.OAuth?.AccessToken is { Length: > 0 } token)
+        {
+            headers["Authorization"] = "Bearer " + token;
+        }
+
+        return new RuntimeMcpServer(McpServer.Wire(s.Transport), Url: s.Url, Headers: headers, Tools: s.Tools);
     }
 
     private static McpServer Compose(string key, McpServerRequest r, McpServer? current) => new(
@@ -268,7 +339,12 @@ public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntim
         Merge(r.Headers, current?.Headers, StringComparer.OrdinalIgnoreCase),
         r.Enabled,
         r.Description?.Trim() ?? "",
-        current?.UpdatedAt);
+        current?.UpdatedAt,
+        // Tanim duzenlemesi durumu (arac secimi, gorulen araclar, OAuth girisi) silmez.
+        current?.Tools,
+        current?.KnownTools,
+        current?.ToolsCheckedAt,
+        current?.OAuth);
 
     /// <summary>Degeri null gelen satir kayitli degeri korur; listede olmayan ad silinir. Ayni ad iki kez → <c>mcp.invalid</c>.</summary>
     private static Dictionary<string, string> Merge(IReadOnlyList<McpSecretInput>? input, IReadOnlyDictionary<string, string>? current, StringComparer comparer)
@@ -317,5 +393,9 @@ public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntim
         s.Headers.Select(kv => new McpSecretEntry(kv.Key, kv.Value.Length > 0)).OrderBy(e => e.Name, StringComparer.Ordinal).ToList(),
         s.Enabled,
         s.UpdatedAt,
-        UsersOf(team, s.Key));
+        UsersOf(team, s.Key),
+        s.Tools,
+        s.KnownTools,
+        s.ToolsCheckedAt,
+        s.OAuth is { } o ? new McpOAuthState(o.HasToken(DateTimeOffset.UtcNow), o.ExpiresAt, o.Registered, o.Scope, !string.IsNullOrEmpty(o.RefreshToken)) : null);
 }

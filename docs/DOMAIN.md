@@ -77,7 +77,25 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
   resmi OAuth *henüz yok*), önerilen üç resmi sunucu: **GitHub** (uzak PAT · Docker · GHES), **Playwright** (Microsoft; görünmez /
   görünür tarayıcı), **Context7** (Upstash; güncel kütüphane dokümanı). Seçim gerekçesi: ofis kod yazıp test eden bir ekip —
   depo/PR, ön yüzü gerçek tarayıcıda denemek ve eski API tahminini azaltmak en çok işe yarayan üç yetenek.
-- **OAuth-yalnız yöntemler** listede "henüz yok" diye durur: ofis ajanı etkileşimsiz çalışır, tarayıcıda giriş yapacak kimse yok.
+- **Araç seçimi (2026-09-23, kullanıcı isteği).** Sunucu başına izin listesi (`tools`; boş = hepsi). Seçenekler son başarılı
+  "Bağlantıyı dene"de görülen araçlardır (`knownTools`, sunucuda saklanır). Seçilmeyen araçlar SDK'ya `disallowed_tools` olarak
+  gider — şeması bağlama hiç girmez — ve runtime'ın izin denetimi (`_guard`) izin listesi dışındaki `mcp__{sunucu}__{araç}`
+  çağrısını ayrıca reddeder (iki kat: yeni eklenen, henüz görülmemiş bir araç da izin listesinde değilse açılmaz). Hiç araç
+  seçilmediyse sunucu verilmez, kayda neden düşer. Tanım düzenlemesi seçimi ve OAuth girişini silmez.
+- **Kullanım raporu (2026-09-23).** Her tur, ajana açılan sunucuları kaydeder (`Turn.McpServers`). `GET /mcp/usage` son N işte
+  sunucu başına: verildiği tur, kullanıldığı tur, çağrı, iş, son kullanım; araç ve ajan kırılımı; silinmiş sunucuların geçmişi.
+  "Verildi ama hiç kullanılmadı" işaretlenir: araç şemaları her iç turda ödenir, kullanılmayan sunucu boşuna bağlamdır. Şema
+  tokeni bilinmediği için rapora tahmin yazılmaz.
+- **OAuth girişi (2026-09-23, kullanıcı isteği).** Uzak (http/sse) sunucularda panelden "OAuth ile giriş yap". Akış .NET'tedir
+  (Python durumsuz kalır): kimliksiz istek → 401 `WWW-Authenticate: resource_metadata` → korunan kaynak bilgisi (RFC 9728) →
+  yetki sunucusu bilgisi (RFC 8414) → istemci (kullanıcının verdiği · aynı yetki sunucusu için saklanan · dinamik kayıt RFC 7591)
+  → PKCE S256 + `resource` (RFC 8707) ile yetkilendirme → loopback dönüş `http://127.0.0.1:5080/api/v1/mcp/oauth/callback` →
+  kod takası. Kapsam: önce `WWW-Authenticate: scope`, sonra korunan kaynağın `scopes_supported`, kullanıcı daraltabilir.
+  Dönüş ucu JWT'siz açıktır; yetki tek kullanımlık, 15 dk'lık `state`'tir (bellekte). Belirteç sunucu kaydına yazılır, yanıta
+  yazılmaz; her turda `Authorization: Bearer` olarak gider, 5 dk içinde dolacaksa tur **öncesi** yenilenir; yenilenemezse sunucu
+  "giriş yok" diye atlanır (iş durmaz). Uzak uçlar https olmalı (yalnız loopback'te http).
+  Canlı keşif (2026-09-23, salt okunur): Figma ve Atlassian dinamik kaydı ilan ediyor (token girmeden giriş); Slack ve GitHub
+  etmiyor — kullanıcının kendi OAuth uygulamasının istemci kimliği/gizli anahtarı gerekir (dönüş adresi o uygulamaya eklenir).
   Alternatif (Claude Code'un saklı OAuth belirtecini paylaşmak) reddedildi: kullanıcının kişisel oturumu ajana sızardı.
 
 ## Projeler (2026-09-19, kullanıcı kararı)

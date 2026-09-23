@@ -35,6 +35,11 @@ etiketli opak görsellerdir.
 | Pano, notlar | — | prosedürel |
 
 `blue-hoodie`, `sim2`'nin yeşil kapüşonu ton kaydırmasıyla maviye çevrilmiş türevidir (8. karakter).
+2026-09-23 (kullanıcı isteği: "yeni karakterler, çoğu bayan"): renk türevleriyle 6 karakter daha — `ponytail-blonde`,
+`ponytail-red`, `ponytail-black` (`sim3`), `bun-black`, `bun-auburn` (`sim4`), `shirt-tie-blond` (`sim1`). `recolor_ops`
+ton + doygunluk + parlaklık işler; kahverengi saç aynı tondaki tenden parlaklıkla ayrılır (sarı/siyah saç ton kaydırmayla
+elde edilemez). Yalnız yeni karakterleri üretmek: `build-sprites.py --only a,b` (diğer PNG'ler yeniden yazılmaz).
+Seçim: yeni ajan formu ve ajan panelindeki karakter seçici (`scene.json → agents[].sprite`, DOMAIN.md → Ekip yönetimi).
 V1'in 4 insan sayfası ve türetilmiş 2 renk varyantı artık atlasa girmez (stil V2'yle
 uyuşmuyor); ham dosyalar durur. `sim7`/`karma` çok karakterli küçük ölçekli kataloglar,
 kullanılmadı.

@@ -1916,6 +1916,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    runs?: number | string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpUsageReport"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp/catalog/{key}/install": {
         parameters: {
             query?: never;
@@ -2056,6 +2093,125 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": components["schemas"]["McpAccessRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": null | components["schemas"]["McpOAuthStartRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpOAuthStart"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/oauth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpToolsRequest"];
                 };
             };
             responses: {
@@ -2285,6 +2441,13 @@ export interface components {
         McpAccessRequest: {
             agents: string[];
         };
+        McpAgentUsage: {
+            agent: string;
+            /** Format: int32 */
+            offeredTurns: number | string;
+            /** Format: int32 */
+            calls: number | string;
+        };
         McpAuthOption: {
             id: string;
             label: string;
@@ -2298,6 +2461,8 @@ export interface components {
             description?: null | string;
             notes?: null | string;
             requires?: null | string[];
+            /** @default false */
+            oAuth: boolean;
         };
         McpCatalogEntry: {
             key: string;
@@ -2338,6 +2503,27 @@ export interface components {
             key?: null | string;
             name?: null | string;
         };
+        McpKnownTool: {
+            name: string;
+            description?: null | string;
+        };
+        McpOAuthStart: {
+            authorizationUrl: string;
+            registered: boolean;
+        };
+        McpOAuthStartRequest: {
+            clientId?: null | string;
+            clientSecret?: null | string;
+            scope?: null | string;
+        };
+        McpOAuthState: {
+            loggedIn: boolean;
+            /** Format: date-time */
+            expiresAt: null | string;
+            registered: boolean;
+            scope: null | string;
+            canRefresh: boolean;
+        };
         McpSecretEntry: {
             name: string;
             hasValue: boolean;
@@ -2359,6 +2545,23 @@ export interface components {
             enabled: boolean;
             description?: null | string;
         };
+        McpServerUsage: {
+            key: string;
+            name: null | string;
+            registered: boolean;
+            /** Format: int32 */
+            offeredTurns: number | string;
+            /** Format: int32 */
+            usedTurns: number | string;
+            /** Format: int32 */
+            calls: number | string;
+            /** Format: int32 */
+            runs: number | string;
+            /** Format: date-time */
+            lastUsedAt: null | string;
+            tools: components["schemas"]["McpToolUsage"][];
+            agents: components["schemas"]["McpAgentUsage"][];
+        };
         McpServerView: {
             key: string;
             name: string;
@@ -2373,6 +2576,11 @@ export interface components {
             /** Format: date-time */
             updatedAt: null | string;
             agents: string[];
+            tools?: null | string[];
+            knownTools?: null | components["schemas"]["McpKnownTool"][];
+            /** Format: date-time */
+            toolsCheckedAt?: null | string;
+            oAuth?: null | components["schemas"]["McpOAuthState"];
         };
         McpTestResult: {
             ok: boolean;
@@ -2381,8 +2589,25 @@ export interface components {
             serverName: null | string;
             serverVersion: null | string;
         };
+        McpToolUsage: {
+            name: string;
+            /** Format: int32 */
+            calls: number | string;
+        };
+        McpToolsRequest: {
+            tools: null | string[];
+        };
         /** @enum {unknown} */
         McpTransport: "stdio" | "http" | "sse";
+        McpUsageReport: {
+            /** Format: int32 */
+            runLimit: number | string;
+            /** Format: int32 */
+            turnsWithMcp: number | string;
+            /** Format: int32 */
+            calls: number | string;
+            servers: components["schemas"]["McpServerUsage"][];
+        };
         Message: {
             /** Format: date-time */
             ts: string;
@@ -2849,6 +3074,7 @@ export interface components {
             toolsOffered?: null | boolean;
             context?: null | components["schemas"]["ContextStats"];
             cutShort?: null | boolean;
+            mcpServers?: null | string[];
         };
         UpdateAgentRequest: {
             name: string;

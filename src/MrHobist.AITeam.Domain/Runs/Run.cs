@@ -255,7 +255,12 @@ public sealed record Turn(
     /// Tur yarida kesildi (zaman asimi, iptal, saglayici hatasi): kullanim runtime'in canli bildiriminden, maliyet fiyat
     /// tablosundan tahmin. Eski satirlarda null. Sona eklendi (CLAUDE.md §5).
     /// </summary>
-    bool? CutShort = null);
+    bool? CutShort = null,
+    /// <summary>
+    /// Bu turda ajana acilan MCP sunuculari (anahtarlar). MCP kullanim raporu "verildi ama kullanilmadi"yi bundan cikarir: her
+    /// sunucunun arac semalari her ic turda baglama girer, kullanilmayan sunucu bosuna odenir. Eski satirlarda null. Sona eklendi.
+    /// </summary>
+    IReadOnlyList<string>? McpServers = null);
 
 /// <summary>
 /// Bir turda tasinan gecmisin olcusu (docs/DOMAIN.md → Baglam butcesi). Sikistirmanin neyi dusurdugunu ve hangi

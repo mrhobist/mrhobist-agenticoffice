@@ -89,6 +89,21 @@ public static class ErrorCodes
     public const string McpExists = "mcp.exists";
     public const string McpInUse = "mcp.in_use";
 
+    /// <summary>OAuth yalniz uzak (http/sse) MCP sunucularinda.</summary>
+    public const string McpOAuthUnsupported = "mcp.oauth_unsupported";
+
+    /// <summary>Yetki sunucusu bulunamadi ya da uclari guvensiz (https degil).</summary>
+    public const string McpOAuthDiscoveryFailed = "mcp.oauth_discovery_failed";
+
+    /// <summary>Sunucu dinamik istemci kaydi yapmiyor/reddetti: kullanici kendi istemci kimligini girmeli.</summary>
+    public const string McpOAuthClientRequired = "mcp.oauth_client_required";
+
+    /// <summary>Tarayici donusundeki giris oturumu bilinmiyor ya da suresi doldu.</summary>
+    public const string McpOAuthStateInvalid = "mcp.oauth_state_invalid";
+
+    /// <summary>Yetkilendirme reddedildi ya da belirtec alinamadi.</summary>
+    public const string McpOAuthTokenFailed = "mcp.oauth_token_failed";
+
     /// <summary>Katalogda boyle bir hazir sunucu ya da baglanti secenegi yok.</summary>
     public const string McpCatalogNotFound = "mcp.catalog_not_found";
 

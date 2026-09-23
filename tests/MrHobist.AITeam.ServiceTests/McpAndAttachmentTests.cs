@@ -176,6 +176,73 @@ public sealed class McpAndAttachmentTests : IDisposable
         Assert.Equal("npx", Assert.Single(_runtime.Probes).Command);
     }
 
+    [Fact]
+    public async Task Arac_secimi_izin_listesi_ve_gizlenen_araclar_olarak_runtimea_gider()
+    {
+        await AddGithubAsync();
+        await _mcp.SetAccessAsync("gh", new McpAccessRequest([Dev]), Ct);
+
+        // Baglanti denemesi gorulen araclari saklar (sahte runtime: "echo").
+        await _mcp.TestAsync("gh", Ct);
+        Assert.Equal("echo", Assert.Single((await _mcp.GetAsync("gh", Ct)).KnownTools!).Name);
+
+        // Uc arac gorulmus olsun; ikisi secilsin.
+        var stored = (await _mcpStore.GetAsync("gh", Ct))!;
+        await _mcpStore.SaveAsync(stored with { KnownTools = [new("get_issue"), new("list_repos"), new("delete_repo")] }, Ct);
+        var view = await _mcp.SetToolsAsync("gh", new McpToolsRequest(["get_issue", "list_repos"]), Ct);
+        Assert.Equal(["get_issue", "list_repos"], view.Tools);
+        Assert.Equal(ErrorCodes.McpInvalid, (await Assert.ThrowsAsync<DomainException>(() => _mcp.SetToolsAsync("gh", new McpToolsRequest(["yok"]), Ct))).ErrorCode);
+
+        // Tanim duzenlemesi secimi silmez.
+        await _mcp.UpdateAsync("gh", new McpServerRequest("gh", "GitHub 2", McpTransport.Stdio, "npx", Env: [new McpSecretInput("GITHUB_TOKEN")]), Ct);
+        Assert.Equal(["get_issue", "list_repos"], (await _mcp.GetAsync("gh", Ct)).Tools);
+
+        var (run, _, implement) = await RunOnceAsync();
+        Assert.Equal(["get_issue", "list_repos"], implement.McpServers!["gh"].Tools);
+        Assert.Equal(["mcp__gh__delete_repo"], implement.DisallowedTools);
+
+        // Tur kaydi acilan sunucuyu tutar: kullanim raporu buradan okur.
+        var turns = await _fx.Runs.ReadTurnsAsync(run.Id, Dev, Ct);
+        Assert.All(turns, t => Assert.Equal(["gh"], t.McpServers));
+
+        // Hic arac secilmediyse sunucu verilmez, kayda neden duser.
+        await _mcp.SetToolsAsync("gh", new McpToolsRequest([]), Ct);
+        var (run2, analyze2, _) = await RunOnceAsync();
+        Assert.Null(_runtime.Calls.Last(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).McpServers);
+        Assert.Contains(await _fx.Runs.ReadMessagesAsync(run2.Id, Ct), m => m.Subject == "mcp" && m.Body.Contains("hiçbir araç", StringComparison.Ordinal));
+        _ = analyze2;
+    }
+
+    [Fact]
+    public async Task Kullanim_raporu_verilen_ve_kullanilan_turlari_arac_ve_ajan_basina_sayar()
+    {
+        await AddGithubAsync();
+        var run = await _svc.CreateAsync(new RunRequest("b", Project: "test"), Ct);
+        await _svc.CancelAsync(run.Id, Ct);
+        Turn T(string agent, string[]? servers, params string[] tools) => new(
+            DateTimeOffset.UtcNow, agent, "gelistirme", "t1", 1, "anthropic", "m", Destination.Anthropic, 1, 10, 10,
+            ToolUses: [.. tools.Select(t => new ToolUse(t, null))], McpServers: servers);
+        await _fx.Runs.AppendTurnAsync(run.Id, T("dev", ["gh"], "Read", "mcp__gh__get_issue", "mcp__gh__get_issue", "mcp__gh__list_repos"), Ct);
+        await _fx.Runs.AppendTurnAsync(run.Id, T("dev", ["gh"], "Write"), Ct);                  // verildi, kullanilmadi
+        await _fx.Runs.AppendTurnAsync(run.Id, T("qa", ["gh", "eski"], "mcp__eski__x"), Ct);   // silinmis sunucu
+        await _fx.Runs.AppendTurnAsync(run.Id, T("dev", null, "Bash"), Ct);                     // MCP'siz tur sayilmaz
+
+        var report = await new McpUsageReader(_fx.Runs, _mcpStore).SummarizeAsync(50, Ct);
+        Assert.Equal(3, report.TurnsWithMcp);
+        Assert.Equal(4, report.Calls);
+
+        var gh = report.Servers.Single(s => s.Key == "gh");
+        Assert.True(gh.Registered);
+        Assert.Equal((3, 1, 3, 1), (gh.OfferedTurns, gh.UsedTurns, gh.Calls, gh.Runs));
+        Assert.Equal([new McpToolUsage("get_issue", 2), new McpToolUsage("list_repos", 1)], gh.Tools);
+        Assert.Equal(new McpAgentUsage("dev", 2, 3), gh.Agents.Single(a => a.Agent == "dev"));
+        Assert.Equal(new McpAgentUsage("qa", 1, 0), gh.Agents.Single(a => a.Agent == "qa"));
+
+        var old = report.Servers.Single(s => s.Key == "eski");
+        Assert.False(old.Registered);
+        Assert.Equal(1, old.Calls);
+    }
+
     private sealed class OneEntryCatalog : IMcpCatalog
     {
         public Task<IReadOnlyList<McpCatalogEntry>> LoadAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<McpCatalogEntry>>(

@@ -25,6 +25,11 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `mcp.invalid` | 400 | stdio'da komut yok, http/sse'de mutlak http(s) adres yok, boş ya da yinelenen değişken/başlık adı |
 | `mcp.not_found` | 404 | Böyle bir MCP sunucusu yok |
 | `mcp.exists` | 409 | `POST /mcp`: bu anahtarla sunucu var |
+| `mcp.oauth_unsupported` | 400 | OAuth yalnız uzak (http/sse) sunucularda |
+| `mcp.oauth_discovery_failed` | 502 | Yetki sunucusu bulunamadı ya da ucu https değil |
+| `mcp.oauth_client_required` | 400 | Sunucu dinamik istemci kaydı yapmıyor/reddetti; kullanıcı istemci kimliği girmeli |
+| `mcp.oauth_state_invalid` | 400 | OAuth dönüşündeki giriş oturumu bilinmiyor ya da süresi doldu |
+| `mcp.oauth_token_failed` | 502 | Yetkilendirme reddedildi ya da belirteç alınamadı |
 | `mcp.catalog_not_found` | 404 | Katalogda böyle bir hazır sunucu ya da bağlantı yöntemi yok |
 | `mcp.in_use` | 409 | `DELETE /mcp`: sunucu bir ajana yetkili; önce yetki kaldırılır |
 | `attachment.empty` | 400 | Yüklenen dosya boş ya da istekte dosya yok |

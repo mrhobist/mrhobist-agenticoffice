@@ -49,7 +49,13 @@ public sealed record McpAuthOption(
     bool Supported = true,
     string? Description = null,
     string? Notes = null,
-    IReadOnlyList<string>? Requires = null);
+    IReadOnlyList<string>? Requires = null,
+    /// <summary>
+    /// Kimlik OAuth girisiyle alinir (docs/DOMAIN.md → MCP → OAuth): kurulumdan sonra panel tarayicida girisi baslatir.
+    /// <c>OAUTH_CLIENT_ID</c> / <c>OAUTH_CLIENT_SECRET</c> / <c>OAUTH_SCOPE</c> adli <see cref="McpFieldTarget.Input"/> alanlari varsa
+    /// giris istegine gider (dinamik kayit yapmayan saglayicilar icin kullanicinin kendi uygulamasi).
+    /// </summary>
+    bool OAuth = false);
 
 /// <summary>Hazir MCP sunucusu (<c>config/mcp-catalog.json</c>): kurulum formunun kaynagi. Kurulan sunucu normal kayittir (<see cref="McpServer"/>).</summary>
 public sealed record McpCatalogEntry(

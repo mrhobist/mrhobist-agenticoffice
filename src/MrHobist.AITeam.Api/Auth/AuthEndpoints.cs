@@ -103,7 +103,8 @@ public static class AuthSetup
                 || !path.StartsWithSegments("/api/v1")
                 || path.StartsWithSegments("/api/v1/auth/login")
                 || path.StartsWithSegments("/api/v1/jobs/health") // canlilik probu kimliksiz
-                || path.StartsWithSegments("/api/v1/progress"); // runtime'in arac bildirimi: tek kullanimlik belirtec yetkidir (ProgressRegistry)
+                || path.StartsWithSegments("/api/v1/progress") // runtime'in arac bildirimi: tek kullanimlik belirtec yetkidir (ProgressRegistry)
+                || path.StartsWithSegments("/api/v1/mcp/oauth/callback"); // OAuth tarayici donusu: tek kullanimlik state yetkidir (McpOAuthPending)
             if (!open && ctx.User.Identity?.IsAuthenticated != true)
             {
                 // Ayni Problem Details sekli (errorCode + traceId): ProblemMapping tek kaynak.

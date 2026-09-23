@@ -23,6 +23,11 @@ const MESSAGES: Record<string, string> = {
   'mcp.invalid': 'MCP tanımı eksik: stdio için komut, http/sse için http(s) adresi gerekli; değişken/başlık adları boş olamaz.',
   'mcp.not_found': 'MCP sunucusu bulunamadı.',
   'mcp.exists': 'Bu anahtarla bir MCP sunucusu zaten var.',
+  'mcp.oauth_unsupported': 'OAuth yalnız uzak (HTTP/SSE) MCP sunucularında kullanılır.',
+  'mcp.oauth_discovery_failed': 'Sunucunun yetki (OAuth) bilgisi bulunamadı ya da güvenli değil; sunucu OAuth desteklemiyor olabilir.',
+  'mcp.oauth_client_required': 'Bu sunucu otomatik istemci kaydı yapmıyor: kendi OAuth uygulamanın istemci kimliğini (ve gizli anahtarını) gir.',
+  'mcp.oauth_state_invalid': 'Giriş oturumunun süresi doldu; girişi panelden yeniden başlat.',
+  'mcp.oauth_token_failed': 'Yetkilendirme reddedildi ya da belirteç alınamadı.',
   'mcp.catalog_not_found': 'Hazır sunucu ya da bağlantı yöntemi katalogda bulunamadı.',
   'mcp.in_use': 'Bu MCP sunucusu ajanlara yetkili; silmeden önce yetkileri kaldırın.',
 

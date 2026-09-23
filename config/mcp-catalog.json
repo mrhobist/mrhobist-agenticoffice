@@ -49,8 +49,9 @@
           "label": "Figma uzak sunucusu (OAuth)",
           "transport": "Http",
           "url": "https://mcp.figma.com/mcp",
-          "supported": false,
-          "notes": "Resmi uzak sunucu yalnız etkileşimli OAuth kabul ediyor; PAT almıyor. Ofis ajanı etkileşimsiz çalıştığı için bu yol henüz kurulamaz — PAT ya da masaüstü seçeneğini kullan."
+          "oAuth": true,
+          "description": "Tarayıcıda Figma hesabınla giriş yaparsın; token girmezsin. İstemci dinamik kayıtla alınır.",
+          "notes": "Figma'nın resmi uzak sunucusu (kapsam mcp:connect). Figma dinamik kaydı yalnız onaylı istemcilere açıyorsa kayıt reddedilir; o zaman PAT ya da masaüstü seçeneğini kullan."
         }
       ]
     },
@@ -90,8 +91,12 @@
           "label": "Jira Cloud · Rovo MCP · OAuth",
           "transport": "Http",
           "url": "https://mcp.atlassian.com/v2/mcp",
-          "supported": false,
-          "notes": "Etkileşimli OAuth girişi gerekir; ofis ajanı etkileşimsiz çalıştığı için henüz kurulamaz. API token seçeneklerinden birini kullan."
+          "oAuth": true,
+          "description": "Tarayıcıda Atlassian hesabınla giriş yaparsın; token girmezsin. İstemci dinamik kayıtla alınır.",
+          "notes": "Kuruluş yöneticisi Rovo MCP'ye erişimi açmış olmalı. Varsayılan kapsam sunucunun ilan ettiği listenin tamamıdır; daraltmak için kapsam alanını doldur (ör. read:jira:agent-interface offline_access).",
+          "fields": [
+            { "name": "OAUTH_SCOPE", "label": "Kapsam (scope)", "target": "Input", "required": false, "placeholder": "boş = sunucunun önerdiği", "help": "Boşluklarla ayrılmış; boş bırakılırsa sunucunun ilan ettiği kapsamlar istenir." }
+          ]
         },
         {
           "id": "cloud-token",
@@ -182,8 +187,12 @@
           "label": "Bitbucket Cloud · Rovo MCP · OAuth",
           "transport": "Http",
           "url": "https://mcp.atlassian.com/v2/mcp",
-          "supported": false,
-          "notes": "Etkileşimli OAuth girişi gerekir (Bitbucket için OAuth desteği kaynaklarda da çelişkili). API token seçeneğini kullan."
+          "oAuth": true,
+          "description": "Tarayıcıda Atlassian hesabınla giriş yaparsın; istemci dinamik kayıtla alınır.",
+          "notes": "Bitbucket araçlarının OAuth ile çalıştığı kaynaklarda çelişkili (Nisan 2026 duyurusu 'şimdilik API token' diyor). Giriş olur ama Bitbucket araçları gelmezse API token seçeneğini kullan.",
+          "fields": [
+            { "name": "OAUTH_SCOPE", "label": "Kapsam (scope)", "target": "Input", "required": false, "placeholder": "boş = sunucunun önerdiği", "help": "Boşluklarla ayrılmış; boş bırakılırsa sunucunun ilan ettiği kapsamlar istenir." }
+          ]
         },
         {
           "id": "cloud-token",
@@ -290,8 +299,14 @@
           "label": "Slack resmi sunucusu (OAuth)",
           "transport": "Http",
           "url": "https://mcp.slack.com/mcp",
-          "supported": false,
-          "notes": "Yalnız OAuth kullanıcı belirteci; kayıtlı bir Slack uygulaması ve yönetici onayı ister. Etkileşimli giriş gerektiği için henüz kurulamaz."
+          "oAuth": true,
+          "description": "Kendi Slack uygulamanın istemci kimliği ve gizli anahtarıyla tarayıcıda giriş. Slack dinamik kayıt yapmıyor.",
+          "notes": "api.slack.com/apps → uygulama oluştur → OAuth & Permissions → Redirect URL olarak http://127.0.0.1:5080/api/v1/mcp/oauth/callback ekle; çalışma alanı yöneticisi uygulamayı onaylamalı. Slack yönlendirme adresinde https şartı koyarsa bu yol çalışmaz — o zaman kullanıcı/bot belirteci seçeneği.",
+          "fields": [
+            { "name": "OAUTH_CLIENT_ID", "label": "OAuth istemci kimliği (client id)", "target": "Input" },
+            { "name": "OAUTH_CLIENT_SECRET", "label": "OAuth gizli anahtarı (client secret)", "target": "Input", "secret": true },
+            { "name": "OAUTH_SCOPE", "label": "Kapsam (scope)", "target": "Input", "required": false, "placeholder": "boş = sunucunun önerdiği", "help": "Boşluklarla ayrılmış; boş bırakılırsa sunucunun ilan ettiği kapsamlar istenir." }
+          ]
         }
       ]
     },
@@ -348,8 +363,14 @@
           "label": "Uzak sunucu · OAuth",
           "transport": "Http",
           "url": "https://api.githubcopilot.com/mcp/",
-          "supported": false,
-          "notes": "Etkileşimli OAuth girişi gerekir; PAT seçeneğini kullan."
+          "oAuth": true,
+          "description": "Kendi GitHub OAuth uygulamanın istemci kimliği ve gizli anahtarıyla tarayıcıda giriş. GitHub dinamik kayıt yapmıyor.",
+          "notes": "GitHub → Settings → Developer settings → OAuth Apps → New: Authorization callback URL = http://127.0.0.1:5080/api/v1/mcp/oauth/callback. Kapsam boşsa sunucunun ilan ettiği liste (repo, read:org…) istenir.",
+          "fields": [
+            { "name": "OAUTH_CLIENT_ID", "label": "OAuth istemci kimliği (client id)", "target": "Input" },
+            { "name": "OAUTH_CLIENT_SECRET", "label": "OAuth gizli anahtarı (client secret)", "target": "Input", "secret": true },
+            { "name": "OAUTH_SCOPE", "label": "Kapsam (scope)", "target": "Input", "required": false, "placeholder": "boş = sunucunun önerdiği", "help": "Boşluklarla ayrılmış; boş bırakılırsa sunucunun ilan ettiği kapsamlar istenir." }
+          ]
         }
       ]
     },

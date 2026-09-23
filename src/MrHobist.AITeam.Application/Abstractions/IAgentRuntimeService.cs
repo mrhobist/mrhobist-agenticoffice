@@ -33,7 +33,12 @@ public sealed record RuntimeTurnRequest(
     /// Cwd DISINDA okunabilecek dizinler (is ekleri). Yazma araclari yine yalniz <see cref="Cwd"/> altinda; Bash bu dizinlerdeki yollari
     /// kullanabilir (ör. bir resmi projeye kopyalamak). Sona eklendi; null = yok.
     /// </summary>
-    IReadOnlyList<string>? ReadDirs = null);
+    IReadOnlyList<string>? ReadDirs = null,
+    /// <summary>
+    /// Modele HIC sunulmayacak araclar (SDK <c>disallowed_tools</c>): MCP sunucusunda secilmemis araclar, <c>mcp__{key}__{arac}</c>.
+    /// Semalari baglama girmez. Sona eklendi; null = yok.
+    /// </summary>
+    IReadOnlyList<string>? DisallowedTools = null);
 
 /// <summary>Runtime'a giden MCP baglantisi (SDK bicimi): <c>stdio</c> komut/args/env · <c>http</c>|<c>sse</c> url/basliklar.</summary>
 public sealed record RuntimeMcpServer(
@@ -42,7 +47,9 @@ public sealed record RuntimeMcpServer(
     IReadOnlyList<string>? Args = null,
     IReadOnlyDictionary<string, string>? Env = null,
     string? Url = null,
-    IReadOnlyDictionary<string, string>? Headers = null);
+    IReadOnlyDictionary<string, string>? Headers = null,
+    /// <summary>Izin listesi (arac adlari, oneksiz); null = hepsi. Runtime'in izin denetimi disindakileri reddeder. Sona eklendi.</summary>
+    IReadOnlyList<string>? Tools = null);
 
 /// <summary>MCP baglanti denemesinin sonucu: sunucu acildi mi, hangi araclari sunuyor. Durum degil, anlik olcum.</summary>
 public sealed record RuntimeMcpProbe(bool Ok, string Detail, IReadOnlyList<RuntimeMcpTool> Tools, string? ServerName = null, string? ServerVersion = null);

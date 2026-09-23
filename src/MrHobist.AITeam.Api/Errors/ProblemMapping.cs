@@ -47,6 +47,7 @@ public sealed partial class ProblemMapping(ILogger<ProblemMapping> logger) : IEx
         ErrorCodes.ConfigFileInvalid or ErrorCodes.KnowledgeInvalidKey => StatusCodes.Status500InternalServerError,
         ErrorCodes.AuthInvalidCredentials or ErrorCodes.AuthRequired => StatusCodes.Status401Unauthorized,
         ErrorCodes.ConfigFileMissing or ErrorCodes.WorkflowNotFound or ErrorCodes.ProjectNotFound or ErrorCodes.ProjectLaunchMissing or ErrorCodes.KnowledgeNotFound or ErrorCodes.McpNotFound or ErrorCodes.McpCatalogNotFound => StatusCodes.Status404NotFound,
+        ErrorCodes.McpOAuthDiscoveryFailed or ErrorCodes.McpOAuthTokenFailed => StatusCodes.Status502BadGateway,
         ErrorCodes.AgentExists or ErrorCodes.AgentInUse or ErrorCodes.WorkflowDefaultProtected
             or ErrorCodes.RunNotAwaitingApproval or ErrorCodes.RunNotRetryable or ErrorCodes.RunNotCancellable or ErrorCodes.RunNotAwaitingInput
             or ErrorCodes.ProjectExists or ErrorCodes.ProjectInUse or ErrorCodes.KnowledgeInUse

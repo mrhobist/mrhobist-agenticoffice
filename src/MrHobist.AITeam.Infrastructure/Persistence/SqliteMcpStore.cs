@@ -10,7 +10,14 @@ namespace MrHobist.AITeam.Infrastructure.Persistence;
 /// </summary>
 internal sealed class SqliteMcpStore(IDbContextFactory<AiTeamContext> factory) : IMcpStore
 {
-    private sealed record Dto(List<string>? Args, Dictionary<string, string>? Env, Dictionary<string, string>? Headers);
+    private sealed record Dto(
+        List<string>? Args,
+        Dictionary<string, string>? Env,
+        Dictionary<string, string>? Headers,
+        List<string>? Tools = null,
+        List<McpKnownTool>? KnownTools = null,
+        DateTimeOffset? ToolsCheckedAt = null,
+        McpOAuth? OAuth = null);
 
     public async Task<IReadOnlyList<McpServer>> ListAsync(CancellationToken ct)
     {
@@ -47,7 +54,11 @@ internal sealed class SqliteMcpStore(IDbContextFactory<AiTeamContext> factory) :
         row.Data = PersistenceJson.Write(new Dto(
             server.Args.Count > 0 ? [.. server.Args] : null,
             server.Env.Count > 0 ? new Dictionary<string, string>(server.Env, StringComparer.Ordinal) : null,
-            server.Headers.Count > 0 ? new Dictionary<string, string>(server.Headers, StringComparer.OrdinalIgnoreCase) : null));
+            server.Headers.Count > 0 ? new Dictionary<string, string>(server.Headers, StringComparer.OrdinalIgnoreCase) : null,
+            server.Tools is null ? null : [.. server.Tools],
+            server.KnownTools is null ? null : [.. server.KnownTools],
+            server.ToolsCheckedAt,
+            server.OAuth));
         row.UpdatedAt = now;
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
@@ -77,6 +88,10 @@ internal sealed class SqliteMcpStore(IDbContextFactory<AiTeamContext> factory) :
             dto.Headers ?? [],
             row.Enabled,
             row.Description,
-            row.UpdatedAt);
+            row.UpdatedAt,
+            dto.Tools,
+            dto.KnownTools,
+            dto.ToolsCheckedAt,
+            dto.OAuth);
     }
 }

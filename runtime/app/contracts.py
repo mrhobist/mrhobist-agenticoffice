@@ -38,6 +38,9 @@ class McpServerConfig(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     url: str | None = None
     headers: dict[str, str] = Field(default_factory=dict)
+    #: Izin listesi (arac adlari, oneksiz); None = hepsi. SDK'ya gitmez: izin denetimi (`_guard`) disindakileri reddeder.
+    #: Secimi .NET yapar; burasi yalniz uygular.
+    tools: list[str] | None = None
 
 
 class McpToolInfo(BaseModel):
@@ -92,6 +95,9 @@ class TurnRequest(BaseModel):
     #: cwd DISINDA okunabilecek dizinler (is ekleri). Yazma araclari yine yalniz cwd'de; Bash bu dizinlerdeki yollari
     #: kullanabilir (ornegin bir resmi projeye kopyalamak). .NET verir; runtime hicbir yolu kendisi secmez.
     read_dirs: list[str] | None = Field(default=None, alias="readDirs")
+    #: Modele hic sunulmayacak araclar (SDK `disallowed_tools`): MCP'de secilmemis araclar, `mcp__{anahtar}__{arac}`.
+    #: Semalari baglama girmez. .NET hesaplar; None = yok.
+    disallowed_tools: list[str] | None = Field(default=None, alias="disallowedTools")
 
     model_config = {"populate_by_name": True}
 

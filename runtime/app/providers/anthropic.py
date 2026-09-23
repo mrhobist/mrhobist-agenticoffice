@@ -338,7 +338,11 @@ class AnthropicProvider:
             # `allowed_tools` VERILMEZ: verilirse SDK araci geri cagriyi sormadan onaylar (CanUseToolShadowedWarning) ve
             # yazma siniri devre disi kalir. Arac kumesi `tools`, her cagrinin karari `_guard`.
             opts["tools"] = tools
-            opts["can_use_tool"] = self._guard(request.cwd, request.read_dirs)
+            mcp_allow = {k: (set(v.tools) if v.tools is not None else None) for k, v in (request.mcp_servers or {}).items()}
+            opts["can_use_tool"] = self._guard(request.cwd, request.read_dirs, mcp_allow)
+            if request.disallowed_tools:
+                # Secilmeyen MCP araclari modele hic sunulmaz (semalari baglama girmez); `_guard` izin listesini ayrica uygular.
+                opts["disallowed_tools"] = list(request.disallowed_tools)
             opts["max_turns"] = request.max_turns or 80
             if request.cwd:
                 opts["cwd"] = request.cwd
@@ -372,7 +376,7 @@ class AnthropicProvider:
     _BASH_ALLOW_PREFIXES = ("/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/tmp")
 
     @classmethod
-    def _guard(cls, cwd: str | None, read_dirs: list[str] | None = None):
+    def _guard(cls, cwd: str | None, read_dirs: list[str] | None = None, mcp_allow: dict[str, set[str] | None] | None = None):
         """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: dosya yazma yalniz verilen dizinde; Bash verilen
         dizinde ve .NET'in actigi okuma dizinlerinde (is ekleri: ornegin bir resmi projeye kopyalamak)."""
         root = Path(cwd).resolve() if cwd else None
@@ -391,7 +395,24 @@ class AnthropicProvider:
         def readable(raw: str) -> bool:
             return inside(raw) or any(under(raw, d) for d in extra if Path(raw).is_absolute())
 
+        def mcp_denied(tool: str) -> str | None:
+            """MCP aracinin izin listesi disinda olup olmadigi. Sunucu anahtari `__` icerebilir: en uzun eslesen onek."""
+            if not tool.startswith("mcp__") or not mcp_allow:
+                return None
+            rest = tool[len("mcp__"):]
+            keys = sorted((k for k in mcp_allow if rest.startswith(k + "__")), key=len, reverse=True)
+            if not keys:
+                return None
+            allowed = mcp_allow[keys[0]]
+            name = rest[len(keys[0]) + 2:]
+            if allowed is not None and name not in allowed:
+                return f"'{name}' araci bu ajana acilmadi ({keys[0]} sunucusunda secili degil)."
+            return None
+
         async def decide(tool: str, tool_input: dict[str, Any], _ctx: ToolPermissionContext):
+            denied = mcp_denied(tool)
+            if denied:
+                return PermissionResultDeny(message=denied)
             if root is None:
                 return PermissionResultAllow()
             if tool in cls.WRITE_TOOLS:

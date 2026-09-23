@@ -89,7 +89,7 @@ public sealed record TurnWatch(TimeSpan Idle, TimeSpan HardCap, TimeSpan Poll)
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
-public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null, IModelCatalog? catalog = null, IMcpStore? mcp = null)
+public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null, IModelCatalog? catalog = null, IMcpStore? mcp = null, Mcp.IMcpTokenRefresher? mcpTokens = null)
 {
     /// <summary>Kesilen turun kismi yaniti bu anahtarla istisnaya eklenir; RunService maliyeti calismanin toplamina ekler.</summary>
     public const string PartialReplyKey = "aiteam.partialReply";
@@ -135,7 +135,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
         var parts = agent.PromptParts(team.Knowledge, knowledge);
         var system = string.Concat(parts.Select(p => p.Text));
-        var mcpServers = await McpForAsync(run, agent, target, tools, stage, task, ct).ConfigureAwait(false);
+        var resolvedMcp = await McpForAsync(run, agent, target, tools, stage, task, ct).ConfigureAwait(false);
+        var mcpServers = resolvedMcp?.Servers;
         // Canli akis: yalniz aracli turda; belirtec tur boyunca yasar. Baglam (sistem parcalari + mesajlar) ekranda gorunsun diye kayda girer.
         var progressToken = tools is not null && progress?.BaseUrl is { } baseUrl
             ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage), LiveContext(parts, messages, mcpServers))
@@ -144,7 +145,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
             Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
             SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace,
-            McpServers: mcpServers, ReadDirs: tools?.ReadDirs);
+            McpServers: mcpServers, ReadDirs: tools?.ReadDirs,
+            DisallowedTools: resolvedMcp is { Disallowed.Count: > 0 } ? resolvedMcp.Disallowed : null);
 
         var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -204,7 +206,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 r.Usage.CacheReadTokens,
                 r.Usage.CacheWriteTokens,
                 ToolsOffered: tools is not null,
-                Context: context);
+                Context: context,
+                McpServers: mcpServers is { Count: > 0 } ? [.. mcpServers.Keys] : null);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
             return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m, turn.ToolUses ?? [], r.Usage.InputTokens, r.Usage.OutputTokens);
@@ -226,23 +229,30 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     /// Ajana bu turda acilacak MCP sunuculari (docs/DOMAIN.md → MCP sunuculari): yalniz aracli turda ve MCP calistirabilen saglayicida.
     /// md'de olup kayitli/acik olmayan anahtar sessizce degil, calismanin kaydina not olarak dusulur.
     /// </summary>
-    private async Task<IReadOnlyDictionary<string, RuntimeMcpServer>?> McpForAsync(Run run, Agent agent, AgentTarget target, ToolAccess? tools, string? stage, string? task, CancellationToken ct)
+    private async Task<Mcp.ResolvedMcp?> McpForAsync(Run run, Agent agent, AgentTarget target, ToolAccess? tools, string? stage, string? task, CancellationToken ct)
     {
         if (tools is null || mcp is null || agent.McpServers.Count == 0 || !Domain.Mcp.McpSupport.Supports(target.Provider))
         {
             return null;
         }
 
-        var resolved = Mcp.McpService.Resolve(agent, await mcp.ListAsync(ct).ConfigureAwait(false), out var skipped);
-        if (skipped.Count > 0)
+        var servers = await mcp.ListAsync(ct).ConfigureAwait(false);
+        if (mcpTokens is not null)
+        {
+            // OAuth belirteci suresi dolmak uzereyse tur ONCESI yenilenir; yenilenemezse sunucu atlanir (asagida not duser).
+            servers = await mcpTokens.EnsureFreshAsync(servers, agent.McpServers, ct).ConfigureAwait(false);
+        }
+
+        var resolved = Mcp.McpService.Resolve(agent, servers, DateTimeOffset.UtcNow);
+        if (resolved.Skipped.Count > 0)
         {
             await runs.AppendMessageAsync(
                 run.Id,
-                new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent.Key, agent.Key, $"MCP atlandı (kayıtlı değil ya da kapalı): {string.Join(", ", skipped)}", Stage: stage, Task: task, Subject: "mcp"),
+                new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent.Key, agent.Key, $"MCP atlandı: {string.Join(", ", resolved.Skipped)}", Stage: stage, Task: task, Subject: "mcp"),
                 ct).ConfigureAwait(false);
         }
 
-        return resolved.Count > 0 ? resolved : null;
+        return resolved.Servers.Count > 0 ? resolved : null;
     }
 
     /// <summary>Canli baglam gorunumu: sistem isteminin parcalari, acilan MCP sunuculari ve mesajlar, boyutlariyla.</summary>
@@ -252,7 +262,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         if (mcpServers is { Count: > 0 })
         {
             // Sir yok: yalniz ad ve baglanti bicimi. Araclarin semasi SDK'dan gelir, boyutu burada bilinmez (0).
-            var text = string.Join(Environment.NewLine, mcpServers.Select(kv => $"- {kv.Key} ({kv.Value.Type}{(kv.Value.Command is null ? "" : ": " + kv.Value.Command)}{(kv.Value.Url is null ? "" : ": " + kv.Value.Url)}) → araçlar mcp__{kv.Key}__*"));
+            var text = string.Join(Environment.NewLine, mcpServers.Select(kv => $"- {kv.Key} ({kv.Value.Type}{(kv.Value.Command is null ? "" : ": " + kv.Value.Command)}{(kv.Value.Url is null ? "" : ": " + kv.Value.Url)}) → araçlar " + (kv.Value.Tools is { } t ? string.Join(", ", t.Select(n => $"mcp__{kv.Key}__{n}")) : $"mcp__{kv.Key}__* (hepsi)")));
             list.Add(new LiveContextPart("mcp sunucuları", "system", 0, text));
         }
 

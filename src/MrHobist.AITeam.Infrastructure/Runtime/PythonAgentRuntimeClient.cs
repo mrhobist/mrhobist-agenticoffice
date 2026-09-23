@@ -33,7 +33,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         string? ProgressUrl,
         string SystemPromptMode,
         IReadOnlyDictionary<string, McpServerDto>? McpServers,
-        IReadOnlyList<string>? ReadDirs);
+        IReadOnlyList<string>? ReadDirs,
+        IReadOnlyList<string>? DisallowedTools);
 
     /// <summary>SDK bicimi (<c>McpStdioServerConfig</c> / <c>McpHttpServerConfig</c> / <c>McpSSEServerConfig</c>); bos alan yazilmaz.</summary>
     private sealed record McpServerDto(
@@ -42,7 +43,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         IReadOnlyList<string>? Args,
         IReadOnlyDictionary<string, string>? Env,
         string? Url,
-        IReadOnlyDictionary<string, string>? Headers);
+        IReadOnlyDictionary<string, string>? Headers,
+        IReadOnlyList<string>? Tools);
 
     private sealed record McpToolDto(string Name, string? Description);
 
@@ -219,7 +221,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             request.ProgressUrl,
             request.SystemPromptMode,
             request.McpServers is { Count: > 0 } mcp ? mcp.ToDictionary(kv => kv.Key, kv => ToDto(kv.Value), StringComparer.Ordinal) : null,
-            request.ReadDirs is { Count: > 0 } dirs ? dirs : null);
+            request.ReadDirs is { Count: > 0 } dirs ? dirs : null,
+            request.DisallowedTools is { Count: > 0 } denied ? denied : null);
 
         HttpResponseMessage response;
         try
@@ -300,7 +303,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         s.Args is { Count: > 0 } ? s.Args : null,
         s.Env is { Count: > 0 } ? s.Env : null,
         s.Url,
-        s.Headers is { Count: > 0 } ? s.Headers : null);
+        s.Headers is { Count: > 0 } ? s.Headers : null,
+        s.Tools);
 
     /// <summary>Runtime'in dondugu ad; bos donmez, bilinmeyen ad sozlesme hatasidir (500).</summary>
     private static Provider ParseProvider(string s)

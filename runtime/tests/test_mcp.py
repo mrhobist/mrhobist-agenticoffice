@@ -76,6 +76,28 @@ async def test_okuma_dizini_bashte_kullanilir_ama_yazilamaz(tmp_path):
     assert type(mcp_tool).__name__ == "PermissionResultAllow"
 
 
+def test_secilmeyen_araclar_disallowed_olarak_gider_ve_sdkya_izin_listesi_sizmaz(cli_present, tmp_path):
+    req = _req(
+        tools=["Read"], cwd=str(tmp_path),
+        mcpServers={"gh": {"type": "http", "url": "https://x/mcp", "tools": ["get_issue"]}},
+        disallowedTools=["mcp__gh__delete_repo"],
+    )
+    opts = AnthropicProvider()._options(req)
+    assert opts.disallowed_tools == ["mcp__gh__delete_repo"]
+    assert "tools" not in opts.mcp_servers["gh"]
+
+
+async def test_izin_listesi_disindaki_mcp_araci_reddedilir(tmp_path):
+    guard = AnthropicProvider._guard(str(tmp_path), None, {"gh": {"get_issue"}, "my__srv": None})
+    ok = await guard("mcp__gh__get_issue", {}, None)
+    assert type(ok).__name__ == "PermissionResultAllow"
+    denied = await guard("mcp__gh__delete_repo", {}, None)
+    assert type(denied).__name__ == "PermissionResultDeny"
+    # "__" iceren anahtar: en uzun onek; izin listesi yok = hepsi
+    anything = await guard("mcp__my__srv__whatever", {}, None)
+    assert type(anything).__name__ == "PermissionResultAllow"
+
+
 async def test_openai_mcp_istenirse_501(monkeypatch):
     monkeypatch.setattr(openai_mod, "find_codex_cli", lambda: None)
     with pytest.raises(HTTPException) as err:

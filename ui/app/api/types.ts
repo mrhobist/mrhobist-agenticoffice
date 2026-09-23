@@ -472,6 +472,14 @@ export type McpAuthOption = Schemas['McpAuthOption']
 export type McpCatalogField = Schemas['McpCatalogField']
 /** POST /api/v1/mcp/catalog/{key}/install govdesi. */
 export type McpInstallRequest = Schemas['McpInstallRequest']
+/** PUT /api/v1/mcp/{key}/tools govdesi: ajana acilacak araclar, null = hepsi. */
+export type McpToolsRequest = Schemas['McpToolsRequest']
+/** GET /api/v1/mcp/usage */
+export type McpUsageReport = Schemas['McpUsageReport']
+export type McpServerUsage = Schemas['McpServerUsage']
+/** POST /api/v1/mcp/{key}/oauth/start */
+export type McpOAuthStartRequest = Schemas['McpOAuthStartRequest']
+export type McpOAuthStart = Schemas['McpOAuthStart']
 
 /** RFC 9457 govdesi + errorCode. `title`/`detail` EKRANA BASILMAZ; yalniz errorCode eslenir. */
 export interface ProblemDetails {

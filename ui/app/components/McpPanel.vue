@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { AgentListItem, McpAuthOption, McpCatalogEntry, McpInstallRequest, McpServerRequest, McpServerView, McpTestResult, McpTransport } from '~/api/types'
+import type { AgentListItem, McpAuthOption, McpCatalogEntry, McpInstallRequest, McpOAuthStart, McpServerRequest, McpServerView, McpServerUsage, McpTestResult, McpTransport, McpUsageReport } from '~/api/types'
+import { isApiError } from '~/api/client'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { PROVIDER_LABEL } from '~/api/labels'
@@ -33,7 +34,136 @@ async function load() {
     loadError.value = errorText(e)
   }
 }
-onMounted(() => { void load(); void loadCatalog() })
+onMounted(() => { void load(); void loadCatalog(); void loadUsage() })
+onBeforeUnmount(() => { for (const t of oauthTimers.values()) clearInterval(t) })
+
+// ------------------------------------------------------------------ arac secimi (izin listesi)
+// Secenekler son basarili "Baglantiyi dene"de gorulen araclardir. null = hepsi; secilmeyen arac modele hic sunulmaz.
+
+const toolDraft = ref<Record<string, string[] | null>>({})
+
+function toolsOf(s: McpServerView): string[] | null {
+  return s.key in toolDraft.value ? toolDraft.value[s.key]! : (s.tools ?? null)
+}
+
+function toolChecked(s: McpServerView, name: string): boolean {
+  const t = toolsOf(s)
+  return t === null || t.includes(name)
+}
+
+function toggleTool(s: McpServerView, name: string, on: boolean) {
+  const all = (s.knownTools ?? []).map(t => t.name)
+  const cur = toolsOf(s) ?? all
+  const next = on ? [...new Set([...cur, name])] : cur.filter(n => n !== name)
+  toolDraft.value = { ...toolDraft.value, [s.key]: next.length === all.length && all.every(n => next.includes(n)) ? null : next }
+}
+
+function setAllTools(s: McpServerView, value: 'all' | 'none') {
+  toolDraft.value = { ...toolDraft.value, [s.key]: value === 'all' ? null : [] }
+}
+
+function toolsDirty(s: McpServerView): boolean {
+  if (!(s.key in toolDraft.value)) return false
+  const a = toolDraft.value[s.key] ?? null
+  const b = s.tools ?? null
+  return JSON.stringify(a === null ? null : [...a].sort()) !== JSON.stringify(b === null ? null : [...b].sort())
+}
+
+function toolSummary(s: McpServerView): string {
+  const known = s.knownTools?.length ?? 0
+  const t = s.tools
+  if (!known) return 'araç listesi yok'
+  return t === null || t === undefined ? `hepsi (${known})` : `${t.length}/${known} seçili`
+}
+
+async function saveTools(s: McpServerView) {
+  busy.value = `tools:${s.key}`
+  actError.value = null
+  try {
+    const updated = await api.put<McpServerView>(`/api/v1/mcp/${encodeURIComponent(s.key)}/tools`, { tools: toolsOf(s) })
+    servers.value = (servers.value ?? []).map(x => x.key === s.key ? updated : x)
+    const { [s.key]: _, ...rest } = toolDraft.value
+    toolDraft.value = rest
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
+
+// ------------------------------------------------------------------ OAuth girisi
+// Tarayici sekmesi tiklamayla ACILIR (acilir pencere engeline takilmasin), adres Api'den gelince oraya gider. Sonra sunucu
+// 2 s'de bir yoklanir; giris tamamlaninca baglanti kendiliginden denenir.
+
+const oauthForm = ref<Record<string, { clientId: string; clientSecret: string; scope: string } | undefined>>({})
+const oauthError = ref<Record<string, string | undefined>>({})
+const oauthWaiting = ref<Record<string, boolean>>({})
+const oauthTimers = new Map<string, ReturnType<typeof setInterval>>()
+
+async function oauthLogin(key: string, creds?: { clientId?: string; clientSecret?: string; scope?: string }) {
+  const tab = window.open('about:blank', '_blank')
+  oauthError.value = { ...oauthError.value, [key]: undefined }
+  try {
+    const start = await api.post<McpOAuthStart>(`/api/v1/mcp/${encodeURIComponent(key)}/oauth/start`, {
+      clientId: creds?.clientId?.trim() || null,
+      clientSecret: creds?.clientSecret?.trim() || null,
+      scope: creds?.scope?.trim() || null,
+    })
+    if (tab) tab.location.href = start.authorizationUrl
+    else window.open(start.authorizationUrl, '_blank')
+    watchOAuth(key)
+  } catch (e) {
+    tab?.close()
+    if (isApiError(e) && e.errorCode === 'mcp.oauth_client_required') oauthForm.value = { ...oauthForm.value, [key]: { clientId: '', clientSecret: '', scope: '' } }
+    oauthError.value = { ...oauthError.value, [key]: errorText(e) }
+  }
+}
+
+function watchOAuth(key: string) {
+  clearInterval(oauthTimers.get(key))
+  oauthWaiting.value = { ...oauthWaiting.value, [key]: true }
+  const started = Date.now()
+  oauthTimers.set(key, setInterval(async () => {
+    try {
+      const s = await api.get<McpServerView>(`/api/v1/mcp/${encodeURIComponent(key)}`)
+      if (s.oAuth?.loggedIn || Date.now() - started > 5 * 60_000) {
+        clearInterval(oauthTimers.get(key))
+        oauthWaiting.value = { ...oauthWaiting.value, [key]: false }
+        servers.value = (servers.value ?? []).map(x => x.key === key ? s : x)
+        if (s.oAuth?.loggedIn) { oauthForm.value = { ...oauthForm.value, [key]: undefined }; void test(s) }
+      }
+    } catch { /* bir sonraki yoklamada */ }
+  }, 2000))
+}
+
+async function oauthLogout(s: McpServerView) {
+  busy.value = `oauth:${s.key}`
+  try {
+    const updated = await api.post<McpServerView>(`/api/v1/mcp/${encodeURIComponent(s.key)}/oauth/logout`)
+    servers.value = (servers.value ?? []).map(x => x.key === s.key ? updated : x)
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
+
+// ------------------------------------------------------------------ kullanim raporu
+
+const usage = ref<McpUsageReport | null>(null)
+const usageError = ref<string | null>(null)
+const usageOpen = ref<string | null>(null)
+
+async function loadUsage() {
+  try {
+    usage.value = await api.get<McpUsageReport>('/api/v1/mcp/usage?runs=200')
+    usageError.value = null
+  } catch (e) {
+    usageError.value = errorText(e)
+  }
+}
+
+function unused(u: McpServerUsage): boolean { return Number(u.offeredTurns) > 0 && Number(u.usedTurns) === 0 }
 
 // ------------------------------------------------------------------ hazir sunucular (config/mcp-catalog.json)
 // Katalog yontemleri ve alanlari tanimlar; degerler (sirlar dahil) sunucuda birlestirilir (Basic basligi, Bearer...).
@@ -102,9 +232,17 @@ async function install() {
   busy.value = 'install'
   installError.value = null
   try {
+    const oauthCreds = opt.oAuth
+      ? { clientId: installValues.value.OAUTH_CLIENT_ID, clientSecret: installValues.value.OAUTH_CLIENT_SECRET, scope: installValues.value.OAUTH_SCOPE }
+      : null
     const created = await api.post<McpServerView>(`/api/v1/mcp/catalog/${encodeURIComponent(entry.key)}/install`, body)
     cancelInstall()
     await load()
+    if (oauthCreds) {
+      // OAuth: kimlik tarayicida alinir; giris tamamlaninca baglanti kendiliginden denenir.
+      void oauthLogin(created.key, oauthCreds)
+      return
+    }
     // Kurulan sunucu hemen denenir: token yanlissa kullanici burada gorur, ajan calisirken degil.
     const fresh = (servers.value ?? []).find(s => s.key === created.key)
     if (fresh) void test(fresh)
@@ -209,6 +347,9 @@ async function test(s: McpServerView) {
   tests.value = { ...tests.value, [s.key]: 'running' }
   try {
     tests.value = { ...tests.value, [s.key]: await api.post<McpTestResult>(`/api/v1/mcp/${encodeURIComponent(s.key)}/test`) }
+    // Basarili deneme gorulen araclari saklar: secim listesi icin sunucuyu yeniden oku.
+    const fresh = await api.get<McpServerView>(`/api/v1/mcp/${encodeURIComponent(s.key)}`)
+    servers.value = (servers.value ?? []).map(x => x.key === s.key ? fresh : x)
   } catch (e) {
     tests.value = { ...tests.value, [s.key]: { ok: false, detail: errorText(e), tools: [], serverName: null, serverVersion: null } }
   }
@@ -304,7 +445,7 @@ function fmtWhen(iso: string | null | undefined): string {
           >
             <input type="radio" name="mcp-option" :value="o.id" :checked="installOption === o.id" :disabled="o.supported === false" @change="selectOption(o.id)">
             <span class="opt-body">
-              <span class="opt-title">{{ o.label }}<span v-if="o.supported === false" class="badge offb">henüz yok</span></span>
+              <span class="opt-title">{{ o.label }}<span v-if="o.oAuth" class="badge oauth">tarayıcıda giriş</span><span v-if="o.supported === false" class="badge offb">henüz yok</span></span>
               <span v-if="o.description" class="sub">{{ o.description }}</span>
               <span v-if="o.requires?.length" class="reqs">gerekenler: <code v-for="r in o.requires" :key="r">{{ r }}</code></span>
               <span v-if="o.notes" class="sub note">{{ o.notes }}</span>
@@ -336,11 +477,12 @@ function fmtWhen(iso: string | null | undefined): string {
               <input v-model="installName" type="text">
             </label>
           </div>
-          <p class="sub">Kimlik bilgileri yalnız bu makinedeki veritabanına yazılır, bir daha gösterilmez. Kurulunca bağlantı hemen denenir.</p>
+          <p v-if="selectedOption.oAuth" class="sub">Kurulunca yeni bir sekmede sağlayıcının giriş sayfası açılır; onayladığında belirteç bu makinedeki veritabanına yazılır, süresi dolmadan kendiliğinden yenilenir. Dönüş adresi: <code>http://127.0.0.1:5080/api/v1/mcp/oauth/callback</code></p>
+          <p v-else class="sub">Kimlik bilgileri yalnız bu makinedeki veritabanına yazılır, bir daha gösterilmez. Kurulunca bağlantı hemen denenir.</p>
         </template>
 
         <div class="actions">
-          <button type="submit" class="primary" :disabled="busy === 'install' || !selectedOption || selectedOption.supported === false">{{ busy === 'install' ? 'Kuruluyor…' : 'Kur ve dene' }}</button>
+          <button type="submit" class="primary" :disabled="busy === 'install' || !selectedOption || selectedOption.supported === false">{{ busy === 'install' ? 'Kuruluyor…' : selectedOption?.oAuth ? 'Kur ve tarayıcıda giriş yap' : 'Kur ve dene' }}</button>
           <button type="button" class="ghost" @click="cancelInstall">Vazgeç</button>
           <span v-if="installError" class="err" role="alert">{{ installError }}</span>
         </div>
@@ -421,6 +563,39 @@ function fmtWhen(iso: string | null | undefined): string {
         </div>
       </form>
 
+      <!-- ---------------------------------------------------------- kullanim raporu -->
+      <details v-if="usage && usage.servers.length && !installing && editing === null" class="usage-box">
+        <summary>
+          <strong>Kullanım</strong>
+          <span class="sub"> · son {{ usage.runLimit }} iş · {{ usage.turnsWithMcp }} MCP'li tur · {{ usage.calls }} araç çağrısı</span>
+          <button type="button" class="small ghost" @click.prevent="loadUsage">yenile</button>
+        </summary>
+        <p class="sub">"Verildi" = sunucunun ajana açıldığı tur (her birinde araç şemaları bağlama girdi). Verilip hiç kullanılmayan sunucu bağlamı boşuna şişirir: yetkiyi kaldır ya da araçlarını daralt.</p>
+        <table class="usage">
+          <thead><tr><th>Sunucu</th><th class="num">Verildi</th><th class="num">Kullanıldı</th><th class="num">Çağrı</th><th class="num">İş</th><th>Son kullanım</th></tr></thead>
+          <tbody>
+            <template v-for="u in usage.servers" :key="u.key">
+              <tr class="srv" :class="{ warn: unused(u) }" @click="usageOpen = usageOpen === u.key ? null : u.key">
+                <td>{{ u.name ?? u.key }} <code>{{ u.key }}</code><span v-if="!u.registered" class="sub"> (silinmiş)</span><span v-if="unused(u)" class="badge offb">kullanılmadı</span></td>
+                <td class="num">{{ u.offeredTurns }}</td>
+                <td class="num">{{ u.usedTurns }}</td>
+                <td class="num">{{ u.calls }}</td>
+                <td class="num">{{ u.runs }}</td>
+                <td>{{ fmtWhen(u.lastUsedAt) || '—' }}</td>
+              </tr>
+              <tr v-if="usageOpen === u.key" class="detail">
+                <td colspan="6">
+                  <div v-if="u.tools.length"><span class="lbl">Araçlar</span> <span v-for="t in u.tools" :key="t.name" class="chip-t"><code>{{ t.name }}</code> {{ t.calls }}</span></div>
+                  <div v-if="u.agents.length"><span class="lbl">Ajanlar</span> <span v-for="a in u.agents" :key="a.agent" class="chip-t">{{ a.agent }}: {{ a.offeredTurns }} tur verildi · {{ a.calls }} çağrı</span></div>
+                  <span v-if="!u.tools.length && !u.agents.length" class="sub">Henüz kullanım yok.</span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </details>
+      <p v-else-if="usageError" class="err">{{ usageError }}</p>
+
       <!-- ---------------------------------------------------------- liste -->
       <p v-if="loadError" class="err" role="alert">{{ loadError }}</p>
       <p v-else-if="!servers" class="sub">Yükleniyor…</p>
@@ -442,6 +617,45 @@ function fmtWhen(iso: string | null | undefined): string {
           {{ s.transport === 'stdio' ? 'Ortam' : 'Başlıklar' }}:
           <span v-for="e in (s.transport === 'stdio' ? s.env : s.headers)" :key="e.name" class="secret">{{ e.name }}<template v-if="e.hasValue"> ••••</template></span>
         </p>
+
+        <div v-if="s.transport !== 'stdio'" class="oauth-row">
+          <span class="lbl">OAuth</span>
+          <template v-if="s.oAuth?.loggedIn">
+            <span class="badge ok">giriş yapıldı</span>
+            <span class="sub">{{ s.oAuth.expiresAt ? `${fmtWhen(s.oAuth.expiresAt)} tarihine kadar` : 'süresiz' }}{{ s.oAuth.canRefresh ? ' · kendiliğinden yenilenir' : '' }}</span>
+            <button type="button" class="small ghost" :disabled="busy === `oauth:${s.key}`" @click="oauthLogout(s)">Çıkış</button>
+          </template>
+          <template v-else>
+            <span class="sub">{{ s.oAuth ? 'giriş yok ya da süresi doldu' : 'kullanılmıyor (başlık/token ile bağlanıyor)' }}</span>
+            <button type="button" class="small" :disabled="oauthWaiting[s.key]" @click="oauthLogin(s.key, oauthForm[s.key])">{{ oauthWaiting[s.key] ? 'Tarayıcıda giriş bekleniyor…' : s.oAuth ? 'Yeniden giriş yap' : 'OAuth ile giriş yap' }}</button>
+          </template>
+          <div v-if="oauthForm[s.key]" class="oauth-creds">
+            <input v-model="oauthForm[s.key]!.clientId" type="text" placeholder="İstemci kimliği (client id)">
+            <input v-model="oauthForm[s.key]!.clientSecret" type="password" autocomplete="off" placeholder="Gizli anahtar (varsa)">
+            <input v-model="oauthForm[s.key]!.scope" type="text" placeholder="Kapsam (boş = önerilen)">
+          </div>
+          <span v-if="oauthError[s.key]" class="err">{{ oauthError[s.key] }}</span>
+        </div>
+
+        <details class="tools-box" :open="toolsDirty(s)">
+          <summary><span class="lbl">Araçlar</span> <span class="sub">{{ toolSummary(s) }}</span></summary>
+          <p v-if="!s.knownTools?.length" class="sub">Araç seçmek için önce "Bağlantıyı dene": sunucunun araç listesi oradan gelir. Seçim yoksa tüm araçlar açılır.</p>
+          <template v-else>
+            <div class="tool-actions">
+              <button type="button" class="small ghost" @click="setAllTools(s, 'all')">Tümü</button>
+              <button type="button" class="small ghost" @click="setAllTools(s, 'none')">Hiçbiri</button>
+              <span class="sub">Seçilmeyen araç modele hiç sunulmaz (şeması bağlama girmez). Liste {{ fmtWhen(s.toolsCheckedAt) }} tarihli.</span>
+            </div>
+            <label v-for="t in s.knownTools" :key="t.name" class="tool" :title="t.description ?? ''">
+              <input type="checkbox" :checked="toolChecked(s, t.name)" @change="toggleTool(s, t.name, ($event.target as HTMLInputElement).checked)">
+              <code>{{ t.name }}</code><span v-if="t.description" class="sub"> — {{ t.description }}</span>
+            </label>
+            <div v-if="toolsDirty(s)" class="tool-actions">
+              <button type="button" class="small primary" :disabled="busy === `tools:${s.key}`" @click="saveTools(s)">Seçimi kaydet</button>
+              <button type="button" class="small ghost" @click="toolDraft = Object.fromEntries(Object.entries(toolDraft).filter(([k]) => k !== s.key))">Vazgeç</button>
+            </div>
+          </template>
+        </details>
 
         <div class="access">
           <span class="lbl">Yetkili ajanlar</span>
@@ -471,9 +685,7 @@ function fmtWhen(iso: string | null | undefined): string {
             <strong>Bağlandı</strong>
             <span v-if="(tests[s.key] as McpTestResult).serverName" class="sub"> · {{ (tests[s.key] as McpTestResult).serverName }} {{ (tests[s.key] as McpTestResult).serverVersion }}</span>
             <span class="sub"> · {{ (tests[s.key] as McpTestResult).detail }}</span>
-            <ul class="tools">
-              <li v-for="t in (tests[s.key] as McpTestResult).tools" :key="t.name"><code>{{ t.name }}</code><span v-if="t.description" class="sub"> — {{ t.description }}</span></li>
-            </ul>
+            <span class="sub"> · araç seçimi aşağıdaki "Araçlar" bölümünde</span>
           </template>
           <template v-else>
             <strong>Bağlanamadı</strong>
@@ -562,5 +774,25 @@ button:disabled { opacity: 0.5; cursor: default; }
 .opt-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .reqs { font-size: 11px; color: #6b7285; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .note { font-style: italic; }
+.badge.oauth { background: #d8ebfa; color: #1d4f7a; }
+.oauth-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-top: 4px; border-top: 1px solid rgba(0,0,0,0.06); }
+.oauth-creds { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; width: 100%; }
+.tools-box { border-top: 1px solid rgba(0,0,0,0.06); padding-top: 4px; }
+.tools-box summary { cursor: pointer; }
+.tool-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.tool { display: flex; align-items: baseline; gap: 6px; font-size: 12px; padding: 1px 0; cursor: pointer; }
+.tool code { font-size: 11px; }
+.usage-box { background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; padding: 8px 10px; }
+.usage-box summary { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.usage-box summary button { margin-left: auto; }
+.usage { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.usage th, .usage td { padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.08); text-align: left; vertical-align: top; }
+.usage th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7285; }
+.usage .num { text-align: right; font-variant-numeric: tabular-nums; }
+.usage tr.srv { cursor: pointer; }
+.usage tr.srv:hover { background: #f6f3ea; }
+.usage tr.warn td:first-child { box-shadow: inset 3px 0 0 #f3c34a; }
+.usage tr.detail td { background: #faf8f2; }
+.chip-t { display: inline-block; margin: 2px 6px 2px 0; font-size: 11px; background: #e5e7ee; border-radius: 999px; padding: 1px 7px; }
 @media (max-width: 560px) { .row { grid-template-columns: 1fr; } .kv { grid-template-columns: 1fr; } }
 </style>
