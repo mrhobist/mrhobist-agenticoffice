@@ -47,15 +47,16 @@ public class ProgressRegistryTests
         reg.Report(token, new ProgressEvent("Read", @"C:\p\src\A.cs")); // eski govde: kind yok = arac
         reg.Report(token, new ProgressEvent(null, null, "usage", MessageId: "m1", Usage: new(1000, 10, 0, 900, 90)));
         reg.Report(token, new ProgressEvent(null, null, "usage", MessageId: "m1", Usage: new(1000, 40, 0, 900, 90))); // ayni mesaj: son deger
-        reg.Report(token, new ProgressEvent(null, null, "usage", MessageId: "m2", Usage: new(2000, 5, 0, 1900, 50)));
+        reg.Report(token, new ProgressEvent(null, null, "usage", MessageId: "m2", Usage: new(2000, 5, 0, 1900, 50), Chars: 12)); // 12 kr / 3 = 4 < 5: bildirilen kalir
+        reg.Report(token, new ProgressEvent(Kind: "usage", MessageId: "m3", Usage: new(0, 1, 0, 0, 0), Chars: 30)); // akistaki cikti mesaj basindaki deger: icerikten 10
         reg.Report(token, new ProgressEvent(null, null, "text", "   ")); // bos metin akisa girmez
 
         var live = Assert.Single(reg.Snapshot("r1"));
         Assert.Equal(["thinking", "tool"], live.Stream.Select(e => e.Kind));
         Assert.Equal("src/A.cs", live.Stream[1].Target);
         Assert.Equal(1, live.ToolCount);
-        Assert.Equal(new RuntimeUsage(3000, 45, 0, 2800, 140), live.Usage);
-        Assert.Equal(new RuntimeUsage(3000, 45, 0, 2800, 140), reg.UsageOf(token));
+        Assert.Equal(new RuntimeUsage(3000, 55, 0, 2800, 140), live.Usage);
+        Assert.Equal(new RuntimeUsage(3000, 55, 0, 2800, 140), reg.UsageOf(token));
         Assert.Equal("abc", Assert.Single(live.Context).Text);
         Assert.Equal([SceneEventTypes.AgentTool], scene.Types); // sahneye yalniz arac gider
 
@@ -86,4 +87,23 @@ public class ProgressRegistryTests
         // 1M okuma (0.2) + 0.1M yazma (0.8) + 0.01M dogrudan (0.04) + 0.05M cikti (1.0)
         Assert.Equal(2.04m, price.Estimate(new RuntimeUsage(1_110_000, 50_000, 0, 1_000_000, 100_000)));
     }
+
+    /// <summary>
+    /// 2026-09-23: Api JSON'u zorunlu kurucu parametresine uyar; runtime bos alani gondermez. Tool/Target zorunluyken metin ve
+    /// kullanim govdeleri 400 aliyor, ekranda yalniz araclar gorunuyordu. Runtime'in gercek govdeleri Api ayariyla okunmali.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"kind":"usage","messageId":"m1","chars":19,"usage":{"inputTokens":10,"outputTokens":2,"reasoningChars":0,"cacheReadTokens":5,"cacheWriteTokens":3}}""")]
+    [InlineData("""{"kind":"text","text":"merhaba"}""")]
+    [InlineData("""{"kind":"tool","tool":"Glob"}""")]
+    [InlineData("""{"tool":"Read","target":"a.cs"}""")]
+    public void Runtime_govdeleri_Api_json_ayariyla_okunur(string json)
+        => Assert.NotNull(System.Text.Json.JsonSerializer.Deserialize<ProgressEvent>(json, ApiJson));
+
+    /// <summary>Api'nin <c>ConfigureHttpJsonOptions</c> ayari (Program.cs) ile ayni katilik.</summary>
+    private static readonly System.Text.Json.JsonSerializerOptions ApiJson = new(System.Text.Json.JsonSerializerDefaults.Web)
+    {
+        RespectNullableAnnotations = true,
+        RespectRequiredConstructorParameters = true,
+    };
 }

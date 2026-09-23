@@ -548,11 +548,13 @@ async def test_canli_akis_metin_dusunce_arac_ve_kullanimi_bildirir(monkeypatch, 
                       tools=["Read"], progressUrl="http://127.0.0.1:5080/api/v1/progress/tok")
     await AnthropicProvider().complete(req)
 
-    assert [e["kind"] for e in sent] == ["thinking", "usage", "tool", "text", "usage"]
+    # m1 ikinci blokta ayni kullanimla gelir ama icerik buyudu (arac girdisi): yeniden bildirilir.
+    assert [e["kind"] for e in sent] == ["thinking", "usage", "tool", "usage", "text", "usage"]
     assert sent[0]["text"] == "once dizine bakayim"
-    assert sent[1] == {"kind": "usage", "messageId": "m1", "usage": {"inputTokens": 1002, "outputTokens": 7, "reasoningChars": 0, "cacheReadTokens": 900, "cacheWriteTokens": 100}}
+    assert sent[1] == {"kind": "usage", "messageId": "m1", "chars": 19, "usage": {"inputTokens": 1002, "outputTokens": 7, "reasoningChars": 0, "cacheReadTokens": 900, "cacheWriteTokens": 100}}
     assert sent[2]["tool"] == "Read" and sent[2]["target"] == "a.cs"
-    assert sent[4]["messageId"] == "m2"
+    assert sent[3]["chars"] == 19 + len(json.dumps({"file_path": "a.cs"}))
+    assert sent[5]["messageId"] == "m2" and sent[5]["chars"] == 5
 
 
 async def test_iptal_edilen_tur_sdk_akisini_hemen_kapatir(monkeypatch, cli_present):

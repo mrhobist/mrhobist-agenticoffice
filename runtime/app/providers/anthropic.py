@@ -244,6 +244,17 @@ async def _report_progress(client: httpx.AsyncClient | None, url: str | None, ev
         pass
 
 
+def _block_chars(block: Any) -> int:
+    """Bir icerik blogunun uretilen karakter sayisi (cikti tahmini icin; .NET boler)."""
+    if isinstance(block, TextBlock):
+        return len(block.text or "")
+    if isinstance(block, ThinkingBlock):
+        return len(block.thinking or "")
+    if isinstance(block, ToolUseBlock):
+        return len(json.dumps(block.input or {}, ensure_ascii=False))
+    return 0
+
+
 def _usage_of(raw: dict[str, Any] | None) -> Usage:
     """SDK kullanim sozlugu -> sozlesme. Girdi = dogrudan + onbellege yazilan + onbellekten okunan."""
     raw = raw or {}
@@ -412,7 +423,8 @@ class AnthropicProvider:
         # Tur basina tek istemci (bildirim sik: her arac, metin, kullanim). Akis yoksa acilmaz.
         client = httpx.AsyncClient(timeout=2.0) if request.progress_url else None
         # Ayni API mesaji blok basina tekrar gelir (ayni message_id, ayni kullanim): degismeyen kullanim yeniden bildirilmez.
-        sent_usage: dict[str, Usage] = {}
+        sent_usage: dict[str, tuple[Usage, int]] = {}
+        chars: dict[str, int] = {}
         stream: Any = None
         try:
             prompt_text = self._prompt(request)
@@ -440,10 +452,11 @@ class AnthropicProvider:
                             tool_uses.append(use)
                             await _report_progress(client, request.progress_url, ProgressEvent(kind="tool", tool=use.tool, target=use.target))
                     if msg.usage and msg.message_id:
-                        u = _usage_of(msg.usage)
-                        if sent_usage.get(msg.message_id) != u:
-                            sent_usage[msg.message_id] = u
-                            await _report_progress(client, request.progress_url, ProgressEvent(kind="usage", message_id=msg.message_id, usage=u))
+                        chars[msg.message_id] = chars.get(msg.message_id, 0) + sum(_block_chars(b) for b in msg.content)
+                        state = (_usage_of(msg.usage), chars[msg.message_id])
+                        if sent_usage.get(msg.message_id) != state:
+                            sent_usage[msg.message_id] = state
+                            await _report_progress(client, request.progress_url, ProgressEvent(kind="usage", message_id=msg.message_id, usage=state[0], chars=state[1]))
                 elif isinstance(msg, ResultMessage):
                     if msg.is_error:
                         detail = "; ".join(msg.errors or []) or msg.result or "bilinmiyor"

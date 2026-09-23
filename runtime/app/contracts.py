@@ -92,6 +92,9 @@ class ProgressEvent(BaseModel):
     text: str | None = None
     message_id: str | None = Field(default=None, alias="messageId")
     usage: Usage | None = None
+    #: O API mesajinda o ana kadar uretilen icerigin karakter sayisi (metin + dusunce + arac girdisi). Akistaki
+    #: `usage.output_tokens` mesajin basindaki degerdir; kesilen turun ciktisini .NET bundan tahmin eder.
+    chars: int | None = None
 
     model_config = {"populate_by_name": True}
 

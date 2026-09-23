@@ -12,8 +12,12 @@ public sealed record ProgressContext(string RunId, string Agent, string? Task, s
 /// Runtime'in tur sirasinda bildirdigi tek olay (<c>POST /progress/{token}</c> govdesi). <see cref="Kind"/>: <c>tool</c>
 /// (arac cagrisi; eski govdelerde bos) · <c>text</c> (ajanin yazdigi) · <c>thinking</c> (dusunce ozeti) · <c>usage</c> (bir API
 /// mesajinin kullanimi; ayni <see cref="MessageId"/> icin son deger gecerli). Yeni alan SONA eklenir (CLAUDE.md §5).
+/// Hepsi istege bagli: Api JSON'u zorunlu kurucu parametresine uyar (<c>RespectRequiredConstructorParameters</c>); runtime
+/// bos alani hic gondermez, zorunlu olsaydi metin/kullanim govdesi 400 alirdi (2026-09-23'te boyle oldu).
+/// <see cref="Chars"/>: o API mesajinda o ana kadar uretilen icerigin (metin, dusunce, arac girdisi) karakter sayisi.
+/// Akistaki <c>outputTokens</c> mesajin BASINDAKI degerdir (olculdu: 2 → gercek 464); kesilen turun ciktisi bundan tahmin edilir.
 /// </summary>
-public sealed record ProgressEvent(string? Tool, string? Target, string? Kind = null, string? Text = null, string? MessageId = null, RuntimeUsage? Usage = null);
+public sealed record ProgressEvent(string? Tool = null, string? Target = null, string? Kind = null, string? Text = null, string? MessageId = null, RuntimeUsage? Usage = null, int? Chars = null);
 
 /// <summary>Ajanin o anki baglaminin bir parcasi (sistem istemi, bilgi dosyasi, gorev istemi, tasinan gecmis).</summary>
 public sealed record LiveContextPart(string Name, string Role, int Chars, string Text);
@@ -50,6 +54,9 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
     /// <summary>Tur basina akista tutulan en fazla satir (eski satirlar duser; tam metin tur sonunda gunlukte).</summary>
     public const int StreamCap = 400;
 
+    /// <summary>Cikti tahmini: karakter / token. Kod ve Turkce metinde ~3-3,5; dusuk tutuldu ki kesilen tur eksik sayilmasin.</summary>
+    public const double OutputCharsPerToken = 3.0;
+
     private sealed class Live(ProgressContext ctx, IReadOnlyList<LiveContextPart> context)
     {
         public ProgressContext Ctx { get; } = ctx;
@@ -64,7 +71,7 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
 
         public Queue<LiveEntry> Stream { get; } = new();
 
-        public Dictionary<string, RuntimeUsage> Usage { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, (RuntimeUsage Usage, int Chars)> Usage { get; } = new(StringComparer.Ordinal);
 
         public object Gate { get; } = new();
     }
@@ -131,7 +138,7 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
             switch (kind)
             {
                 case "usage" when e.Usage is not null && !string.IsNullOrEmpty(e.MessageId):
-                    l.Usage[e.MessageId] = e.Usage;
+                    l.Usage[e.MessageId] = (e.Usage, e.Chars ?? 0);
                     return true;
                 case "text" or "thinking" when !string.IsNullOrWhiteSpace(e.Text):
                     Push(l, new LiveEntry(now, kind, null, null, e.Text));
@@ -166,13 +173,14 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
         }
     }
 
-    private static RuntimeUsage Sum(IEnumerable<RuntimeUsage> all)
+    /// <summary>Mesajlarin toplami; cikti mesaj basina bildirilen ile icerikten tahmin edilenin buyugudur.</summary>
+    private static RuntimeUsage Sum(IEnumerable<(RuntimeUsage Usage, int Chars)> all)
     {
         int input = 0, output = 0, read = 0, write = 0;
-        foreach (var u in all)
+        foreach (var (u, chars) in all)
         {
             input += u.InputTokens;
-            output += u.OutputTokens;
+            output += Math.Max(u.OutputTokens, (int)Math.Ceiling(chars / OutputCharsPerToken));
             read += u.CacheReadTokens;
             write += u.CacheWriteTokens;
         }
