@@ -27,6 +27,12 @@ internal sealed class ProjectRow
 
     public int SortOrder { get; set; }
 
+    /// <summary>Proje butcesi: $ tavani. <c>null</c> = sinirsiz.</summary>
+    public decimal? MaxCostUsd { get; set; }
+
+    /// <summary>Proje butcesi: token tavani (girdi + cikti). <c>null</c> = sinirsiz.</summary>
+    public long? MaxTokens { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
@@ -60,6 +66,12 @@ internal sealed class RunRow
     public decimal TotalCostUsd { get; set; }
 
     public decimal? MaxCostUsd { get; set; }
+
+    /// <summary>Calismanin girdi token toplami (tur basina kirilim <c>run_turn</c>'de).</summary>
+    public long InputTokens { get; set; }
+
+    /// <summary>Calismanin cikti token toplami.</summary>
+    public long OutputTokens { get; set; }
 
     public int Retries { get; set; }
 

@@ -44,6 +44,31 @@ public sealed class CompactionTests
         Assert.Same(history, kept); // dokunulmadi: ayni ornek
     }
 
+    /// <summary>
+    /// Ayni gecmis, ayni tavan: 4 karakter/token ile sigar, olculmus 2 ile sigmaz. Karar kalibre oranla verilir;
+    /// Turkce metin MAF'in bayt sayiminda iki kat gorunurdu, olcu karakterle.
+    /// </summary>
+    [Fact]
+    public async Task Kalibre_oran_esigi_tasir()
+    {
+        var text = string.Concat(Enumerable.Repeat("ğüşıöç ", 2_000)); // 14k karakter, ~28k UTF-8 bayt
+        var history = new List<RuntimeMessage>
+        {
+            new("user", "[t1 · gelistirme · tur 1] Bu adımda verdiğin çıktı:"),
+            new("assistant", text),
+            new("user", "[t1 · test · tur 1] Bu adımda verdiğin çıktı:"),
+            new("assistant", "{\"verdict\":\"reject\",\"feedback\":\"a.cs eksik\"}"),
+        };
+        var budget = new CompactionBudget(MaxMessages: 4, MaxTokens: 5_000);
+
+        var at4 = await new MafHistoryCompactor().CompactAsync(history, budget, Ct);
+        var at2 = await new MafHistoryCompactor().CompactAsync(history, budget with { CharsPerToken = 2.0 }, Ct);
+
+        Assert.Same(history, at4); // ~3.5k token: tavanin altinda, dokunulmadi
+        Assert.DoesNotContain(at2, m => m.Content == text); // ~7k token: en eski dev cikti duser
+        Assert.Contains(at2, m => m.Content.Contains("a.cs eksik", StringComparison.Ordinal));
+    }
+
     /// <summary>Token butcesi: tek bir dev cikti bile tavani asarsa kirpilir; icerik tamamen kaybolmaz.</summary>
     [Fact]
     public async Task Token_butcesi_asilinca_uzun_cikti_kirpilir()

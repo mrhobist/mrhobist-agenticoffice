@@ -115,3 +115,11 @@ public sealed class RuntimeUnavailableException(string message) : Exception(mess
 
 /// <summary>Runtime cevap verdi ama hata dondu (5xx): kapali degil, ucu bozuk. Api 502 <c>runtime.error</c> doner.</summary>
 public sealed class RuntimeErrorException(string message) : Exception(message);
+
+/// <summary>
+/// Saglayici turu kota penceresi doldugu icin reddetti (<c>runtime.provider_limit</c>). Hata degil BEKLEMEDIR:
+/// <see cref="Runs.LimitGuard"/> cagri oncesi bakar ama yuzdeler 90 s onbelleklidir, pencere tam o aralikta
+/// dolabilir. <c>AgentCaller</c> bunu <c>LimitReachedException</c>'a cevirir ki calisma Failed degil Paused olsun
+/// ve pencere sifirlaninca <c>RunResumer</c> kaldigi adimdan surdursun (2026-09-22).
+/// </summary>
+public sealed class RuntimeLimitReachedException(string message) : Exception(message);

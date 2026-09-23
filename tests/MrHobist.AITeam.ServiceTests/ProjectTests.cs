@@ -63,6 +63,46 @@ public sealed class ProjectTests : IDisposable
         Assert.Single(await svc.ListAsync(Ct));
     }
 
+    /// <summary>
+    /// Proje butcesi (2026-09-22 kullanici karari): varsayilan SINIRSIZ; $ ve token ayri ayri verilir;
+    /// kart projenin butun calismalarinin token toplamini gosterir. Sifir/negatif tavan reddedilir --
+    /// 0 "sinirsiz" degil "hicbir is kosmasin" demek olurdu ve proje sessizce kilitlenirdi.
+    /// </summary>
+    [Fact]
+    public async Task Proje_butcesi_varsayilan_sinirsiz_token_toplami_kartta_gorunur()
+    {
+        var runs = _fx.Runs;
+        var svc = new ProjectService(_fx.Projects, new JsonWorkflowStore(_fx.Paths), runs, new WorkspaceLocator(_fx.Paths), new FakeLauncher());
+
+        // Varsayilan: butce alanlari bos -> sinirsiz.
+        var sinirsiz = await svc.CreateAsync(new CreateProjectRequest("sinirsiz", "Sinirsiz", null, null, null), Ct);
+        Assert.Equal((null, (long?)null), (sinirsiz.MaxCostUsd, sinirsiz.MaxTokens));
+        Assert.Equal((0L, 0L), (sinirsiz.TotalInputTokens, sinirsiz.TotalOutputTokens));
+
+        // Iki olcu bagimsiz verilebilir.
+        var butceli = await svc.CreateAsync(new CreateProjectRequest("butceli", "Butceli", null, null, null, null, 12.5m, 1_000_000), Ct);
+        Assert.Equal((12.5m, (long?)1_000_000), (butceli.MaxCostUsd, butceli.MaxTokens));
+
+        // Yalniz token tavani da gecerli: abonelikte asil tukenen kaynak budur.
+        var yalnizToken = await svc.UpdateAsync("sinirsiz", new ProjectModel("Sinirsiz", null, null, null, null, null, 500), Ct);
+        Assert.Equal((null, (long?)500), (yalnizToken.MaxCostUsd, yalnizToken.MaxTokens));
+
+        // Sifir ve negatif reddedilir (ikisi de ayri kapidan).
+        var sifir = await Assert.ThrowsAsync<DomainException>(() => svc.UpdateAsync("butceli", new ProjectModel("Butceli", null, null, null, null, 0m), Ct));
+        Assert.Equal(ErrorCodes.ProjectBudgetInvalid, sifir.ErrorCode);
+        var negatif = await Assert.ThrowsAsync<DomainException>(() => svc.UpdateAsync("butceli", new ProjectModel("Butceli", null, null, null, null, null, -1), Ct));
+        Assert.Equal(ErrorCodes.ProjectBudgetInvalid, negatif.ErrorCode);
+
+        // Kart token'i calismalardan toplar; baska projenin isi karismaz.
+        await runs.CreateAsync(new Run("20260922-000001-t1", "a", "b", Sensitivity.Anthropic, DateTimeOffset.UtcNow, RunStatus.Completed, Project: "butceli", InputTokens: 1200, OutputTokens: 300), Ct);
+        await runs.CreateAsync(new Run("20260922-000002-t2", "b", "b", Sensitivity.Anthropic, DateTimeOffset.UtcNow, RunStatus.Completed, Project: "butceli", InputTokens: 800, OutputTokens: 200), Ct);
+        await runs.CreateAsync(new Run("20260922-000003-t3", "c", "b", Sensitivity.Anthropic, DateTimeOffset.UtcNow, RunStatus.Completed, Project: "sinirsiz", InputTokens: 9999, OutputTokens: 9999), Ct);
+
+        var kart = await svc.GetAsync("butceli", Ct);
+        Assert.Equal((2000L, 500L), (kart.TotalInputTokens, kart.TotalOutputTokens));
+        Assert.Equal((12.5m, (long?)1_000_000), (kart.MaxCostUsd, kart.MaxTokens));
+    }
+
     [Fact]
     public async Task Calisma_listesi_projeye_gore_suzulur()
     {

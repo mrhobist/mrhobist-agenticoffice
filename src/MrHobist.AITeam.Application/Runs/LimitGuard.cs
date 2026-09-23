@@ -4,8 +4,8 @@ using MrHobist.AITeam.Domain.Agents;
 namespace MrHobist.AITeam.Application.Runs;
 
 /// <summary>Saglayicinin kota penceresi esige ulasti: yeni LLM turu baslamaz. <see cref="ResumeAt"/> pencerenin sifirlanma zamani.</summary>
-public sealed class LimitReachedException(Provider provider, double percent, int threshold, DateTimeOffset? resumeAt)
-    : Exception($"{Providers.Wire(provider)} kullanımı %{percent:0} ≥ eşik %{threshold}; {(resumeAt is null ? "sıfırlanma zamanı bilinmiyor" : $"{resumeAt.Value.ToLocalTime():HH:mm}'de sürer")}")
+public sealed class LimitReachedException(Provider provider, double percent, int threshold, DateTimeOffset? resumeAt, Exception? inner = null)
+    : Exception($"{Providers.Wire(provider)} kullanımı %{percent:0} ≥ eşik %{threshold}; {(resumeAt is null ? "sıfırlanma zamanı bilinmiyor" : $"{resumeAt.Value.ToLocalTime():HH:mm}'de sürer")}", inner)
 {
     public Provider Provider { get; } = provider;
 

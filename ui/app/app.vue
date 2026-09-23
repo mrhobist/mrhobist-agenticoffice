@@ -5,7 +5,7 @@
     <header class="bar">
       <span class="brand">MrHobist.AITeam</span>
       <span class="chip" :class="status">{{ STATUS_LABEL[status] }}</span>
-      <!-- Kalan kullanim: aktif saglayicilarin kota pencereleri (5 saat, hafta, modele ozel). -->
+      <!-- Kota kullanimi: aktif saglayicilarin pencereleri (saatlik, haftalik, modele ozel) + girisi olmayanlar soluk cip. -->
       <LimitsBar ref="limitsBar" :signed-out="signedOutProviders" @open="toggleSettings" />
       <span class="run">
         <!-- Sahne HUD'u: yalniz bir adim akarken (bos "— · tur 0" cipleri kalabalik yapiyordu). -->
@@ -102,7 +102,7 @@
           <span class="card-color" :style="{ background: p.color || '#3d5a80' }" aria-hidden="true" />
           <span class="card-avatar" :style="{ background: p.color || '#3d5a80' }">{{ initials(p.title) }}</span>
           <strong class="card-title">{{ p.title }}</strong>
-          <span class="card-meta">{{ p.runs }} iş<template v-if="p.running"> · <b class="run-n">{{ p.running }} çalışıyor</b></template><template v-if="p.paused"> · {{ p.paused }} durakladı</template> · {{ fmtCost(p.totalCostUsd) }}</span>
+          <span class="card-meta">{{ p.runs }} iş<template v-if="p.running"> · <b class="run-n">{{ p.running }} çalışıyor</b></template><template v-if="p.paused"> · {{ p.paused }} durakladı</template> · {{ fmtCost(p.totalCostUsd) }}<template v-if="projectTokens(p)"> · {{ fmtTokens(projectTokens(p)) }} tk</template></span>
           <span v-if="inboxOfProject(p.key)" class="card-ask"><Ico name="bell" :size="12" /> {{ inboxOfProject(p.key) }} senden bekliyor</span>
           <span v-else-if="p.lastActivityAt" class="card-detail">son hareket {{ fmtAgo(p.lastActivityAt) }}</span>
         </button>
@@ -201,7 +201,7 @@ import { roleHex, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } fro
 import type { AgentDetail, AgentListItem, InboxKind, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel, fmtCost as fmtCostLabel } from '~/api/labels'
+import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel, fmtCost as fmtCostLabel, fmtTokens } from '~/api/labels'
 
 // ------------------------------------------------------------------ giris
 const { user, loggedIn, logout } = useAuth()
@@ -272,6 +272,9 @@ function pinOf(p: ProjectCard): string {
 }
 function initials(t: string): string { return t.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('') || '?' }
 function fmtCost(v: number): string { return fmtCostLabel(v, 2) }
+
+/** Ray kartinda proje basi toplam token (girdi + cikti); 0 ise hic yazilmaz, bos kart gurultu yapmasin. */
+function projectTokens(p: ProjectCard): number { return (p.totalInputTokens ?? 0) + (p.totalOutputTokens ?? 0) }
 function fmtAgo(s: string): string {
   const m = Math.max(0, Math.round((Date.now() - new Date(s).getTime()) / 60_000))
   if (m < 1) return 'az önce'
@@ -354,8 +357,7 @@ useHead({ title: computed(() => (inboxCount.value ? `(${inboxCount.value}) ` : '
 
 interface ProviderNotice { kind: 'warn' | 'down'; title: string; text: string; command?: string }
 const providerNotice = ref<ProviderNotice | null>(null)
-
-/** Girisi olmayan saglayicilar: ust seritteki kalan-hak rozeti sebebi "giris yok" diye gosterir. */
+/** Girisi olmayan saglayicilar: ust seritteki kota rozeti sebebi "giris yok" diye gosterir. */
 const signedOutProviders = ref<string[]>([])
 
 /** `refresh`: runtime'in kimlik onbellegini atlar (kullanici `claude login` sonrasi yeniden bakti). */

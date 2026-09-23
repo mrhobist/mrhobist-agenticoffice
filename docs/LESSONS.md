@@ -93,6 +93,27 @@ PowerShell 5.1 BOM'suz dosyayı ANSI okur; Türkçe karakter içeren script bozu
 
 Canlı ilerleme göremezsin. `python -u` kullan.
 
+### Smart App Control açıkken yerel derleme koşmuyor
+
+`dotnet test` 78/78 patlıyor, `dotnet run` daha ilk satırda ölüyor:
+`FileLoadException ... Uygulama Denetimi ilkesi bu dosyayı engelledi. (0x800711C7)`.
+Hata koda benziyor ama koda ait değil. Windows Smart App Control
+(`HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy` → `VerifiedAndReputablePolicyState = 1`) imzasız,
+itibarı olmayan yerel derleme çıktılarını yükletmiyor; düşen testin kendisi değil, yüklenemeyen
+`Infrastructure.dll`.
+
+Teşhis kuralı: hata **bütün** testlerde aynıysa ve **merge öncesi commit** de aynı şekilde patlıyorsa sebep
+kod değil ortamdır. Ayrı bir worktree'ye eski commit'i çıkarıp koşturmak bunu bir dakikada ayırır; bu
+yapılmazsa saatler yanlış yerde aranır.
+
+Çıkış yolu WSL: `wsl -d Ubuntu` içinde .NET SDK bir Linux sürecidir, SAC dokunmaz. İki tuzak var — depoyu
+WSL'in kendi dosya sistemine kopyala (yoksa Windows `bin`/`obj` çıktısı ezilir) ve **kopyanın**
+`global.json`'unu oradaki SDK'ya düşür: `rollForward: latestFeature` daha düşük yamayı kabul etmez
+(10.0.401 istenirken 10.0.400 kuruluysa çözülmez).
+
+SAC'ı kapatmak **tek yönlüdür**: geri açmak Windows'u sıfırlamayı gerektirir. Uçtan uca deneme bu makinede
+ya SAC kapatılarak ya da .NET tarafı WSL'de koşturularak yapılır.
+
 ## Görselleştirme (v1 pixel ofis)
 
 v1'de [KbWen/agent-virtual-office](https://github.com/KbWen/agent-virtual-office) çatallandı.
@@ -162,3 +183,13 @@ karar .NET'te.**
 
 55 iç tur / 16 farkını "sistem promptu" diye anlattım; ölçüm görev başına **31 = 31** dedi. Farkı bağlam
 taşıma kapattı, preset sıfır ekledi. Makul mekanizma ≠ ölçülmüş etki; iddiayı rakamdan sonra yaz.
+
+## Token ölçüsü (2026-09-23)
+
+### Girdi tokeni çağrı başınadır, istem başına değil
+
+`run_turn`'de hem istem karakteri hem girdi tokeni var; "oranı buradan al" bedava görünüyor. Değil: runtime'ın
+girdi tokeni **iç turların toplamı** (yapısal çıktı en az 2 tur, araçlı adım 120'ye kadar) ve CLI araçsız turda bile
+istemde görünmeyen ~4,5k token ekliyor. 10k karakterlik bir istemde düz oran ~1,4 çıkar, tahmin ~3 kat şişer ve
+sıkıştırma hep erken tetiklenir. Doğrusu: yalnız araçsız turlar, tur başına girdi, eğim (sabit terim ek yükü yutar).
+

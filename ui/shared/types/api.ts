@@ -1678,6 +1678,20 @@ export interface components {
             choice: string;
             note?: null | string;
         };
+        ContextStats: {
+            /** Format: int32 */
+            carriedMessages: number | string;
+            /** Format: int32 */
+            carriedChars: number | string;
+            /** Format: int32 */
+            keptMessages: number | string;
+            /** Format: int32 */
+            keptChars: number | string;
+            /** Format: double */
+            charsPerToken: number | string;
+            /** Format: int32 */
+            calibrationSamples: number | string;
+        };
         CreateAgentRequest: {
             key: string;
             name: string;
@@ -1697,6 +1711,10 @@ export interface components {
             workflow: null | string;
             targetDir: null | string;
             color?: null | string;
+            /** Format: double */
+            maxCostUsd?: null | number | string;
+            /** Format: int64 */
+            maxTokens?: null | number | string;
         };
         /** @enum {unknown} */
         Destination: "local" | "anthropic" | "nvidia" | "openai";
@@ -1815,6 +1833,20 @@ export interface components {
              * @default 0
              */
             order: number | string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            totalInputTokens: number | string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            totalOutputTokens: number | string;
+            /** Format: double */
+            maxCostUsd?: null | number | string;
+            /** Format: int64 */
+            maxTokens?: null | number | string;
         };
         ProjectDeleteResult: {
             key: string;
@@ -1829,6 +1861,10 @@ export interface components {
             workflow: null | string;
             targetDir: null | string;
             color?: null | string;
+            /** Format: double */
+            maxCostUsd?: null | number | string;
+            /** Format: int64 */
+            maxTokens?: null | number | string;
         };
         /** @enum {unknown} */
         Provider: "anthropic" | "nvidia" | "ollama" | "openai" | null;
@@ -1893,6 +1929,18 @@ export interface components {
             step?: null | components["schemas"]["RunStep"];
             /** Format: date-time */
             waitingSince?: null | string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            inputTokens: number | string;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            outputTokens: number | string;
+            /** Format: int64 */
+            totalTokens?: number | string;
             isCancellable?: boolean;
             isRetryable?: boolean;
         };
@@ -2072,6 +2120,8 @@ export interface components {
             cacheReadTokens?: null | number | string;
             /** Format: int32 */
             cacheWriteTokens?: null | number | string;
+            toolsOffered?: null | boolean;
+            context?: null | components["schemas"]["ContextStats"];
         };
         UpdateAgentRequest: {
             name: string;

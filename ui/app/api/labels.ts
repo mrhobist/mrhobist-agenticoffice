@@ -69,6 +69,17 @@ export function subjectLabel(s: string): string { return SUBJECT_LABEL[s] ?? 'no
  * kota penceresi tukenir. Rakam karsilastirma icindir; butce tavani da bu rakamla olculur.
  */
 export function fmtCost(v: number, digits = 2): string { return v ? `≈$${v.toFixed(digits)}` : '≈$0' }
+
+/**
+ * Token sayisi kisa okunur bicimde: 1.2M · 850k · 420. Proje butcesi token cinsinden de verilebildigi icin
+ * (2026-09-22) kart ve form ayni bicimi kullanir; ham sayi ipucunda kalir.
+ */
+export function fmtTokens(v: number): string {
+  if (!v) return '0'
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(v >= 10_000_000 ? 0 : 1)}M`
+  if (v >= 1_000) return `${(v / 1_000).toFixed(v >= 10_000 ? 0 : 1)}k`
+  return String(v)
+}
 export const COST_TITLE = 'Eşdeğer API maliyeti: abonelikle ücret kesilmez, kota penceresi tükenir.'
 export const RUN_RETRYABLE: ReadonlySet<RunStatus> = new Set<RunStatus>(['failed', 'interrupted', 'budgetExceeded', 'cancelled'])
 

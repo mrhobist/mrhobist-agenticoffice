@@ -95,6 +95,12 @@ public interface IRunStore
     /// </summary>
     Task<IReadOnlyList<TurnUsage>> ReadUsageAsync(int runLimit, CancellationToken ct);
 
+    /// <summary>
+    /// Karakter/token kalibrasyon ornekleri (<see cref="Runs.TokenCalibration"/>): saglayici+model icin en yeni
+    /// <paramref name="limit"/> ARACSIZ tur (<see cref="Turn.ToolsOffered"/> = false), yeniden eskiye. Prompt/cikti metni okunmaz.
+    /// </summary>
+    Task<IReadOnlyList<CalibrationSample>> ReadCalibrationSamplesAsync(string provider, string model, int limit, CancellationToken ct);
+
     /// <summary>Bu calismada LLM cagirmis ajanlar (silinmis ajanlar dahil).</summary>
     Task<IReadOnlyList<string>> ListConversationsAsync(string runId, CancellationToken ct);
 
@@ -114,6 +120,9 @@ public interface IRunStore
 
 /// <summary>Bir turun kullanim ozeti satiri: <see cref="IRunStore.ReadUsageAsync"/>. Tam <see cref="Turn"/> degil, yalniz toplanan alanlar.</summary>
 public sealed record TurnUsage(string RunId, string Provider, string Model, int? InputTokens, int? OutputTokens, decimal? CostUsd, DateTimeOffset Ts);
+
+/// <summary>Kalibrasyon ornegi: turun istemi (sistem + mesajlar, karakter), girdi tokeni (ic turlarin toplami) ve ic tur sayisi.</summary>
+public sealed record CalibrationSample(int PromptChars, int InputTokens, int Turns);
 
 /// <summary>Calisma alani ayarlari (limit korumasi). Kayit yoksa varsayilan.</summary>
 public interface ISettingsStore

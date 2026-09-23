@@ -5,11 +5,14 @@ import { providerLabel } from '~/api/labels'
 import { errorText } from '~/api/errors'
 
 /**
- * Ust bar: aktif saglayicilarin KALAN HAKKI (5 saat, hafta, modele ozel...). 2 dk'da bir yoklar;
+ * Ust bar: aktif saglayicilarin KULLANDIGI kota (saatlik, haftalik, modele ozel). 2 dk'da bir yoklar;
  * runtime 90 s onbellekler. Tiklaninca Ayarlar acilir. Uc durum ayri soylenir (LESSONS: yanlis teshis saat yer):
  *  - down: runtime'a ulasilamiyor (503 runtime.unavailable)
  *  - broken: runtime ayakta, kota ucu hata verdi (502 runtime.error)
  *  - ready + available=false: saglayici vermiyor, neden yaninda (oturum yok, 429, ayristirilamadi...)
+ *
+ * Halka KULLANILANI gosterir (kullanici karari 2026-09-20): saglayicinin kendi `/usage` ekrani da
+ * boyle okur, "%87 doldu" ile "%13 kaldi" arasinda gidip gelmek karisikligi buyutuyordu.
  */
 const emit = defineEmits<{ open: [] }>()
 /** Girisi olmayan saglayicilar (app.vue → GET /providers). Kota alinamama sebebi bunlarda "giris yok"tur. */
@@ -38,31 +41,36 @@ defineExpose({ reload: () => load(true) })
 onMounted(() => { void load(); timer = setInterval(() => { void load() }, 120_000) })
 onBeforeUnmount(() => clearInterval(timer))
 
-/** kind → kisa etiket. Bilinmeyen kind oldugu gibi gosterilir; scope (model adi) varsa one gecer. */
+/** kind → uzun etiket (ipucunda). Bilinmeyen kind oldugu gibi gosterilir; scope (model adi) varsa one gecer. */
 const KIND_LABEL: Record<string, string> = {
-  session: '5 saat',
-  five_hour: '5 saat',
-  weekly_all: 'hafta',
-  seven_day: 'hafta',
+  session: 'saatlik',
+  five_hour: 'saatlik',
+  weekly_all: 'haftalık',
+  seven_day: 'haftalık',
   weekly_opus: 'Opus/hafta',
   seven_day_opus: 'Opus/hafta',
   weekly_sonnet: 'Sonnet/hafta',
   seven_day_sonnet: 'Sonnet/hafta',
-  weekly_scoped: 'model/hafta',
+  weekly_scoped: 'modele özel/hafta',
 }
 function label(l: UsageLimit): string {
-  if (l.scope) return `${l.scope}/${KIND_LABEL[l.kind]?.split('/').pop() ?? l.kind}`
+  if (l.scope) return `${l.scope}/hafta`
   return KIND_LABEL[l.kind] ?? l.kind.replaceAll('_', ' ')
 }
-/** Halka altindaki tek kelimelik etiket: 5s · hafta · Opus · Sonnet · model adi. */
+/**
+ * Halka altindaki tek kelimelik etiket: saatlik · haftalik · model adi (Fable, Opus...).
+ * `scope` ust uctan nesne gelir ve runtime adi cikarir; bos gelirse modele ozel pencere
+ * "haftalik" ile ayni etiketi tasiyip iki halkayi ayirt edilemez yapiyordu (2026-09-20).
+ */
 function shortLabel(l: UsageLimit): string {
   if (l.scope) return l.scope.replace(/^claude-/, '').split('-')[0] ?? l.scope
   const k = l.kind
-  if (k === 'session' || k === 'five_hour') return '5s'
+  if (k === 'session' || k === 'five_hour') return 'saatlik'
   if (k.includes('opus')) return 'Opus'
   if (k.includes('sonnet')) return 'Sonnet'
-  if (k.includes('week') || k.includes('seven')) return 'hafta'
-  return k.slice(0, 6)
+  if (k === 'weekly_scoped') return 'model'
+  if (k.includes('week') || k.includes('seven')) return 'haftalık'
+  return k.slice(0, 7)
 }
 /** Kota alinamadiginda tek kelimelik neden: API anahtari · oturum yok · 429 · yok. */
 function shortReason(provider: string, detail: string): string {
@@ -75,11 +83,13 @@ function shortReason(provider: string, detail: string): string {
   if (d.includes('dışa vermiyor') || d.includes('vermiyor')) return 'kota bilgisi yok'
   return 'alınamadı'
 }
-function remaining(l: UsageLimit): number { return Math.max(0, Math.min(100, Math.round(100 - l.percent))) }
+/** Halkada yazan sayi: KULLANILAN yuzde (saglayicinin `/usage` ekraniyla ayni okuma). */
+function used(l: UsageLimit): number { return Math.max(0, Math.min(100, Math.round(l.percent))) }
+function remaining(l: UsageLimit): number { return 100 - used(l) }
 function tone(l: UsageLimit): string {
-  const r = remaining(l)
-  if (l.severity === 'critical' || r <= 10) return 'crit'
-  if (l.severity === 'warning' || r <= 30) return 'warn'
+  const u = used(l)
+  if (l.severity === 'critical' || u >= 90) return 'crit'
+  if (l.severity === 'warning' || u >= 70) return 'warn'
   return 'ok'
 }
 function resetText(l: UsageLimit): string {
@@ -92,7 +102,7 @@ function resetText(l: UsageLimit): string {
   return d >= 1 ? `${d} g ${h % 24} s sonra sıfırlanır` : h >= 1 ? `${h} s ${m} dk sonra sıfırlanır` : `${m} dk sonra sıfırlanır`
 }
 function title(p: ProviderLimits, l: UsageLimit): string {
-  return `${providerLabel(p.provider)} · ${label(l)}: %${remaining(l)} kaldı (kullanılan %${Math.round(l.percent)}). ${resetText(l)}`
+  return `${providerLabel(p.provider)} · ${label(l)}: kullanılan %${used(l)} (kalan %${remaining(l)}). ${resetText(l)}`
 }
 const active = computed(() => (items.value ?? []).filter(p => p.available))
 const unavailable = computed(() => (items.value ?? []).filter(p => !p.available))
@@ -105,12 +115,12 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
       <button v-for="p in active" :key="p.provider" type="button" class="prov" :title="p.subscription ? `${providerLabel(p.provider)} · ${p.subscription}` : providerLabel(p.provider)" @click="emit('open')">
         <span class="name">{{ providerLabel(p.provider) }}<Ico v-if="p.detail.startsWith('son bilinen')" class="stale" name="clock" :size="11" title="Son bilinen değer; kota ucu şu an yanıt vermiyor" /></span>
         <span v-for="l in p.limits" :key="l.kind + (l.scope ?? '')" class="gauge" :class="{ dim: !l.isActive }" :title="title(p, l)">
-          <span class="ring" :class="tone(l)" :style="{ '--p': remaining(l) }"><span class="pct">{{ remaining(l) }}</span></span>
+          <span class="ring" :class="tone(l)" :style="{ '--p': used(l) }"><span class="pct">{{ used(l) }}</span></span>
           <span class="tag">{{ shortLabel(l) }}</span>
         </span>
         <span v-if="!p.limits.length" class="sub">—</span>
       </button>
-      <button v-for="p in unavailable" :key="p.provider" type="button" class="prov off" :title="props.signedOut.includes(p.provider) ? `${providerLabel(p.provider)}: giriş yok. Kullanmıyorsanız gerekmez; kullanacaksanız Ayarlar'dan giriş yapın.` : p.detail" @click="emit('open')">
+      <button v-for="p in unavailable" :key="p.provider" type="button" class="prov off quiet" :title="props.signedOut.includes(p.provider) ? `${providerLabel(p.provider)}: giriş yok. Kullanmıyorsanız gerekmez; kullanacaksanız Ayarlar'dan giriş yapın.` : p.detail" @click="emit('open')">
         <span class="name">{{ providerLabel(p.provider) }}</span>
         <span class="sub short">{{ shortReason(p.provider, p.detail) }}</span>
       </button>
@@ -136,6 +146,9 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
 }
 .prov:hover { border-color: #3d5a80; }
 .prov.off { color: var(--ink-3); }
+/* Kullanilmayan saglayici (orn. Codex kurulu degil) surekli goz almasin: kucuk, soluk, hover'da acilir. */
+.prov.off.quiet { opacity: 0.6; padding: 3px 10px; min-height: 30px; }
+.prov.off.quiet:hover { opacity: 1; }
 .prov.off.bad { border-color: #8a3a3a; }
 .prov.off.bad .sub { color: #f0a0a0; }
 .name { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }

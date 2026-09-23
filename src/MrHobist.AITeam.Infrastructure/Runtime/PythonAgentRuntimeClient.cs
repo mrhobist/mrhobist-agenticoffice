@@ -194,7 +194,16 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            throw new InvalidOperationException(DescribeError((int)response.StatusCode, body));
+            var described = DescribeError((int)response.StatusCode, body);
+
+            // Kota penceresi doldu: hata degil bekleme. Ayri tur olarak cikar ki calisma Failed degil
+            // Paused olsun ve pencere sifirlaninca kendiliginden sursun (CLAUDE.md §4).
+            if (ErrorCodeOf(body) == "runtime.provider_limit")
+            {
+                throw new RuntimeLimitReachedException(described);
+            }
+
+            throw new InvalidOperationException(described);
         }
 
         var result = await response.Content.ReadFromJsonAsync<TurnResultDto>(Json, ct).ConfigureAwait(false)
@@ -257,6 +266,23 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         }
 
         return $"runtime /v1/turn HTTP {status}: {Clip(body)}";
+    }
+
+    /// <summary>Runtime hata govdesindeki <c>errorCode</c>; govde JSON degilse ya da alan yoksa <c>null</c>.</summary>
+    private static string? ErrorCodeOf(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.Object
+                && detail.TryGetProperty("errorCode", out var c)
+                ? c.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static string Clip(string s) => s.Length <= 300 ? s : s[..300];

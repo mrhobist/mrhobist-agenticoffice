@@ -95,6 +95,23 @@ public sealed class RunService(
         }
 
         var project = await projects.LoadAsync(request.Project.Trim(), ct).ConfigureAwait(false);
+
+        // Proje butcesi doluysa yeni is HIC baslamaz: baslayip ilk turdan sonra BudgetExceeded olmasi
+        // bir tur token'i bosa harcar ve gelen kutusuna olu bir is birakir.
+        if (project.MaxCostUsd is not null || project.MaxTokens is not null)
+        {
+            var spent = await reader.ListAsync(10_000, ct, project.Key).ConfigureAwait(false);
+            if (project.MaxCostUsd is { } capCost && spent.Sum(r => r.TotalCostUsd) >= capCost)
+            {
+                throw new DomainException(ErrorCodes.ProjectBudgetExceeded, $"'{project.Key}' proje bütçesi dolu: ${spent.Sum(r => r.TotalCostUsd):0.####} / ${capCost:0.####}.");
+            }
+
+            if (project.MaxTokens is { } capTokens && spent.Sum(r => r.TotalTokens) >= capTokens)
+            {
+                throw new DomainException(ErrorCodes.ProjectBudgetExceeded, $"'{project.Key}' proje bütçesi dolu: {spent.Sum(r => r.TotalTokens):N0} / {capTokens:N0} token.");
+            }
+        }
+
         var wfKey = string.IsNullOrWhiteSpace(request.Workflow) ? project.Workflow : request.Workflow.Trim();
         var wf = await workflows.LoadAsync(wfKey, ct).ConfigureAwait(false);
         var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
@@ -167,10 +184,15 @@ public sealed class RunService(
             var spec = SpecSchema.Parse(reply.StructuredJson, reply.Text);
             await runs.WriteSpecAsync(run.Id, spec, ct).ConfigureAwait(false);
 
-            run = run with { TotalCostUsd = run.TotalCostUsd + reply.CostUsd };
+            run = Accrue(run, reply);
             if (OverBudget(run))
             {
-                return await StopForBudgetAsync(run, analyze.Role, ct).ConfigureAwait(false);
+                return await StopForBudgetAsync(run, analyze.Role, null, ct).ConfigureAwait(false);
+            }
+
+            if (await ProjectOverBudgetAsync(run, ct).ConfigureAwait(false) is { } overP)
+            {
+                return await StopForBudgetAsync(run, analyze.Role, overP, ct).ConfigureAwait(false);
             }
 
             // Plani kim onaylar: akis soyler (docs/DOMAIN.md -> Plan onayi).
@@ -234,10 +256,15 @@ public sealed class RunService(
             return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
         }
 
-        run = await AddCostAsync(run, reply.CostUsd, ct).ConfigureAwait(false);
+        run = await AddCostAsync(run, reply, ct).ConfigureAwait(false);
         if (OverBudget(run))
         {
-            return await StopForBudgetAsync(run, approver, ct).ConfigureAwait(false);
+            return await StopForBudgetAsync(run, approver, null, ct).ConfigureAwait(false);
+        }
+
+        if (await ProjectOverBudgetAsync(run, ct).ConfigureAwait(false) is { } overApproval)
+        {
+            return await StopForBudgetAsync(run, approver, overApproval, ct).ConfigureAwait(false);
         }
 
         var report = StepSchemas.ParseReview(reply.StructuredJson, reply.Text);
@@ -316,8 +343,11 @@ public sealed class RunService(
     /// Tasinan sey ajanin kendi CIKTISIDIR, onceki istemi degil: istem zaten gorev baglamini
     /// (plan, kurallar, notlar) tasiyor, tekrari her turda bedel oduretir. Kapsam GOREV basina:
     /// baska gorevin gecmisi tasinmaz.
+    ///
+    /// Token olcusu ajanin modeli icin kayitli turlardan kalibre edilir (<see cref="TokenCalibration"/>); sikistirma
+    /// oncesi/sonrasi olcu <see cref="ContextStats"/> olarak tura yazilir (docs/DOMAIN.md → Baglam butcesi).
     /// </summary>
-    private async Task<IReadOnlyList<RuntimeMessage>> AgentTaskHistoryAsync(Run run, Assignment a, string prompt, CancellationToken ct)
+    private async Task<TaskHistory> AgentTaskHistoryAsync(Run run, Assignment a, string prompt, CancellationToken ct)
     {
         var prior = (await runs.ReadTurnsAsync(run.Id, a.Agent, ct).ConfigureAwait(false))
             .Where(t => t.Task == a.Task.Id && !string.IsNullOrWhiteSpace(t.Output))
@@ -325,7 +355,7 @@ public sealed class RunService(
 
         if (prior.Count == 0)
         {
-            return [new RuntimeMessage("user", prompt)];
+            return new TaskHistory([new RuntimeMessage("user", prompt)], null);
         }
 
         var carried = new List<RuntimeMessage>(prior.Count * 2);
@@ -336,14 +366,33 @@ public sealed class RunService(
             carried.Add(new RuntimeMessage("assistant", t.Output!));
         }
 
-        // Tasinan gecmis red turlariyla buyur: butceyi asarsa en eski turlar duser, uzun ciktilar kirpilir.
+        // Tasinan gecmis red turlariyla buyur: butceyi asarsa en eski turlar duser.
         // Yeni istem sikistirmaya GIRMEZ (son mesaj daima tam). Politika: CompactionBudget.TaskHistory.
-        var kept = await (compactor ?? new NoCompaction()).CompactAsync(carried, CompactionBudget.TaskHistory, ct).ConfigureAwait(false);
+        var cpt = await CalibrateAsync(a.Agent, ct).ConfigureAwait(false);
+        var budget = CompactionBudget.TaskHistory with { CharsPerToken = cpt.Value };
+        var kept = await (compactor ?? new NoCompaction()).CompactAsync(carried, budget, ct).ConfigureAwait(false);
+        var context = new ContextStats(carried.Count, carried.Sum(m => m.Content.Length), kept.Count, kept.Sum(m => m.Content.Length), cpt.Value, cpt.Samples);
 
         var list = new List<RuntimeMessage>(kept.Count + 1);
         list.AddRange(kept);
         list.Add(new RuntimeMessage("user", prompt));
-        return Alternate(list);
+        return new TaskHistory(Alternate(list), context);
+    }
+
+    private sealed record TaskHistory(IReadOnlyList<RuntimeMessage> Messages, ContextStats? Context);
+
+    /// <summary>Ajanin hedef modeli icin karakter/token orani; olcum yetersizse varsayilan (docs/DOMAIN.md → Baglam butcesi).</summary>
+    private async Task<CharsPerToken> CalibrateAsync(string agentKey, CancellationToken ct)
+    {
+        var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
+        if (!team.Agents.TryGetValue(agentKey, out var agent))
+        {
+            return CharsPerToken.Default; // cagri zaten WorkflowUnknownRole ile duser; olcu icin hata uretme
+        }
+
+        var target = AgentTarget.Of(agent);
+        var samples = await runs.ReadCalibrationSamplesAsync(Providers.Wire(target.Provider), target.Model, TokenCalibration.Window, ct).ConfigureAwait(false);
+        return TokenCalibration.Fit(samples);
     }
 
     // ------------------------------------------------------------------ onay / revize
@@ -620,13 +669,13 @@ public sealed class RunService(
                 case StageKind.Implement:
                 {
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
                     }
 
-                    run = await AddCostAsync(run, reply.CostUsd, ct).ConfigureAwait(false);
+                    run = await AddCostAsync(run, reply, ct).ConfigureAwait(false);
                     var report = StepSchemas.ParseImplement(reply.StructuredJson, reply.Text);
                     var files = report.FilesChanged.Count > 0 ? report.FilesChanged : reply.ToolUses.Where(t => t.Tool is "Write" or "Edit").Select(t => t.Target ?? "?").Distinct().ToList();
                     var body = $"{report.Summary}\n\nDosyalar: {(files.Count == 0 ? "—" : string.Join(", ", files))}\nKomutlar: {(report.CommandsRun.Count == 0 ? "—" : string.Join(" · ", report.CommandsRun))}";
@@ -665,13 +714,13 @@ public sealed class RunService(
                 case StageKind.Review:
                 {
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, round, wf.MaxReviewRounds), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
                     }
 
-                    run = await AddCostAsync(run, reply.CostUsd, ct).ConfigureAwait(false);
+                    run = await AddCostAsync(run, reply, ct).ConfigureAwait(false);
                     var report = StepSchemas.ParseReview(reply.StructuredJson, reply.Text);
                     var developer = wf.ProducerBefore(a.Stage).Role;
                     if (report.Accepted)
@@ -701,13 +750,13 @@ public sealed class RunService(
                 case StageKind.Design:
                 {
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.DesignTask(spec, a, root, notes), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history, StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
                     }
 
-                    run = await AddCostAsync(run, reply.CostUsd, ct).ConfigureAwait(false);
+                    run = await AddCostAsync(run, reply, ct).ConfigureAwait(false);
                     var report = StepSchemas.ParseDesign(reply.StructuredJson, reply.Text);
                     var developer = wf.TaskStages.FirstOrDefault(s => s.Kind == StageKind.Implement)?.Role ?? "developer";
                     var body = report.Guidance + (report.Decisions.Count == 0 ? "" : "\n\nKararlar:\n" + string.Join("\n", report.Decisions.Select(d => "- " + d)));
@@ -727,7 +776,12 @@ public sealed class RunService(
 
             if (OverBudget(run))
             {
-                return await StopForBudgetAsync(run, a.Agent, ct).ConfigureAwait(false);
+                return await StopForBudgetAsync(run, a.Agent, null, ct).ConfigureAwait(false);
+            }
+
+            if (await ProjectOverBudgetAsync(run, ct).ConfigureAwait(false) is { } overStage)
+            {
+                return await StopForBudgetAsync(run, a.Agent, overStage, ct).ConfigureAwait(false);
             }
 
             // Ayni adimda ust uste hata/red: bir gorev sonsuza kadar donmesin (tavan = maxReviewRounds).
@@ -782,9 +836,17 @@ public sealed class RunService(
             : (next?.Id ?? closed.Stage, "blocked");
     }
 
-    private async Task<Run> AddCostAsync(Run run, decimal cost, CancellationToken ct)
+    /// <summary>Turun maliyeti ve token'lari calismaya eklenir (proje butcesi bu toplami okur).</summary>
+    private static Run Accrue(Run run, AgentReply reply) => run with
     {
-        run = run with { TotalCostUsd = run.TotalCostUsd + cost };
+        TotalCostUsd = run.TotalCostUsd + reply.CostUsd,
+        InputTokens = run.InputTokens + reply.InputTokens,
+        OutputTokens = run.OutputTokens + reply.OutputTokens,
+    };
+
+    private async Task<Run> AddCostAsync(Run run, AgentReply reply, CancellationToken ct)
+    {
+        run = Accrue(run, reply);
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
         return run;
     }
@@ -841,10 +903,15 @@ public sealed class RunService(
                 return new ColleagueAsk(await reader.GetAsync(run.Id, ct).ConfigureAwait(false), false, target, null);
             }
 
-            run = await AddCostAsync(run, reply.CostUsd, ct).ConfigureAwait(false);
+            run = await AddCostAsync(run, reply, ct).ConfigureAwait(false);
             if (OverBudget(run))
             {
-                return new ColleagueAsk(await StopForBudgetAsync(run, target, ct).ConfigureAwait(false), false, target, null);
+                return new ColleagueAsk(await StopForBudgetAsync(run, target, null, ct).ConfigureAwait(false), false, target, null);
+            }
+
+            if (await ProjectOverBudgetAsync(run, ct).ConfigureAwait(false) is { } overAsk)
+            {
+                return new ColleagueAsk(await StopForBudgetAsync(run, target, overAsk, ct).ConfigureAwait(false), false, target, null);
             }
 
             var answer = StepSchemas.ParseAsk(reply.StructuredJson, reply.Text);
@@ -997,13 +1064,56 @@ public sealed class RunService(
 
     private static bool OverBudget(Run run) => run.MaxCostUsd is { } max && run.TotalCostUsd > max;
 
-    private async Task<Run> StopForBudgetAsync(Run run, string agent, CancellationToken ct)
+    /// <summary>
+    /// Proje butcesi (2026-09-22 kullanici karari, docs/DOMAIN.md → Butce ve limit). Is butcesinden farki KAPSAMDIR:
+    /// tek is degil, projenin butun calismalarinin toplami. Iki olcu bagimsizdir ($ ve token) -- abonelikte ucret
+    /// kesilmedigi icin asil tukenen token'dir, ama esdeger maliyet de raporlanir; ONCE DOLAN durdurur.
+    ///
+    /// Is butcesi gibi tur SONRASI bakilir: bir turun tuketimi tur bitmeden bilinmez, dolayisiyla on kontrol de
+    /// bir turluk asma payini kaldiramaz. Ayni karari iki yerde tutmamak icin tek kapi.
+    /// Butce yoksa (ikisi de null) depo hic okunmaz: sinirsiz olan projede maliyet sifirdir.
+    /// </summary>
+    /// <returns>Asildiysa kullaniciya gosterilecek sebep; asilmadiysa <c>null</c>.</returns>
+    private async Task<string?> ProjectOverBudgetAsync(Run run, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(run.Project))
+        {
+            return null;
+        }
+
+        var project = await projects.LoadAsync(run.Project, ct).ConfigureAwait(false);
+        if (project.MaxCostUsd is null && project.MaxTokens is null)
+        {
+            return null;
+        }
+
+        // Elimizdeki `run` depodaki kopyasindan daha guncel olabilir (tur az once islendi): kendi satirini
+        // depodan degil bellekten say, yoksa son tur toplamdan duser ve butce bir tur gec devreye girer.
+        var others = (await reader.ListAsync(10_000, ct, project.Key).ConfigureAwait(false)).Where(r => r.Id != run.Id).ToList();
+        var cost = others.Sum(r => r.TotalCostUsd) + run.TotalCostUsd;
+        var tokens = others.Sum(r => r.TotalTokens) + run.TotalTokens;
+
+        if (project.MaxCostUsd is { } maxCost && cost > maxCost)
+        {
+            return $"proje bütçesi aşıldı: ${cost:0.####} > ${maxCost:0.####} (proje '{project.Key}')";
+        }
+
+        if (project.MaxTokens is { } maxTokens && tokens > maxTokens)
+        {
+            return $"proje bütçesi aşıldı: {tokens:N0} token > {maxTokens:N0} (proje '{project.Key}')";
+        }
+
+        return null;
+    }
+
+    /// <param name="reason">Proje butcesi sebebi; <c>null</c> ise is butcesi asilmistir.</param>
+    private async Task<Run> StopForBudgetAsync(Run run, string agent, string? reason, CancellationToken ct)
     {
         run = run with
         {
             Status = RunStatus.BudgetExceeded,
             FinishedAt = DateTimeOffset.UtcNow,
-            Detail = $"bütçe aşıldı: ${run.TotalCostUsd:0.####} > ${run.MaxCostUsd:0.####}",
+            Detail = reason ?? $"bütçe aşıldı: ${run.TotalCostUsd:0.####} > ${run.MaxCostUsd:0.####}",
         };
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent, "user", run.Detail!, Subject: "error"), ct).ConfigureAwait(false);

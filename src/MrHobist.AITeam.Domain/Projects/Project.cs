@@ -1,10 +1,13 @@
 namespace MrHobist.AITeam.Domain.Projects;
 
 /// <summary>
-/// Proje: islerin yasadigi kap (<c>config/projects/{Key}.json</c>). Bir is yalniz bir projenin icinde baslar
-/// (docs/DOMAIN.md → Projeler). <see cref="Workflow"/> projenin varsayilan akisi (is formunda degistirilebilir);
-/// <see cref="TargetDir"/> developer'in dosya yazacagi dizin (depo kokune gore). <see cref="OwnerId"/> giris
-/// hazirligidir: bugun sabit <c>local</c>, JWT gelince claim'den dolar. Butce is basinadir, projede yoktur (kullanici karari).
+/// Proje: islerin yasadigi kap (<c>data/aiteam.db</c> → <c>project</c> tablosu). Bir is yalniz bir projenin
+/// icinde baslar (docs/DOMAIN.md → Projeler). <see cref="Workflow"/> projenin varsayilan akisi (is formunda
+/// degistirilebilir); <see cref="TargetDir"/> developer'in dosya yazacagi dizin (depo kokune gore).
+/// <see cref="OwnerId"/> giris hazirligidir: bugun sabit <c>local</c>, JWT gelince claim'den dolar.
+///
+/// Butce 2026-09-22'ye kadar YALNIZ is basinaydi (<c>Run.MaxCostUsd</c>); o tarihte kullanici karariyla proje
+/// duzeyi eklendi. Ikisi birlikte calisir: is butcesi tek bir isi, proje butcesi projenin TOPLAMINI sinirlar.
 /// </summary>
 public sealed record Project(
     string Key,
@@ -17,7 +20,17 @@ public sealed record Project(
     /// <summary>Projenin rengi (<c>#rrggbb</c>): ray karti, Kanban "Tumu" kartlari. Bos → paletten sira ile atanir.</summary>
     string Color = "",
     /// <summary>Ray ve Kanban sirasi (kucuk once). Kullanici degistirir (<c>POST /projects/reorder</c>).</summary>
-    int Order = 0)
+    int Order = 0,
+    /// <summary>
+    /// Projenin TOPLAM $ tavani; <c>null</c> = sinirsiz (varsayilan). Abonelikte ucret kesilmedigi icin bu
+    /// ESDEGER maliyettir (CLAUDE.md §4). Asilinca yeni tur baslamaz; suren is <c>BudgetExceeded</c> olur.
+    /// </summary>
+    decimal? MaxCostUsd = null,
+    /// <summary>
+    /// Projenin TOPLAM token tavani (girdi + cikti); <c>null</c> = sinirsiz (varsayilan). Abonelikte asil
+    /// tukenen kaynak budur, bu yuzden $'dan bagimsiz verilebilir. Ikisi de doluysa ONCE DOLAN durdurur.
+    /// </summary>
+    long? MaxTokens = null)
 {
     public const string LocalOwner = "local";
 
@@ -40,6 +53,18 @@ public sealed record Project(
         if (!IsValidColor(Color))
         {
             throw new DomainException(ErrorCodes.ProjectInvalidColor, $"{Key}: 'color' #rrggbb olmali ('{Color}').");
+        }
+
+        // Butce: verilmediyse (null) sinirsiz. Verildiyse pozitif olmali -- 0 "sinirsiz" degil "hicbir is kosmasin"
+        // demek olurdu ve kullanici bunu kazara yazdiginda proje sessizce kilitlenirdi.
+        if (MaxCostUsd is { } cost && cost <= 0m)
+        {
+            throw new DomainException(ErrorCodes.ProjectBudgetInvalid, $"{Key}: 'maxCostUsd' pozitif olmali; sinirsiz icin bos birak ({cost}).");
+        }
+
+        if (MaxTokens is { } tokens && tokens <= 0)
+        {
+            throw new DomainException(ErrorCodes.ProjectBudgetInvalid, $"{Key}: 'maxTokens' pozitif olmali; sinirsiz icin bos birak ({tokens}).");
         }
 
         var dir = (TargetDir ?? "").Replace('\\', '/').Trim();

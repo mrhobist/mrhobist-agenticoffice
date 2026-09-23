@@ -123,8 +123,20 @@ public sealed record Run(
     UserQuestion? Question = null,
     DateTimeOffset? ResumeAt = null,
     RunStep? Step = null,
-    DateTimeOffset? WaitingSince = null)
+    DateTimeOffset? WaitingSince = null,
+    /// <summary>
+    /// Bu calismanin turlarinda harcanan girdi token'i toplami. Tur basina kirilim <c>run_turn</c>'de durur;
+    /// buradaki toplam proje butcesinin (<c>Project.MaxTokens</c>) her istekte turlari taramasini onler --
+    /// maliyet (<see cref="TotalCostUsd"/>) hangi yolla birikiyorsa token de ayni yoldan birikir.
+    /// 2026-09-22 oncesi calismalarda 0: olculmedi demektir, sifir harcandi demek degil.
+    /// </summary>
+    long InputTokens = 0,
+    /// <summary>Bu calismanin turlarinda uretilen cikti token'i toplami. Bkz. <see cref="InputTokens"/>.</summary>
+    long OutputTokens = 0)
 {
+    /// <summary>Proje butcesi icin tek olcu: girdi + cikti. Onbellek kirilimi rapordadir, tavanda degil.</summary>
+    public long TotalTokens => InputTokens + OutputTokens;
+
     /// <summary>
     /// Kullanicinin durdurabilecegi ya da "kapat" diyebilecegi durumlar. Dusen calismalar (Failed/Interrupted/BudgetExceeded)
     /// da iptal edilir: yoksa "yeniden dene ya da vazgec" kararinin ikinci sikki olmaz ve is gelen kutusundan hic dusmez.
@@ -209,7 +221,27 @@ public sealed record Turn(
     /// <summary><see cref="InputTokens"/> icindeki onbellekten OKUNAN pay. Yeni alan SONA eklendi (CLAUDE.md §5).</summary>
     int? CacheReadTokens = null,
     /// <summary><see cref="InputTokens"/> icindeki onbellege YAZILAN pay.</summary>
-    int? CacheWriteTokens = null);
+    int? CacheWriteTokens = null,
+    /// <summary>
+    /// Arac tanimlari istemde miydi. Karakter/token kalibrasyonu yalniz araCsiz turlari ornek alir: arac tanimlari
+    /// istemde gorunmeyen ~20k token ekler (runtime olcumu 2026-09-19: 23k → 4.5k). Eski satirlarda null. Sona eklendi (CLAUDE.md §5).
+    /// </summary>
+    bool? ToolsOffered = null,
+    /// <summary>Tasinan gecmisin sikistirma oncesi/sonrasi olcusu; gecmis tasinmadiysa null. Sona eklendi (CLAUDE.md §5).</summary>
+    ContextStats? Context = null);
+
+/// <summary>
+/// Bir turda tasinan gecmisin olcusu (docs/DOMAIN.md → Baglam butcesi). Sikistirmanin neyi dusurdugunu ve hangi
+/// kalibrasyonla karar verdigini tur kaydinda tutar; <c>scripts/context-report.py</c> bunu okur.
+/// <see cref="CalibrationSamples"/> 0 ise <see cref="CharsPerToken"/> olculmemis varsayilandir.
+/// </summary>
+public sealed record ContextStats(
+    int CarriedMessages,
+    int CarriedChars,
+    int KeptMessages,
+    int KeptChars,
+    double CharsPerToken,
+    int CalibrationSamples);
 
 /// <summary>Ajanlar arasi mesaj: <c>runs/{id}/messages.jsonl</c>. <see cref="Ref"/> ask ile answer'i esler.</summary>
 public sealed record Message(

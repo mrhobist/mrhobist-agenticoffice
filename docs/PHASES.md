@@ -332,10 +332,10 @@ halka etiketleri görünür, ikon-metin hizası düzeltildi.
 ## Kalan işler (2026-09-20 itibarıyla, öncelik sırasıyla)
 
 1. ~~**`canAsk`**~~ → geldi (2026-09-20): developer takılınca soru önce `can_ask` hedefine (manager, 1 tur, okuma aracı); cevaplarsa kullanıcı görmez, yükseltirse/ikinci takılmada kullanıcıya (DOMAIN → Takılma). Servis testi 46.
-2. **Faz 5 SSE** `GET /runs/{id}/events`: UI 2 s yoklamayla idare ediyor; çok çalışma açıkken yük artar.
+2. **Faz 5 SSE** `GET /runs/{id}/events`: uç **yok**; UI 5 s'de bir yokluyor ve bunu üç ayrı bileşen ayrı ayrı yapıyor (`app.vue`, `JobsPanel`, `KanbanPanel`). Çok çalışma açıkken yük artar.
 3. ~~İş Akışı paneli~~ → Ekip paneli "Takımlar" sekmesi (2026-09-20): adım ekle/sil/sırala, ajan/tür/ofis rolü; yeni ajan ekleme ve sahneye otomatik yerleşim (ziyaretçi dahil) da geldi.
 4. **Tasarım artıkları**: ray daralması (proje açıkken 72 px), pano için çalışma düzeyinde analiz kartı.
-5. **Açık kararlar** (DOMAIN §Açık kararlar 4–7): `canAsk` hedefi, `officeRole` çakışması, `kind: handoff` ikiliği.
+5. **Açık kararlar** (DOMAIN §Açık kararlar 2, 5, 6, 7): `design` görev başına mı çalışma başına mı, `stage.officeRole` ↔ ajanın `office_roles` çakışma denetimi, `kind: handoff` ile `handoffRole` ikiliği, panoda çalışma düzeyi analiz kartı. (4 kapandı 2026-09-21: `askRole` akış düzeyinde.)
 6. **`ownerId`** JWT claim'inden; LDAP / kullanıcı deposu `IUserDirectory`.
 7. **Sağlayıcılar**: NVIDIA / Ollama runtime adaptörleri (sözleşme hazır). OpenAI eklendi (2026-09-20, aşağıda).
 8. **Emülatör / tarayıcı testleri** için MCP araçları (testçi kararı).
@@ -343,8 +343,8 @@ halka etiketleri görünür, ikon-metin hizası düzeltildi.
    adları ve `--output-schema` gerçek turla doğrulanmadı (ilk turda `_parse_events` ve `-o` son mesaj dosyası kontrol
    edilecek); gerçek API anahtarıyla tur yapılmadı. Bilinen varsayımlar: Codex kalan hak vermiyor (limit koruması geçer),
    sistem promptu metnin başına gidiyor, API anahtarı yolunda araçlı adım 501, katalog/fiyat tahmini sabit, araçsız
-   Codex turu read-only sandbox ama komut koşabilir. `.claude/launch.json`'daki `ui-5083`, `runtime-5091`, `api-rt5091`
-   girişleri paralel oturumun test kurulumuydu; gerekmiyorsa silinebilir.
+   Codex turu read-only sandbox ama komut koşabilir. (`.claude/launch.json` temizliği yapıldı: dosyada yalnız `ui`, `api`,
+   `runtime` var — 2026-09-22 denetimi.)
 
 ## Sağlayıcı: OpenAI + API anahtarı (2026-09-20, kullanıcı isteği) ✅
 
@@ -393,8 +393,9 @@ ile kaydeder, `errorCode` → Türkçe eşleme tek dosyada (`ui/app/api/errors.t
 ayrı bileşen (`KanbanPanel.vue`): sayaçlar, filtre, kart detayı. API tipleri elle
 (`ui/app/api/types.ts`), `gen:api` gelince değişecek.
 
-**Kalan:** İş Akışı paneli (adım ekle/sil/sırala, `PUT /workflow`), `npm run gen:api` ile
-üretilen tipler, gerçek `RunService` olayları (Faz 5).
+**Kalan (2026-09-22 denetimi):** yalnız gerçek `RunService` olayları, yani Faz 5 SSE. İş Akışı paneli
+geldi (Ekip → Takımlar sekmesi) ve `npm run gen:api` çalışıyor: Api ayaktayken tipler yeniden üretilip
+`ui/shared/types/api.ts` ile karşılaştırıldı, **fark yok**.
 
 **Biten sayılır:** Tarayıcıda canlı bir çalışma izlenir; bir ajanın md'si panelden
 değiştirilip kaydedilince sonraki çalışmada davranış gözle görülür biçimde değişir.
@@ -683,3 +684,102 @@ tek çıktı kırpılır, en yeni geri bildirim kalır. Testler: 38 birim + **79
 
 **Gerçek koşuda ölçülmedi:** hello-world'de hiç red olmadı; geçmiş 4 mesajı aşmadı. Kazanç yalnız uzun red
 döngülerinde görünür. Doğrulanmış olan: doğru yerde, doğru sınırla, hiçbir şeyi bozmadan devrede.
+
+## Merge: SQLite dalı ana dala alındı (2026-09-22) ✅
+
+`feat/sqlite-persistence` (tek commit, `4a6c758`) main'e **fast-forward** ile alındı — ayrık commit yoktu.
+Çalışma ağacındaki commit'siz kota işi stash'lenip geri uygulandı; `app.vue` ve `LimitsBar.vue`'de 4 çakışma
+çıktı. Sebep: iki taraf **aynı işi ayrı adla** yapmıştı (dalda `signedOutProviders`, yerelde
+`offlineProviders`; ikisi de "bant yalnız hiçbir sağlayıcıda giriş yokken çıksın" kuralını kuruyordu).
+Dalın adlandırması korundu, çift kalan `offlineReason` silindi; yalnız yerelde olan kısımlar üstüne
+bindirildi: halkada **kullanılan** yüzde, `saatlik`/`haftalık` etiketleri, `_scope_name` (kapsam nesnesinden
+model adı) ve kullanılmayan sağlayıcının soluk `.quiet` çipi.
+
+**Doğrulama:** 38 birim + 79 servis + 46 python testi, hepsi geçti; ui typecheck ✔; mimari denetimleri
+(bağımlılık yönü, yasaklı ad alanları, Python sınırı) ✔.
+
+**.NET testleri Windows'ta koşmadı.** Smart App Control imzasız yerel derleme çıktılarını engelliyor
+(LESSONS → Windows); merge öncesi commit de birebir aynı şekilde patlıyor, yani sebep bu dal değil.
+Yukarıdaki .NET sayıları WSL Ubuntu'daki koşudandır. Api Windows'ta **hiç başlamıyor**, dolayısıyla
+SQLite geçişi uçtan uca çalıştırılarak denenmedi: `data/aiteam.db` bu makinede henüz oluşmadı.
+Şema betiklerinin uygulanması, `schema_change_log` ve WAL davranışı yalnız testlerle doğrulanmış durumda.
+
+### Yerel kalkış: Api WSL'de, runtime Windows'ta (2026-09-22)
+
+SAC yüzünden Api Windows'ta başlamıyor, ama `.wslconfig`'te `networkingMode=mirrored` var: WSL ile Windows
+`127.0.0.1`'i paylaşıyor. Kurulum — Api WSL'de (`AITeam:ConfigRoot` **gerçek depoyu** gösterir,
+`AITeam:AutoStartRuntime=false`), Python runtime Windows'ta (giriş yapılmış `claude.exe` oturumu orada),
+UI Windows'ta. Hiçbir şey `0.0.0.0` dinlemiyor, CLAUDE.md §3 korunuyor.
+
+**Çalışan:** şema geçişi (`2 şema betiği uygulandı`, `data/aiteam.db` + WAL/SHM oluştu), EF okumaları,
+giriş, `GET /providers` (`anthropic loggedIn=true`, hesap doğru), `GET /limits`, proje oluşturma
+(MSBuild bariyeri dahil), çalışma kaydı, `LimitGuard`'ın tur öncesi kota okuması, düşen çalışmanın
+veritabanına yazılması.
+
+**Çalışmayan — ajan turu.** `POST /v1/turn` 502: `Failed to start Claude Code: [WinError 267] Dizin adı
+geçersiz`. Sebep bölünmüş kurulum: WSL'deki Api `cwd`'yi `/mnt/c/...` diye gönderiyor, Windows'taki
+`claude.exe` bu yolu tanımıyor. İki taraf farklı dosya sistemi ad uzayında. Uçtan uca koşu için Api'nin
+Windows'ta çalışması, yani SAC'ın kapatılması gerekiyor. Runtime'a yol çevirisi eklemek **çözüm değil**:
+§1 gereği runtime'a iş kuralı sızdırır.
+
+**Yan bulgu (dalla ilgisiz, belge düzeltildi):** `POST /projects` gövdesinde `description`/`workflow`/
+`targetDir` **atlanamıyor**, `null` verilmeli — yoksa 400 `request.invalid`. API.md bunları `?` ile
+isteğe bağlı gösteriyordu.
+
+## Proje bütçesi ve limit sonrası kesintisiz devam (2026-09-22, kullanıcı isteği) ✅
+
+**İstenen üç şey, biri zaten vardı.**
+
+**1. Proje başı toplam token + bütçe (yeni).** Bütçe bugüne kadar yalnız iş başınaydı (`Run.MaxCostUsd`);
+"bütçe projede yoktur" kararı kalktı. `Project.MaxCostUsd` ve `Project.MaxTokens` eklendi, **ikisi de boş =
+sınırsız** — var olan projelerin davranışı değişmedi. Ölçüler bağımsız, **önce dolan durdurur**. Harcama
+`run.input_tokens` / `run.output_tokens`'ta maliyetle aynı yoldan birikir; proje kartı çalışmaları toplar.
+Tavan doluysa **yeni iş hiç kurulmaz** (`project.budget_exceeded`), süren iş tur sonunda `BudgetExceeded`.
+Şema: `0003_project_budget_and_run_tokens.sql`.
+
+**2. Limit dolunca kaldığı yerden devam — zaten kuruluydu.** `LimitGuard` çağrıdan **önce** bakar (boşa token
+gitmez) → çalışma `Paused` + `ResumeAt` (pencerenin sıfırlanma zamanı) → `RunResumer` dakikada bir bakıp
+`Run.Step`'ten sürdürür. Tamamlanmış fazlar yeniden koşmaz, sayaç artmaz, sıfırdan başlamaz. Yani istenen
+davranış vardı; ölçülüp belgelendi.
+
+**3. Gerçek boşluk: limit çağrı SIRASINDA gelirse (düzeltildi).** Koruma yüzdeleri 90 s önbellekli, pencere
+tam o aralıkta dolabiliyordu; sağlayıcının reddi `provider_error` sayılıp çalışma **`Failed`** oluyordu —
+pencere sıfırlandığında kendiliğinden sürmüyor, kullanıcı elle "yeniden dene" demek zorunda kalıyordu.
+Runtime artık bunu `runtime.provider_limit` diye ayrı sınıflandırıyor (karar hâlâ .NET'te, §1 korunuyor),
+`AgentCaller` bekleme turuna çeviriyor. Tekrar denenmiyor: sıfırlanma dakikalar/günler sonra.
+
+**Doğrulama:** 38 birim + 82 servis + 47 python = **167 test, hepsi geçti**; ui typecheck ✔.
+Yeni testler: proje bütçesi varsayılan sınırsız / token toplamı kartta / sıfır-negatif reddi;
+proje bütçesi dolunca çalışma durur ve yeni iş başlamaz; çağrı sırasında limit gelirse beklemeye düşer ve
+aynı adımdan sürer; runtime sınıflandırması (kota reddi ≠ hata ≠ giriş yok).
+
+**Ölçülmedi:** gerçek sağlayıcı limitiyle uçtan uca koşu — bu makinede Smart App Control ajan turunu
+engelliyor (yukarıda). Davranış deterministik sahte runtime ile doğrulandı.
+
+## Bağlam bütçesi: kalibre ölçü ve kayıt (2026-09-23, kullanıcı onayı) ✅
+
+**İstenen:** token maliyeti için bağlam boyutuna bakan yarı kod yarı LLM yapı. Önerilen dört adımdan 1 ve 2
+onaylandı, 3 ölçüme hazır hale getirilecekti.
+
+**1. Kalibre token ölçüsü (yapıldı).** `TokenCalibration.Fit`: araçsız turlardan tur başına girdi ↔ istem karakteri
+doğrusal oturtması, eğimden karakter/token. Yetersizse 4 (bugünkü davranış). `CompactionBudget.CharsPerToken`,
+`MafHistoryCompactor` tetiği bu orandan **karakterle** sayar — önceden erken çıkış karakter/4, MAF bayt/4 sayıyordu
+(Türkçe harf 2 bayt: iki eşik birbirini tutmuyordu). Depo: `ReadCalibrationSamplesAsync`, `data` gövdesi
+okunmadan `json_extract`. Şema değişmedi (alanlar `data` JSON'unda).
+
+**2. Pencereye oranlı bütçe (yapılmadı, gerekçeli).** Ölçüm plana karşı çıktı: tavanı pencereye göre büyütmek
+maliyeti **artırırdı** (taşınan geçmiş her iç turda yeniden gider) ve bugünkü ajanların hepsi ≥200k pencereli
+Anthropic'te — koşul hiç bağlamazdı. Karar ve açılma koşulu: DOMAIN.md → Bağlam bütçesi.
+
+**3. Ölçüme hazır (yapıldı).** `Turn.toolsOffered` (kalibrasyon örneği seçimi) ve `Turn.context`
+(`ContextStats`: öncesi/sonrası mesaj+karakter, oran, örnek sayısı) sona eklendi (§5); UI tipleri üretildi.
+`scripts/context-report.py` dolum eğrisini, düşeni ve "yeniden gönderilmeyen" tahmini gösterir.
+
+**Doğrulama:** 38 birim + **88** servis testi (WSL; Windows'ta SAC engeli, LESSONS → Windows). Yeni: kalibrasyon
+(ek yük + iç turlar eğimden ayrılır, düz oran < 1,5 çıkar; az örnek / yayılımsız / aralık dışı → varsayılan),
+kalibre oran eşiği taşır (Türkçe metin), depo yalnız araçsız + aynı model örnekleri döner, 6 red turunda tur kaydı
+10 → ≤4 mesajı ve varsayılan oranı gösterir. `verify.ps1`: build, mimari, Python sınırı, ui typecheck ✔.
+
+**Ölçülmedi:** gerçek koşu yok (`data/aiteam.db`'de tur yok). Kalibrasyonun gerçek değeri ve sıkıştırmanın
+tetiklenme sıklığı ilk koşulardan sonra `context-report.py` ile okunacak; 4. adım (LLM özeti) o rakama bağlı.
+

@@ -91,6 +91,29 @@ def _opt_str(v: Any) -> str | None:
     return v if isinstance(v, str) and v else None
 
 
+def _scope_name(v: Any) -> str | None:
+    """
+    Kota penceresinin kapsami -> gosterilecek ad. Ust uc NESNE doner:
+    ``{"model": {"display_name": "Fable", "id": ...}, "surface": ...}``. Duz string bekleyen
+    okuyucu bunu sessizce None'a dusuruyordu ve modele ozel pencere "hafta" diye etiketleniyordu
+    (kullanici 2026-09-20). Eski duz string bicimi de kabul edilir.
+    """
+    if isinstance(v, str):
+        return v or None
+    if not isinstance(v, dict):
+        return None
+    model = v.get("model")
+    if isinstance(model, dict):
+        for key in ("display_name", "id"):
+            name = model.get(key)
+            if isinstance(name, str) and name:
+                return name
+    elif isinstance(model, str) and model:
+        return model
+    surface = v.get("surface")
+    return surface if isinstance(surface, str) and surface else None
+
+
 def _pct(v: Any) -> float:
     """Kullanilan yuzde; sayi degilse 0."""
     try:
@@ -145,6 +168,19 @@ def _auth_failed(text: str) -> bool:
     return any(k in t for k in ("not logged in", "authentication_failed", "authentication failed", "invalid api key", "please run /login"))
 
 
+def _limit_reached(text: str) -> bool:
+    """
+    Saglayici kota penceresi doldu: 'usage limit reached', 'rate_limit', 429...
+
+    LimitGuard cagri ONCESI bakar ama yuzdeleri 90 s onbellekler; pencere tam o aralikta dolarsa tur
+    yine de baslar ve saglayici reddeder. Bu bir HATA degil BEKLEMEDIR: ayri kodla donmezse .NET onu
+    "provider_error" sanip calismayi Failed yapar ve pencere sifirlaninca kendiliginden surmez
+    (2026-09-22). Siniflandirma burada, KARAR .NET'te: runtime yalniz saglayicinin cevabini adlandirir.
+    """
+    t = text.lower()
+    return any(k in t for k in ("usage limit reached", "rate_limit", "rate limit", "429", "quota exceeded", "limit exceeded"))
+
+
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"errorCode": code, "message": message})
 
@@ -155,6 +191,8 @@ def _classify(exc: Exception) -> HTTPException:
         return _error(503, "runtime.cli_missing", f"claude.exe bulunamadı: {text}")
     if _auth_failed(text):
         return _error(503, "runtime.not_logged_in", text)
+    if _limit_reached(text):
+        return _error(503, "runtime.provider_limit", text)
     return _error(502, "runtime.provider_error", text)
 
 
@@ -326,6 +364,8 @@ class AnthropicProvider:
                         err_text = f"Claude hatası: {msg.error}"
                         if _auth_failed(err_text):
                             raise _error(503, "runtime.not_logged_in", err_text)
+                        if _limit_reached(err_text):
+                            raise _error(503, "runtime.provider_limit", err_text)
                         raise _error(502, "runtime.provider_error", err_text)
                     for block in msg.content:
                         if isinstance(block, TextBlock):
@@ -339,6 +379,8 @@ class AnthropicProvider:
                         detail = "; ".join(msg.errors or []) or msg.result or "bilinmiyor"
                         if _auth_failed(detail):
                             raise _error(503, "runtime.not_logged_in", detail)
+                        if _limit_reached(detail):
+                            raise _error(503, "runtime.provider_limit", detail)
                         raise _error(502, "runtime.provider_error", detail)
                     structured = msg.structured_output
                     cost = msg.total_cost_usd
@@ -587,7 +629,7 @@ class AnthropicProvider:
                 percent=_pct(lim.get("percent")),
                 severity=_opt_str(lim.get("severity")),
                 resets_at=_iso(lim.get("resets_at")),
-                scope=_opt_str(lim.get("scope")),
+                scope=_scope_name(lim.get("scope")),
                 is_active=bool(lim.get("is_active", True)),
             ))
         if not items:

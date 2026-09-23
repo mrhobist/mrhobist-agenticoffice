@@ -150,6 +150,16 @@ public sealed class RunServiceTests : IDisposable
         {
             Assert.NotEqual(implementCalls[5].Messages[i - 1].Role, implementCalls[5].Messages[i].Role); // almasik
         }
+
+        // Tur kaydi olcuyu tasir: ilk turda gecmis yok, 6. turda 5 cikti (10 mesaj) tasinacakti, 4'e indi.
+        var devTurns = (await _store.ReadTurnsAsync(run.Id, "developer", Ct)).Where(t => t.Task == "t1" && t.Stage == "gelistirme").ToList();
+        Assert.Equal(6, devTurns.Count);
+        Assert.All(devTurns, t => Assert.True(t.ToolsOffered)); // yurutme adimi: arac tanimli, kalibrasyona girmez
+        Assert.Null(devTurns[0].Context);
+        var last = Assert.IsType<ContextStats>(devTurns[5].Context);
+        Assert.Equal(10, last.CarriedMessages);
+        Assert.True(last.KeptMessages <= 4 && last.KeptChars < last.CarriedChars, $"{last}");
+        Assert.Equal((TokenCalibration.Fallback, 0), (last.CharsPerToken, last.CalibrationSamples)); // olcum yok: varsayilan
     }
 
     [Fact]
@@ -405,6 +415,61 @@ public sealed class RunServiceTests : IDisposable
         Assert.DoesNotContain(await _store.ReadMessagesAsync(run.Id, Ct), m => m.Subject == "retry");
         run = await svc.AnalyzeAsync(run.Id, Ct);
         Assert.Equal(RunStatus.AwaitingApproval, run.Status);
+    }
+
+    /// <summary>
+    /// Limit CAGRI SIRASINDA gelirse (LimitGuard yuzdeleri 90 s onbellekliyor, pencere tam o aralikta dolabilir)
+    /// calisma Failed DEGIL Paused olmali: yoksa pencere sifirlandiginda kendiliginden surmez, kullanici elle
+    /// "yeniden dene" demek zorunda kalir (2026-09-22). Tekrar denenmez: sifirlanma dakikalar/gunler sonradir.
+    /// </summary>
+    [Fact]
+    public async Task Cagri_sirasinda_limit_gelirse_calisma_beklemeye_duser_ve_surdurulur()
+    {
+        _runtime.LimitMidCallTimes = 1;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Paused, run.Status);
+        Assert.NotNull(run.ResumeAt);                       // RunResumer bunu gorup surdurur
+        Assert.Equal(RunStep.Analyze, run.Step);            // kaldigi adim kayitta
+        Assert.Single(_runtime.Calls);                      // tek deneme: tekrar ANLAMSIZ olurdu
+        Assert.Contains("limit", run.Detail, StringComparison.OrdinalIgnoreCase);
+
+        // Faz sistem kaynakli kapanir: tur sayilmaz, red tavanina girmez.
+        var phases = await _store.ReadPhasesAsync(run.Id, "run", Ct);
+        Assert.All(phases.Where(p => p.Status == PhaseStatus.Failed), p => Assert.True(p.IsSystemFailure));
+
+        // Pencere sifirlandi: ayni adimdan surer, sayac artmaz, sifirdan baslamaz.
+        var resumed = await _svc.ResumeAsync(run.Id, Ct);
+        Assert.Equal((RunStep.Analyze, RunStatus.Running, 0), (resumed.Step, resumed.Status, resumed.Retries));
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.AwaitingApproval, run.Status);
+    }
+
+    /// <summary>
+    /// Proje butcesi (2026-09-22 kullanici karari): is butcesi tek isi, proje butcesi projenin TOPLAMINI sinirlar.
+    /// Dolmussa yeni is HIC baslamaz -- baslayip ilk turdan sonra durmak bir tur token'i bosa harcardi.
+    /// </summary>
+    [Fact]
+    public async Task Proje_butcesi_dolunca_calisma_durur_ve_yeni_is_baslamaz()
+    {
+        // Token tavani bir turun tuketiminin altinda: ilk tur kapaninca toplam tavani gecer.
+        await _projects.SaveAsync(new Project("test", "Test", "", KlasikKey, "projects/test", Project.LocalOwner, DateTimeOffset.UtcNow, MaxTokens: 5), Ct);
+
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        run = await _svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.BudgetExceeded, run.Status);
+        Assert.Contains("proje bütçesi", run.Detail, StringComparison.Ordinal);
+        Assert.True(run.TotalTokens > 5);
+
+        // Tavan dolu: ikinci is hic kurulmaz, kuyruga olu bir kayit birakilmaz.
+        var ex = await Assert.ThrowsAsync<DomainException>(() => _svc.CreateAsync(new RunRequest(Project: "test", Brief: "ikinci"), Ct));
+        Assert.Equal(ErrorCodes.ProjectBudgetExceeded, ex.ErrorCode);
+
+        // Sinirsiza donulunce (butce alanlari bos) is yeniden baslar: varsayilan davranis budur.
+        await _projects.SaveAsync(new Project("test", "Test", "", KlasikKey, "projects/test", Project.LocalOwner, DateTimeOffset.UtcNow), Ct);
+        var sonraki = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "ucuncu"), Ct);
+        Assert.Equal(RunStatus.Running, sonraki.Status);
     }
 
     [Fact]
@@ -745,9 +810,18 @@ public sealed class RunServiceTests : IDisposable
         /// <summary>Kota penceresi yuzdesi (limit korumasi testi); null = kota bilgisi yok.</summary>
         public double? LimitPercent { get; set; }
 
+        /// <summary>Saglayici CAGRI SIRASINDA kota reddi versin (LimitGuard'in onbellegi kacirdiginda olan).</summary>
+        public int LimitMidCallTimes { get; set; }
+
         public Task<RuntimeTurnResponse> TurnAsync(RuntimeTurnRequest request, CancellationToken ct)
         {
             Calls.Add(request);
+            if (LimitMidCallTimes > 0)
+            {
+                LimitMidCallTimes--;
+                throw new RuntimeLimitReachedException("runtime runtime.provider_limit: usage limit reached");
+            }
+
             if (FailTransientTimes > 0)
             {
                 FailTransientTimes--;

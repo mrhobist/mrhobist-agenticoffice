@@ -3,7 +3,7 @@ import type { CreateProjectRequest, InboxItem, LaunchResult, ProjectCard, Projec
 import DirPicker from '~/components/DirPicker.vue'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
-import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel } from '~/api/labels'
+import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel, fmtTokens } from '~/api/labels'
 
 /**
  * Proje karti acildi (docs/DOMAIN.md → Projeler): kagit pano, sekmeler Isler / Ayarlar.
@@ -33,6 +33,18 @@ function slug(s: string): string {
   const map: Record<string, string> = { ç: 'c', ğ: 'g', ı: 'i', ö: 'o', ş: 's', ü: 'u', Ç: 'c', Ğ: 'g', İ: 'i', Ö: 'o', Ş: 's', Ü: 'u' }
   return s.replace(/[çğıöşüÇĞİÖŞÜ]/g, c => map[c] ?? c).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
 }
+/**
+ * Proje butcesi (2026-09-22 kullanici karari). BOS BIRAKMAK SINIRSIZ demektir -- varsayilan budur.
+ * Iki olcu bagimsiz: abonelikte ucret kesilmedigi icin asil tukenen token'dir, $ esdeger maliyettir.
+ */
+const nMaxCost = ref(''); const nMaxTokens = ref('')
+
+/** Bos/gecersiz metin -> null (sinirsiz). Sunucu sifir ve negatifi zaten 400 ile reddeder. */
+function budget(v: string): number | null {
+  const n = Number(v.trim().replace(',', '.'))
+  return v.trim() && Number.isFinite(n) ? n : null
+}
+
 const keyTouched = ref(false)
 watch(nTitle, (t) => { if (!keyTouched.value) nKey.value = slug(t) })
 
@@ -45,7 +57,7 @@ async function create() {
   creating.value = true
   createError.value = null
   try {
-    const body: CreateProjectRequest = { key: nKey.value.trim(), title: nTitle.value.trim(), description: nDesc.value.trim() || null, workflow: nWorkflow.value || null, targetDir: nDir.value.trim() || null }
+    const body: CreateProjectRequest = { key: nKey.value.trim(), title: nTitle.value.trim(), description: nDesc.value.trim() || null, workflow: nWorkflow.value || null, targetDir: nDir.value.trim() || null, maxCostUsd: budget(nMaxCost.value), maxTokens: budget(nMaxTokens.value) }
     const card = await api.post<ProjectCard>('/api/v1/projects', body)
     emit('created', card.key)
   } catch (e) {
@@ -71,11 +83,31 @@ const deleted = ref<ProjectDeleteResult | null>(null)
 // ------------------------------------------------------------------ ayarlar
 
 const eTitle = ref(''); const eDesc = ref(''); const eWorkflow = ref('default'); const eDir = ref(''); const eColor = ref('#4fa3e0')
+const eMaxCost = ref(''); const eMaxTokens = ref('')
 const editing = ref(false)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
-function fillForm(c: ProjectCard) { eTitle.value = c.title; eDesc.value = c.description; eWorkflow.value = c.workflow; eDir.value = c.targetDir; eColor.value = c.color || '#4fa3e0' }
-const dirty = computed(() => !!card.value && (eTitle.value !== card.value.title || eDesc.value !== card.value.description || eWorkflow.value !== card.value.workflow || eDir.value !== card.value.targetDir || eColor.value.toLowerCase() !== (card.value.color || '#4fa3e0').toLowerCase()))
+function fillForm(c: ProjectCard) {
+  eTitle.value = c.title; eDesc.value = c.description; eWorkflow.value = c.workflow; eDir.value = c.targetDir; eColor.value = c.color || '#4fa3e0'
+  // null (sinirsiz) -> bos kutu: "0" yazmak tavani sifir sanmaya yol acardi.
+  eMaxCost.value = c.maxCostUsd == null ? '' : String(c.maxCostUsd)
+  eMaxTokens.value = c.maxTokens == null ? '' : String(c.maxTokens)
+}
+const dirty = computed(() => !!card.value && (eTitle.value !== card.value.title || eDesc.value !== card.value.description || eWorkflow.value !== card.value.workflow || eDir.value !== card.value.targetDir || eColor.value.toLowerCase() !== (card.value.color || '#4fa3e0').toLowerCase()
+  || budget(eMaxCost.value) !== (card.value.maxCostUsd ?? null) || budget(eMaxTokens.value) !== (card.value.maxTokens ?? null)))
+
+/** Kartta gosterilen toplam token (girdi + cikti); butce token cinsindense doluluk bundan hesaplanir. */
+const usedTokens = computed(() => (card.value?.totalInputTokens ?? 0) + (card.value?.totalOutputTokens ?? 0))
+
+/** Butce doluluk yuzdesi; butce yoksa null (serit cizilmez). Once dolan olcu gosterilir. */
+const budgetFill = computed<{ pct: number; text: string } | null>(() => {
+  const c = card.value
+  if (!c) return null
+  const byCost = c.maxCostUsd != null ? { pct: (c.totalCostUsd / c.maxCostUsd) * 100, text: `${fmtCost(c.totalCostUsd)} / ≈$${c.maxCostUsd}` } : null
+  const byTok = c.maxTokens != null ? { pct: (usedTokens.value / c.maxTokens) * 100, text: `${fmtTokens(usedTokens.value)} / ${fmtTokens(c.maxTokens)} token` } : null
+  const hit = [byCost, byTok].filter(x => x !== null).sort((a, b) => b!.pct - a!.pct)[0]
+  return hit ? { pct: Math.min(100, Math.round(hit.pct)), text: hit.text } : null
+})
 
 // ------------------------------------------------------------------ sira (POST /projects/reorder): ray ve Kanban bu sirayi okur
 const allProjects = ref<ProjectCard[]>([])
@@ -151,7 +183,7 @@ async function save() {
   saving.value = true
   saveError.value = null
   try {
-    const body: ProjectModel = { title: eTitle.value.trim(), description: eDesc.value.trim() || null, workflow: eWorkflow.value || null, targetDir: eDir.value.trim() || null, color: eColor.value || null }
+    const body: ProjectModel = { title: eTitle.value.trim(), description: eDesc.value.trim() || null, workflow: eWorkflow.value || null, targetDir: eDir.value.trim() || null, color: eColor.value || null, maxCostUsd: budget(eMaxCost.value), maxTokens: budget(eMaxTokens.value) }
     card.value = await api.put<ProjectCard>(`/api/v1/projects/${encodeURIComponent(props.projectKey)}`, body)
     fillForm(card.value)
     editing.value = false
@@ -235,7 +267,18 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
               <DirPicker id="p-dir" v-model="nDir" :project-key="nKey" />
             </div>
           </div>
-          <p class="sub">İşler bu projenin içinde açılır, akışı devralır. Bütçe iş başına verilir.</p>
+          <!-- Proje butcesi (2026-09-22): BOS = SINIRSIZ. Iki olcu bagimsiz; once dolan isi durdurur. -->
+          <div class="row">
+            <div class="field">
+              <label class="lbl" for="p-maxcost">Bütçe · $ <span class="sub">(boş = sınırsız)</span></label>
+              <input id="p-maxcost" v-model="nMaxCost" type="text" inputmode="decimal" placeholder="sınırsız">
+            </div>
+            <div class="field">
+              <label class="lbl" for="p-maxtok">Bütçe · token <span class="sub">(boş = sınırsız)</span></label>
+              <input id="p-maxtok" v-model="nMaxTokens" type="text" inputmode="numeric" placeholder="sınırsız">
+            </div>
+          </div>
+          <p class="sub">İşler bu projenin içinde açılır, akışı devralır. Bütçe hem iş başına (iş formunda) hem proje toplamı olarak verilebilir; ikisi de boşsa sınır yoktur.</p>
           <div class="actions">
             <button class="primary" type="submit" :disabled="creating || !nTitle.trim() || !nKey.trim()">{{ creating ? 'Oluşturuluyor…' : 'Projeyi oluştur' }}</button>
             <span v-if="createError" class="err" role="alert">{{ createError }}</span>
@@ -256,8 +299,18 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
           <span class="avatar">{{ card ? initials(card.title) : '…' }}</span>
           <div class="head-text">
             <h2 id="project-title">{{ card?.title ?? projectKey }}</h2>
-            <span class="sub" v-if="card">{{ card.workflow }} akışı · <code>{{ card.targetDir }}</code> · {{ fmtCost(card.totalCostUsd) }}</span>
+            <span class="sub" v-if="card">
+              {{ card.workflow }} akışı · <code>{{ card.targetDir }}</code> · {{ fmtCost(card.totalCostUsd) }}
+              <!-- Proje basi toplam token (2026-09-22): abonelikte asil tukenen kaynak bu, $ esdegerdir. -->
+              · <span :title="`${(card.totalInputTokens ?? 0).toLocaleString('tr-TR')} girdi + ${(card.totalOutputTokens ?? 0).toLocaleString('tr-TR')} çıktı token`">{{ fmtTokens(usedTokens) }} token</span>
+              <span v-if="!budgetFill" class="unlimited" title="Bütçe verilmedi: sınırsız. Ayarlar sekmesinden tavan koyabilirsin.">· sınırsız</span>
+            </span>
           </div>
+          <!-- Butce seridi yalniz tavan varsa: sinirsiz projede bos bir cubuk gurultu olurdu. -->
+          <span v-if="budgetFill" class="budget" :class="{ crit: budgetFill.pct >= 90, warn: budgetFill.pct >= 70 && budgetFill.pct < 90 }" :title="`Proje bütçesi: ${budgetFill.text}`">
+            <span class="bar"><span class="fill" :style="{ width: budgetFill.pct + '%' }" /></span>
+            <span class="pct">%{{ budgetFill.pct }}</span>
+          </span>
           <!-- Projeyi baslat: kokteki run.cmd yeni konsolda; developer bunu her teslimde yazar/gunceller. -->
           <button
             type="button"
@@ -311,6 +364,17 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
             <div class="field">
               <label class="lbl" for="e-dir">Hedef dizin <span class="sub">(depo içinden seçilir)</span></label>
               <DirPicker id="e-dir" v-model="eDir" :project-key="card?.key ?? ''" />
+            </div>
+          </div>
+          <!-- Proje butcesi (2026-09-22): BOS = SINIRSIZ. Iki olcu bagimsiz; once dolan isi durdurur. -->
+          <div class="row">
+            <div class="field">
+              <label class="lbl" for="e-maxcost">Bütçe · $ <span class="sub">(boş = sınırsız)</span></label>
+              <input id="e-maxcost" v-model="eMaxCost" type="text" inputmode="decimal" placeholder="sınırsız">
+            </div>
+            <div class="field">
+              <label class="lbl" for="e-maxtok">Bütçe · token <span class="sub">(boş = sınırsız)</span></label>
+              <input id="e-maxtok" v-model="eMaxTokens" type="text" inputmode="numeric" placeholder="sınırsız">
             </div>
           </div>
           <div class="row">
@@ -431,6 +495,17 @@ code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-r
 
 footer { margin-top: auto; padding: 10px 14px; border-top: 1px solid #cfcabb; background: #f3efe3; display: flex; align-items: center; gap: 10px; }
 .new { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 9px 14px; background: #d9a13a; color: #141413; border-color: #d9a13a; }
+/* Proje butcesi seridi (2026-09-22): yalniz tavan varsa cizilir. Renk esikleri kota halkasiyla ayni
+   dili konussun diye %70 uyari / %90 kritik. */
+.budget { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.budget .bar { display: inline-block; width: 84px; height: 6px; border-radius: 3px; background: #ded6c4; overflow: hidden; }
+.budget .fill { display: block; height: 100%; background: #4fa3e0; }
+.budget .pct { font-size: 11px; font-weight: 700; color: #6b7285; }
+.budget.warn .fill { background: #f3c34a; }
+.budget.crit .fill { background: #d23b3b; }
+.budget.crit .pct { color: #b3261e; }
+.unlimited { color: #6b7285; }
+
 .launch { font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 4px; background: #7cc46b; color: #14301a; border: 2px solid #3d6b2f; cursor: pointer; white-space: nowrap; }
 .launch:hover:not(:disabled) { background: #8fd47d; }
 .launch:disabled { background: #c9c3b3; color: #6b7285; border-color: #b9ad92; cursor: default; }

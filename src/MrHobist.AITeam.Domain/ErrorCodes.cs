@@ -67,4 +67,10 @@ public static class ErrorCodes
     public const string ConfigFileInvalid = "config.file_invalid";
     public const string RuntimeUnavailable = "runtime.unavailable";
     public const string RuntimeError = "runtime.error";
+
+    /// <summary>Proje butcesi (<c>maxCostUsd</c> / <c>maxTokens</c>) sifir ya da negatif verildi. Sinirsiz icin alan <c>null</c> birakilir.</summary>
+    public const string ProjectBudgetInvalid = "project.budget_invalid";
+
+    /// <summary>Projenin toplam butcesi asildi; yeni tur baslamaz (docs/DOMAIN.md → Butce ve limit).</summary>
+    public const string ProjectBudgetExceeded = "project.budget_exceeded";
 }

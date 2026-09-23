@@ -45,6 +45,8 @@ internal sealed class AiTeamContext(DbContextOptions<AiTeamContext> options) : D
             e.Property(x => x.OwnerId).HasColumnName("owner_id");
             e.Property(x => x.Color).HasColumnName("color");
             e.Property(x => x.SortOrder).HasColumnName("sort_order");
+            e.Property(x => x.MaxCostUsd).HasColumnName("max_cost_usd").HasColumnType("TEXT");
+            e.Property(x => x.MaxTokens).HasColumnName("max_tokens");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
@@ -66,6 +68,8 @@ internal sealed class AiTeamContext(DbContextOptions<AiTeamContext> options) : D
             e.Property(x => x.Question).HasColumnName("question");
             e.Property(x => x.TotalCostUsd).HasColumnName("total_cost_usd").HasColumnType("TEXT");
             e.Property(x => x.MaxCostUsd).HasColumnName("max_cost_usd").HasColumnType("TEXT");
+            e.Property(x => x.InputTokens).HasColumnName("input_tokens");
+            e.Property(x => x.OutputTokens).HasColumnName("output_tokens");
             e.Property(x => x.Retries).HasColumnName("retries");
             e.Property(x => x.StartedAt).HasColumnName("started_at");
             e.Property(x => x.FinishedAt).HasColumnName("finished_at");

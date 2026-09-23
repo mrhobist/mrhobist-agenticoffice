@@ -63,6 +63,8 @@ internal sealed class SqliteProjectStore(IDbContextFactory<AiTeamContext> factor
         row.OwnerId = project.OwnerId;
         row.Color = project.Color;
         row.SortOrder = project.Order;
+        row.MaxCostUsd = project.MaxCostUsd;
+        row.MaxTokens = project.MaxTokens;
         row.CreatedAt = project.CreatedAt;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -88,5 +90,7 @@ internal sealed class SqliteProjectStore(IDbContextFactory<AiTeamContext> factor
         row.OwnerId,
         row.CreatedAt,
         row.Color,
-        row.SortOrder);
+        row.SortOrder,
+        row.MaxCostUsd,
+        row.MaxTokens);
 }

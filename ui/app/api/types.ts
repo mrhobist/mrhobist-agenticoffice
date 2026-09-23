@@ -183,6 +183,14 @@ export interface ProjectCard {
   color?: string
   /** Ray ve Kanban sirasi (kucuk once). */
   order?: number
+  /** Projenin butun calismalarinda harcanan girdi token toplami. */
+  totalInputTokens?: number
+  /** Projenin butun calismalarinda uretilen cikti token toplami. */
+  totalOutputTokens?: number
+  /** Proje butcesi: $ tavani. null/undefined = sinirsiz. */
+  maxCostUsd?: number | null
+  /** Proje butcesi: token tavani (girdi + cikti). null/undefined = sinirsiz. */
+  maxTokens?: number | null
 }
 
 /** POST /api/v1/projects/reorder govdesi. */
@@ -206,6 +214,10 @@ export interface CreateProjectRequest {
   workflow?: string | null
   targetDir?: string | null
   color?: string | null
+  /** Proje butcesi: $ tavani. null = sinirsiz (varsayilan). */
+  maxCostUsd?: number | null
+  /** Proje butcesi: token tavani (girdi + cikti). null = sinirsiz (varsayilan). */
+  maxTokens?: number | null
 }
 
 /** PUT /api/v1/projects/{key} govdesi. */
@@ -215,6 +227,10 @@ export interface ProjectModel {
   workflow?: string | null
   targetDir?: string | null
   color?: string | null
+  /** Proje butcesi: $ tavani. null = sinirsiz (varsayilan). */
+  maxCostUsd?: number | null
+  /** Proje butcesi: token tavani (girdi + cikti). null = sinirsiz (varsayilan). */
+  maxTokens?: number | null
 }
 
 /** POST /api/v1/runs govdesi. Is yalniz bir projenin icinde baslar. */

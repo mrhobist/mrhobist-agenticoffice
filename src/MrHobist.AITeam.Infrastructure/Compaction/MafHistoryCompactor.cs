@@ -14,6 +14,10 @@ namespace MrHobist.AITeam.Infrastructure.Compaction;
 /// Modelsiz stratejiler kullanilir: <see cref="SlidingWindowCompactionStrategy"/> (mesaj sayisi) ve
 /// <see cref="TruncationCompactionStrategy"/> (token). Ozetleme (<see cref="SummarizationCompactionStrategy"/>)
 /// bir model turu ister; CLAUDE.md §4 gereği her tur kayda ve butceye girmeli -- o yuzden burada YOK, ayri karar.
+///
+/// Token olcusu MAF'in degil bizimdir: MAF tokenizer'siz UTF-8 bayt / 4 sayar, Turkce harf 2 bayttir ve erken cikis
+/// karakterle sayiyordu -- iki esik birbirini tutmuyordu. Tetik kalibre orandan (<see cref="CompactionBudget.CharsPerToken"/>)
+/// karakterle hesaplanir, ayni olcu hem erken cikista hem kirpmada kullanilir.
 /// </summary>
 public sealed class MafHistoryCompactor(ILoggerFactory? loggerFactory = null) : IHistoryCompactor
 {
@@ -23,15 +27,16 @@ public sealed class MafHistoryCompactor(ILoggerFactory? loggerFactory = null) : 
     {
         ArgumentNullException.ThrowIfNull(history);
         ArgumentNullException.ThrowIfNull(budget);
-        if (history.Count <= budget.MaxMessages && EstimateTokens(history) <= budget.MaxTokens)
+        if (history.Count <= budget.MaxMessages && budget.EstimateTokens(history.Sum(m => (long)m.Content.Length)) <= budget.MaxTokens)
         {
             return history;
         }
 
-        // Once uzun mesajlari kirp, sonra eski turlari dusur: siralama onemli, kirpma pencereyi degistirmez.
+        // Once token tavanina kadar eski gruplari dusur, sonra mesaj penceresini uygula: siralama onemli.
+        CompactionTrigger overTokens = index => budget.EstimateTokens(IncludedChars(index)) > budget.MaxTokens;
         var strategy = new PipelineCompactionStrategy(
         [
-            new TruncationCompactionStrategy(CompactionTriggers.TokensExceed(budget.MaxTokens), minimumPreservedGroups: 2),
+            new TruncationCompactionStrategy(overTokens, minimumPreservedGroups: 2),
             new SlidingWindowCompactionStrategy(CompactionTriggers.MessagesExceed(budget.MaxMessages), minimumPreservedTurns: 1),
         ]);
 
@@ -40,6 +45,6 @@ public sealed class MafHistoryCompactor(ILoggerFactory? loggerFactory = null) : 
         return [.. compacted.Select(m => new RuntimeMessage(m.Role == ChatRole.Assistant ? "assistant" : "user", m.Text ?? ""))];
     }
 
-    /// <summary>Kaba tahmin (~4 karakter/token): karar esigi icin yeter, faturalama icin degil.</summary>
-    private static int EstimateTokens(IReadOnlyList<RuntimeMessage> history) => history.Sum(m => m.Content.Length) / 4;
+    private static long IncludedChars(CompactionMessageIndex index)
+        => index.Groups.Where(g => !g.IsExcluded).Sum(g => g.Messages.Sum(m => (long)(m.Text?.Length ?? 0)));
 }

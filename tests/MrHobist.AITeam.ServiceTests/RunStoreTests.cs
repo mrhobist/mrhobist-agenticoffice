@@ -1,3 +1,4 @@
+using MrHobist.AITeam.Application.Abstractions;
 using Microsoft.Data.Sqlite;
 using MrHobist.AITeam.Domain.Runs;
 using MrHobist.AITeam.Infrastructure;
@@ -149,7 +150,12 @@ public sealed class RunStoreTests : IDisposable
     public void Sema_betikleri_deftere_yazilir()
     {
         // Defter bos olsaydi her kalkis semayi yeniden kosmaya calisirdi (ARCHITECTURE.md §8.2).
-        Assert.Equal(["0001_create_core_tables.sql", "0002_add_cache_tokens_to_run_turn.sql"],
+        Assert.Equal(
+            [
+                "0001_create_core_tables.sql",
+                "0002_add_cache_tokens_to_run_turn.sql",
+                "0003_project_budget_and_run_tokens.sql",
+            ],
             ScalarList("SELECT script_name FROM schema_change_log ORDER BY script_name"));
         Assert.Equal("wal", Scalar("PRAGMA journal_mode"));
     }
@@ -203,6 +209,32 @@ public sealed class RunStoreTests : IDisposable
         var only = Assert.Single(usage);
         Assert.Equal(("20260919-000006-k2", "anthropic", "opus", 50, 60, 0.25m), (only.RunId, only.Provider, only.Model, only.InputTokens, only.OutputTokens, only.CostUsd));
         Assert.Equal(2, (await store.ReadUsageAsync(10, Ct)).Count);
+    }
+
+    /// <summary>
+    /// Kalibrasyon ornegi yalniz ARACSIZ turdur (arac tanimlari istemde gorunmeyen ~20k token ekler), ayni
+    /// saglayici+model, en yeni once. Bayragi olmayan eski satir ornege girmez. Baglam olcusu de gidis-donus kayipsiz.
+    /// </summary>
+    [Fact]
+    public async Task Kalibrasyon_ornegi_yalniz_aracsiz_turlardan_gelir()
+    {
+        var store = _fx.Runs;
+        var run = NewRun("20260923-000001-kalibre");
+        await store.CreateAsync(run, Ct);
+        Turn T(string model, int chars, int tokens, bool? tools, int? turns = 2, ContextStats? ctx = null)
+            => new(DateTimeOffset.UtcNow, "developer", null, null, null, "anthropic", model, Destination.Anthropic, 1, chars, 10, null, "p", "o", tokens, 5, null, turns, ToolsOffered: tools, Context: ctx);
+        await store.AppendTurnAsync(run.Id, T("opus", 1_000, 5_000, false), Ct);
+        await store.AppendTurnAsync(run.Id, T("opus", 2_000, 90_000, true), Ct);          // aracli: disarida
+        await store.AppendTurnAsync(run.Id, T("opus", 3_000, 6_000, null), Ct);           // eski satir: disarida
+        await store.AppendTurnAsync(run.Id, T("sonnet", 4_000, 6_500, false), Ct);        // baska model: disarida
+        await store.AppendTurnAsync(run.Id, T("opus", 5_000, 0, false), Ct);              // token yok: disarida
+        var ctx = new ContextStats(10, 40_000, 4, 9_000, 3.1, 12);
+        await store.AppendTurnAsync(run.Id, T("opus", 6_000, 7_000, false, turns: null, ctx: ctx), Ct);
+
+        var samples = await store.ReadCalibrationSamplesAsync("anthropic", "opus", 10, Ct);
+
+        Assert.Equal([new CalibrationSample(6_000, 7_000, 1), new CalibrationSample(1_000, 5_000, 2)], samples); // en yeni once; tur yoksa 1
+        Assert.Equal(ctx, (await store.ReadTurnsAsync(run.Id, "developer", Ct))[^1].Context);
     }
 
     [Fact]

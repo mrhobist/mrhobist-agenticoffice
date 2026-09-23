@@ -56,6 +56,8 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `project.launch_missing` | 404 | `launch`: proje kökünde `run.cmd` yok |
 | `project.launch_failed` | 400 | `launch`: başlatıcı süreç açılamadı |
 | `project.invalid_color` | 400 | `color` `#rrggbb` değil |
+| `project.budget_invalid` | Proje bütçesi sıfır ya da negatif verildi; sınırsız için alan boş bırakılır | 400 |
+| `project.budget_exceeded` | Proje bütçesi dolu: yeni iş başlamaz, süren iş `BudgetExceeded` olur | 400 |
 | `config.file_missing` | 404/500 | Yapılandırma dosyası yok |
 | `config.file_invalid` | 500 | Yapılandırma dosyası geçersiz JSON |
 | `runtime.unavailable` | 503 | Python runtime'a ulaşılamıyor |

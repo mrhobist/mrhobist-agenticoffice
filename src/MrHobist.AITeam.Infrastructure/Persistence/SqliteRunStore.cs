@@ -217,6 +217,36 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Kalibrasyon ornekleri: <c>data</c> govdesi (prompt/cikti, onlarca KB) okunmaz, <c>json_extract</c> ile iki sayi ve
+    /// bir bayrak alinir. <c>toolsOffered</c> olmayan eski satirlar (null) ornege girmez: arac tanimli mi bilinmiyor.
+    /// </summary>
+    public async Task<IReadOnlyList<CalibrationSample>> ReadCalibrationSamplesAsync(string provider, string model, int limit, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var take = Math.Clamp(limit, 1, 500);
+        var rows = await db.Database.SqlQuery<CalibrationRow>($"""
+            SELECT CAST(json_extract(data, '$.promptChars') AS INTEGER) AS PromptChars,
+                   input_tokens AS InputTokens,
+                   COALESCE(CAST(json_extract(data, '$.turns') AS INTEGER), 1) AS Turns
+            FROM run_turn
+            WHERE provider = {provider} AND model = {model} AND input_tokens > 0
+              AND json_extract(data, '$.toolsOffered') = 0
+            ORDER BY id DESC
+            LIMIT {take}
+            """).ToListAsync(ct).ConfigureAwait(false);
+        return [.. rows.Select(r => new CalibrationSample(r.PromptChars ?? 0, r.InputTokens, r.Turns))];
+    }
+
+    private sealed class CalibrationRow
+    {
+        public int? PromptChars { get; set; }
+
+        public int InputTokens { get; set; }
+
+        public int Turns { get; set; }
+    }
+
     public async Task<IReadOnlyList<string>> ListConversationsAsync(string runId, CancellationToken ct)
     {
         await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
@@ -284,6 +314,8 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
         row.Question = run.Question is null ? null : PersistenceJson.Write(run.Question);
         row.TotalCostUsd = run.TotalCostUsd;
         row.MaxCostUsd = run.MaxCostUsd;
+        row.InputTokens = run.InputTokens;
+        row.OutputTokens = run.OutputTokens;
         row.Retries = run.Retries;
         row.StartedAt = run.StartedAt;
         row.FinishedAt = run.FinishedAt;
@@ -310,5 +342,7 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
         PersistenceJson.Read<UserQuestion>(row.Question),
         row.ResumeAt,
         row.Step,
-        row.WaitingSince);
+        row.WaitingSince,
+        row.InputTokens,
+        row.OutputTokens);
 }

@@ -84,6 +84,8 @@ Kimlik doğrulama tek şemalı ve basit olduğu için **hostlar yalnız `127.0.0
 - Bir ajanın sağlayıcı/modeli **md frontmatter'ında** belirlenir; boşsa varsayılan kullanılır.
 - Her tur `runs/` içine **hedefiyle** kaydedilir (`local` | `anthropic` | `nvidia` | `openai`).
   Çalışma sonunda makineden çıkan çağrılar tek tek raporlanır.
+- Bütçe **iki kapsamda** verilir ve ikisi de **boşsa sınırsızdır**: iş başına (`Run.maxCostUsd`) ve
+  2026-09-22'den beri proje başına (`Project.maxCostUsd` / `maxTokens`, önce dolan durdurur).
 - Bütçe aşımı çalışmayı **durdurur**, uyarıyla geçmez. Maliyet **eşdeğerdir** (abonelikle ücret kesilmez);
   asıl koruma **limit eşiği** (ayarlarda `limitGuards`, varsayılan %99): kota dolunca yeni tur başlamaz,
   çalışma pencere sıfırlanınca kendisi sürer (`docs/DOMAIN.md` → Bütçe ve limit).

@@ -19,8 +19,18 @@ public sealed record AgentTarget(Provider Provider, string Model, string Effort,
     }
 }
 
-/// <summary>Tek bir LLM turunun sonucu; tur kaydi deposuna zaten yazilmistir.</summary>
-public sealed record AgentReply(string Text, string? StructuredJson, decimal CostUsd, IReadOnlyList<ToolUse> ToolUses);
+/// <summary>
+/// Tek bir LLM turunun sonucu; tur kaydi deposuna zaten yazilmistir. <see cref="InputTokens"/> /
+/// <see cref="OutputTokens"/> calismanin toplamina eklenir (proje butcesi bunu okur, docs/DOMAIN.md → Butce ve limit);
+/// tur basina kirilim <c>run_turn</c>'de kalir. Yeni alan SONA eklenir (CLAUDE.md §5).
+/// </summary>
+public sealed record AgentReply(
+    string Text,
+    string? StructuredJson,
+    decimal CostUsd,
+    IReadOnlyList<ToolUse> ToolUses,
+    int InputTokens = 0,
+    int OutputTokens = 0);
 
 /// <summary>
 /// Ajanin araclari ve calisma dizini (kullanici karari 2026-09-19: developer/testci dosyayi kendisi yazar, testi kendisi kosar).
@@ -86,7 +96,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         string? task,
         int? round,
         CancellationToken ct,
-        ToolAccess? tools = null)
+        ToolAccess? tools = null,
+        ContextStats? context = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(messages);
@@ -155,10 +166,12 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 r.ToolUses is { Count: > 0 } ? r.ToolUses.Select(t => new ToolUse(t.Tool, t.Target)).ToList() : null,
                 r.Turns,
                 r.Usage.CacheReadTokens,
-                r.Usage.CacheWriteTokens);
+                r.Usage.CacheWriteTokens,
+                ToolsOffered: tools is not null,
+                Context: context);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
-            return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m, turn.ToolUses ?? []);
+            return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m, turn.ToolUses ?? [], r.Usage.InputTokens, r.Usage.OutputTokens);
         }
         finally
         {
@@ -182,6 +195,14 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             {
                 var response = await runtime.TurnAsync(request, ct).ConfigureAwait(false);
                 return new Attempted(response, sw.Elapsed);
+            }
+            catch (RuntimeLimitReachedException ex)
+            {
+                // Pencere cagri sirasinda doldu (LimitGuard'in 90 s'lik onbellegi bunu kaciriyor). Tekrar denemek
+                // ANLAMSIZ ve pahali olurdu: sifirlanma dakikalar/gunler sonra. Akisin zaten bildigi bekleme
+                // turune cevrilir -> calisma Paused + ResumeAt, RunResumer kaldigi adimdan surdurur (2026-09-22).
+                // Sifirlanma zamani bu yoldan gelmiyor: null birakilir, PauseForLimitAsync 15 dk sonra bakar.
+                throw new LimitReachedException(request.Provider, 100, 100, null, ex);
             }
             catch (Exception ex) when (attempt < _retry.Attempts && IsTransient(ex))
             {

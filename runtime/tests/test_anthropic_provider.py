@@ -456,3 +456,45 @@ def test_apikey_reddedilirse_saklanmaz(cli_present):
 def test_apikey_yokken_options_env_tasimaz(cli_present):
     opts = AnthropicProvider()._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m"}))
     assert not opts.env
+
+
+def test_scope_nesneden_model_adi_cikarilir():
+    """
+    Ust uc kapsami NESNE olarak verir: {"model": {"display_name": "Fable", ...}, "surface": ...}.
+    Duz string bekleyen okuyucu bunu None'a dusuruyordu; modele ozel haftalik pencere UI'da
+    "haftalik" diye etiketlenip normal haftalik pencereden ayirt edilemiyordu (kullanici 2026-09-20).
+    """
+    assert mod._scope_name({"model": {"display_name": "Fable", "id": None}, "surface": None}) == "Fable"
+    # display_name yoksa id'ye duser
+    assert mod._scope_name({"model": {"display_name": None, "id": "claude-opus-5"}}) == "claude-opus-5"
+    # model yoksa surface
+    assert mod._scope_name({"model": None, "surface": "cowork"}) == "cowork"
+    # eski duz string bicimi korunur
+    assert mod._scope_name("Sonnet") == "Sonnet"
+    # bos/bilinmeyen bicimler None
+    assert mod._scope_name(None) is None
+    assert mod._scope_name({}) is None
+    assert mod._scope_name({"model": {}}) is None
+    assert mod._scope_name(7) is None
+
+
+def test_kota_reddi_ayri_kodla_siniflandirilir():
+    """
+    Saglayici cagri SIRASINDA kota reddi verirse bu `runtime.provider_limit` olmali, `provider_error` degil.
+    Ayrimi .NET okuyor: provider_error -> calisma Failed (kullanici elle yeniden dener), provider_limit ->
+    Paused + ResumeAt (pencere sifirlaninca kendiliginden surer). Yanlis siniflandirma sessizce kaybolan
+    is demektir (2026-09-22).
+    """
+    assert mod._limit_reached("Claude hatası: usage limit reached")
+    assert mod._limit_reached("rate_limit_error")
+    assert mod._limit_reached("HTTP 429 Too Many Requests")
+    assert mod._limit_reached("quota exceeded for this window")
+    # Kota disi hatalar limit SAYILMAZ: yoksa gercek hata sessizce beklemeye donerdi.
+    assert not mod._limit_reached("schema validation failed")
+    assert not mod._limit_reached("Not logged in")
+
+    # Siniflandirma ucun kodunu degistiriyor.
+    assert mod._classify(RuntimeError("usage limit reached")).detail["errorCode"] == "runtime.provider_limit"
+    assert mod._classify(RuntimeError("bilinmeyen patlama")).detail["errorCode"] == "runtime.provider_error"
+    # Giris hatasi limitten ONCE bakilir: ikisi de gecerliyse kok sebep giristir.
+    assert mod._classify(RuntimeError("Not logged in")).detail["errorCode"] == "runtime.not_logged_in"

@@ -6,10 +6,27 @@ using MrHobist.AITeam.Domain.Runs;
 namespace MrHobist.AITeam.Application.Projects;
 
 /// <summary>PUT govdesi; anahtar yoldan gelir. <see cref="Workflow"/> bos → <c>default</c>, <see cref="TargetDir"/> bos → <c>projects/{key}</c>, <see cref="Color"/> bos → mevcut/palet.</summary>
-public sealed record ProjectModel(string Title, string? Description, string? Workflow, string? TargetDir, string? Color = null);
+public sealed record ProjectModel(
+    string Title,
+    string? Description,
+    string? Workflow,
+    string? TargetDir,
+    string? Color = null,
+    /// <summary>Proje butcesi: $ tavani. <c>null</c> = sinirsiz (varsayilan).</summary>
+    decimal? MaxCostUsd = null,
+    /// <summary>Proje butcesi: token tavani (girdi + cikti). <c>null</c> = sinirsiz (varsayilan).</summary>
+    long? MaxTokens = null);
 
 /// <summary>POST govdesi: <see cref="ProjectModel"/> + anahtar.</summary>
-public sealed record CreateProjectRequest(string Key, string Title, string? Description, string? Workflow, string? TargetDir, string? Color = null);
+public sealed record CreateProjectRequest(
+    string Key,
+    string Title,
+    string? Description,
+    string? Workflow,
+    string? TargetDir,
+    string? Color = null,
+    decimal? MaxCostUsd = null,
+    long? MaxTokens = null);
 
 /// <summary><c>POST /projects/reorder</c> govdesi: anahtarlar yeni sirayla; listede olmayanlar sona, mevcut sirayla.</summary>
 public sealed record ReorderRequest(IReadOnlyList<string> Keys);
@@ -31,12 +48,21 @@ public sealed record ProjectCard(
     int Completed,
     decimal TotalCostUsd,
     DateTimeOffset? LastActivityAt,
+
     /// <summary>Kokte <c>run.cmd</c> var: "Projeyi baslat" dugmesi acik. Sona eklendi (CLAUDE.md §5).</summary>
     bool Launchable = false,
     /// <summary>Proje rengi (#rrggbb); ray karti ve Kanban "Tumu" kartlari bunu kullanir.</summary>
     string Color = "",
     /// <summary>Ray ve Kanban sirasi (kucuk once).</summary>
-    int Order = 0);
+    int Order = 0,
+    /// <summary>Projenin butun calismalarinda harcanan girdi token toplami. 2026-09-22 oncesi isler 0 sayilir (olculmedi).</summary>
+    long TotalInputTokens = 0,
+    /// <summary>Projenin butun calismalarinda uretilen cikti token toplami.</summary>
+    long TotalOutputTokens = 0,
+    /// <summary>Proje butcesi: $ tavani; <c>null</c> = sinirsiz.</summary>
+    decimal? MaxCostUsd = null,
+    /// <summary>Proje butcesi: token tavani; <c>null</c> = sinirsiz.</summary>
+    long? MaxTokens = null);
 
 /// <summary><c>POST /projects/{key}/launch</c> yaniti.</summary>
 public sealed record LaunchResult(string Key, int ProcessId, string Launcher);
@@ -140,7 +166,7 @@ public sealed class ProjectService(IProjectStore projects, IWorkflowStore workfl
         var used = existing.Select(p => ColorOf(p, existing)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var color = string.IsNullOrWhiteSpace(request.Color) ? Project.Palette.FirstOrDefault(c => !used.Contains(c)) ?? Project.Palette[existing.Count % Project.Palette.Count] : request.Color.Trim();
         var order = existing.Count == 0 ? 0 : existing.Max(p => p.Order) + 1;
-        var project = Compose(key, DateTimeOffset.UtcNow, new ProjectModel(request.Title, request.Description, request.Workflow, request.TargetDir, color)) with { Order = order };
+        var project = Compose(key, DateTimeOffset.UtcNow, new ProjectModel(request.Title, request.Description, request.Workflow, request.TargetDir, color, request.MaxCostUsd, request.MaxTokens)) with { Order = order };
         await workflows.LoadAsync(project.Workflow, ct).ConfigureAwait(false); // yoksa workflow.not_found
         await projects.SaveAsync(project, ct).ConfigureAwait(false);
         return ToCard(project, [], project.Color);
@@ -198,7 +224,10 @@ public sealed class ProjectService(IProjectStore projects, IWorkflowStore workfl
             string.IsNullOrWhiteSpace(m.TargetDir) ? Project.DefaultTargetDir(key) : m.TargetDir.Trim().Replace('\\', '/').TrimEnd('/'),
             Project.LocalOwner,
             createdAt,
-            (m.Color ?? "").Trim());
+            (m.Color ?? "").Trim(),
+            Order: 0,
+            MaxCostUsd: m.MaxCostUsd,
+            MaxTokens: m.MaxTokens);
         project.Validate();
         return project;
     }
@@ -222,6 +251,10 @@ public sealed class ProjectService(IProjectStore projects, IWorkflowStore workfl
             list.Count == 0 ? null : list.Max(r => r.FinishedAt ?? r.StartedAt),
             launcher.CanLaunch(workspace.RootOf(p)),
             color,
-            p.Order);
+            p.Order,
+            list.Sum(r => r.InputTokens),
+            list.Sum(r => r.OutputTokens),
+            p.MaxCostUsd,
+            p.MaxTokens);
     }
 }

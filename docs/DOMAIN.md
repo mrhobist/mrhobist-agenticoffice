@@ -292,14 +292,48 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   davranış), `"user"` = doğrudan kullanıcı, ajan anahtarı = o ajan. Açık karar #4 böyle kapandı: `can_ask`
   ajan özelliğiydi, dolayısıyla manager'ı olmayan bir akışta bile developer manager'a soruyor ve akışta
   olmayan bir ajanı (ve maliyetini) işe sokuyordu.
+- **Proje bütçesi (2026-09-22 kullanıcı kararı):** `Project.maxCostUsd` ve `Project.maxTokens`; ikisi de
+  **boş = sınırsız** (varsayılan davranış değişmedi). İş bütçesinden farkı **kapsamdır**: iş bütçesi tek bir işi,
+  proje bütçesi projenin **bütün çalışmalarının toplamını** sınırlar — on küçük iş üst üste aynı tavanı on kez
+  harcayamasın. İki ölçü bağımsızdır ve **önce dolan durdurur**: abonelikte ücret kesilmediği için asıl tükenen
+  kaynak token'dır, `$` eşdeğer maliyettir (CLAUDE.md §4). Tavan dolmuşsa **yeni iş hiç başlamaz**
+  (400 `project.budget_exceeded`) — başlayıp ilk turdan sonra durmak bir tur token'ı boşa harcardı; süren iş
+  tur sonunda `BudgetExceeded` olur ve `Detail` hangi ölçünün dolduğunu yazar. Harcama `run.input_tokens` /
+  `run.output_tokens` sütunlarında birikir (tur başına kırılım `run_turn`'de kalır); 2026-09-22 öncesi işlerde
+  bu sütunlar 0'dır: **ölçülmedi** demektir, sıfır harcandı demek değil.
 - **Limit koruması** (asıl koruma): ayarlarda `limitGuards { provider: yüzde }`, varsayılan
   **%99**, Ayarlar ekranında platform bazında değiştirilir. Her LLM çağrısından önce (`LimitGuard`) sağlayıcının
-  aktif kota pencereleri (5 saat, hafta, modele özel) okunur (runtime 90 s önbellek); biri eşiğe ulaştıysa çağrı
+  aktif kota pencereleri (saatlik, haftalık, modele özel) okunur (runtime 90 s önbellek); biri eşiğe ulaştıysa çağrı
   **yapılmaz**: çalışma `Paused` + `resumeAt` (pencerenin sıfırlanma zamanı), `limit` notu, bildirim zilinde
-  "Limit doldu · HH:mm'de sürer". `RunResumer` dakikada bir bakar, süresi gelen çalışmayı kendisi sürdürür
+  "Limit doldu · HH:mm'de sürer". Pencere **çağrı sırasında** dolarsa (koruma yüzdeleri 90 s önbellekli,
+  o aralıkta dolabilir) runtime bunu `runtime.provider_limit` diye ayrı sınıflandırır ve çalışma yine
+  `Paused` olur — `provider_error` sanılıp `Failed` olsaydı pencere sıfırlandığında kendiliğinden sürmez,
+  kullanıcı elle "yeniden dene" demek zorunda kalırdı (2026-09-22). Bu turda tekrar denenmez: sıfırlanma
+  dakikalar ya da günler sonradır. `RunResumer` dakikada bir bakar, süresi gelen çalışmayı kendisi sürdürür
   (`ResumeAsync`: kullanıcı tekrarı sayılmaz, not organizatörden `limit-resume`); kullanıcı "Yeniden dene" ile
   erken deneyebilir. Kota ucu bilgi vermiyorsa koruma sessizce geçer (varsayımla
   ilerlenir; üst bar zaten "kalan kullanım yok" der).
+
+### Bağlam bütçesi (2026-09-23, kullanıcı onayı; ölçüm varsayımla ilerlenir)
+
+Taşınan görev geçmişinin (`AgentTaskHistoryAsync`) ne zaman ve ne kadar sıkıştırılacağına **kod** karar verir;
+LLM özeti (üçüncü kademe) **yoktur**, ölçüm onu hak ettiğini gösterene kadar kurulmaz.
+
+- **Tavan maliyet tavanıdır, pencere tavanı değil.** `CompactionBudget.TaskHistory` 4 mesaj / 12k token kalır.
+  Modelin penceresine oranlayıp büyütmek (ör. 200k'nın %70'i) **reddedildi**: taşınan geçmiş araçlı adımda her
+  iç turda yeniden gönderilir (120 iç tura kadar), tavanı büyütmek girdiyi tur sayısıyla çarpar. Pencere yalnız
+  küçük pencereli (yerel) modellerde bağlardı; bugün tüm ajanlar Anthropic'te. Yerel modele geçilirse ajan
+  frontmatter'ına pencere alanı + `min(maliyet tavanı, pencere payı)` — o gün.
+- **Token ölçüsü kalibre edilir.** Sabit "4 karakter = 1 token" yerine ajanın hedef modeli için kayıtlı
+  **araçsız** turlardan (`Turn.toolsOffered = false`) karakter/token oranı çıkarılır (`TokenCalibration`). Düz
+  oran kullanılmaz: girdi tokeni iç turların toplamıdır ve CLI istemde görünmeyen sabit ek yük koyar; tur başına
+  girdi istem karakterine karşı doğrusal oturtulur, **eğim** oranı verir. En az 8 örnek, yeterli yayılım ve
+  1,5–6 aralığı yoksa oran **4** kalır: ölçüm gelene kadar davranış değişmez.
+- **Ölçü kayda girer.** Geçmiş taşıyan her tur `Turn.context`'e sıkıştırma öncesi/sonrası mesaj ve karakteri,
+  kullanılan oranı ve örnek sayısını yazar. Okuma: `python scripts/context-report.py`.
+- **Üçüncü kademe (LLM özeti) için koşul:** raporda düşen geçmişin, özet turunun maliyetini aşacak kadar sık ve
+  büyük olduğu görülmeli. Kurulursa `config/agents/` altında ucuz modelli bir ajan olur, `AgentCaller` üzerinden
+  çağrılır (tur kaydı, bütçe ve limit koruması kendiliğinden).
 
 ## Model, efor ve kimlik (2026-09-19, kullanıcı kararı)
 
@@ -309,8 +343,10 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   `claude-haiku-4-5-20251001` + `low` (dağıtım ucuz kalsın).
 - **Anthropic kimliği Claude Code oturumudur.** Ayrı API anahtarı yoktur; runtime Agent SDK ile
   makinedeki `claude.exe` oturumunu kullanır. Farklı Windows kullanıcıları farklı oturumdur; bu
-  yüzden **UI ilk yüklemede** `GET /api/v1/providers` ile giriş durumuna bakar ve giriş yoksa
-  uyarır.
+  yüzden **UI ilk yüklemede** `GET /api/v1/providers` ile giriş durumuna bakar. Sayfayı kaplayan bant
+  yalnız **hiçbir** sağlayıcıda giriş yokken çıkar (2026-09-20 kullanıcı kararı): o zaman iş başlatmak
+  imkânsızdır. Biri çalışıyorsa kurulmamış sağlayıcı (ör. Codex) büyük uyarı olarak durmaz; üst bardaki
+  soluk çip "giriş yok" der ve tıklanınca Ayarlar'ı açar.
 - **Ayarlar ekranı (2026-09-19, kullanıcı isteği):** LLM bağlantıları tek yerden yönetilir: giriş
   durumu, hesap, modeller, **tek tıkla giriş** ve çıkış. Giriş, runtime'ın kullanıcının makinesinde
   `claude auth login` başlatmasıyla olur (yeni konsol penceresi + tarayıcı onayı); şifre/token
@@ -318,8 +354,12 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   5 s'de bir `refresh=true` ile yoklar ve tamamlanınca gösterir.
 - **Kullanım görünümü:** `GET /api/v1/usage` bizim kayıtlarımızdan (kayıtlı turlar: tur, token,
   sağlayıcının bildirdiği maliyet) sağlayıcı+model bazında toplar.
-- **Kalan kullanım (üst bar, 2026-09-19 kullanıcı isteği):** `GET /api/v1/limits` aktif her sağlayıcı
-  için kota pencerelerini verir (Anthropic: 5 saatlik oturum, haftalık, modele özel pencereler).
+- **Kota kullanımı (üst bar, 2026-09-19 kullanıcı isteği):** `GET /api/v1/limits` aktif her sağlayıcı
+  için kota pencerelerini verir (Anthropic: saatlik oturum, haftalık, modele özel pencereler). Halka
+  **kullanılanı** gösterir (2026-09-20 kullanıcı kararı): sağlayıcının kendi `/usage` ekranı da böyle
+  okur, "%87 doldu" ile "%13 kaldı" arasında gidip gelmek karışıklığı büyütüyordu. Modele özel pencerenin
+  adı `scope`'tan gelir; bu alan nesne döner ve düz string bekleyen okuyucu onu sessizce düşürüp pencereyi
+  haftalıkla aynı etikete bindiriyordu.
   Kaynak Claude Code'un kendi `/usage` ekranının okuduğu uçtur; CLI bunu komut olarak sunmadığı için
   runtime, CLI'nin makinede sakladığı oturumla aynı ucu sorgular. Belirteç hiçbir yanıta ve günlüğe
   yazılmaz. Uç belgesiz olduğu için şekli değişebilir; değişirse bar "kalan kullanım yok" der, akış
@@ -350,7 +390,7 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   "runtime dosya yazmaz" kuralının kapsamı dışında (bilinçli). Öncelik: ortam değişkeni
   (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) > dosya > CLI oturumu. Anahtar kayıtlıyken CLI oturumu
   kullanılmaz; Anthropic'te SDK'ya `ANTHROPIC_API_KEY` ortamla gider (fatura Console'a), kota penceresi yok
-  → limit koruması geçer, üst bar "kalan hak alınamadı · API anahtarı" der. "Anahtarı sil" oturuma döndürür.
+  → limit koruması geçer, üst bar "API anahtarı · kota yok" der. "Anahtarı sil" oturuma döndürür.
   Anahtar hiçbir yanıta ve günlüğe yazılmaz; UI maskeli sonu (`sk-…ab12`) görür. `method` alanı hangi yolun
   aktif olduğunu söyler (`session | apikey | null`).
 - `reachable` yorumu: runtime katalog için gerçek çağrı yapmaz (her model için bir tur token
