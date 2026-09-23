@@ -167,6 +167,33 @@ def recolor(img: Image.Image, hue_band: tuple[int, int], hue_to: int, min_sat: i
     return Image.fromarray(rgba, "RGBA")
 
 
+def recolor_ops(img: Image.Image, ops: list[dict]) -> Image.Image:
+    """Several HSV edits in one pass; each op selects pixels by hue band + saturation + value range.
+
+    Unlike `recolor`, an op can also darken/brighten (black or blonde hair cannot be reached by a hue
+    shift alone) and select by value, which separates dark brown hair from lighter skin of similar hue.
+    Op keys (PIL scale 0-255): hue=(lo, hi) (lo > hi wraps), sat=(min, max), val=(min, max),
+    to_hue, sat_mul, val_mul, val_add. Selection always uses the ORIGINAL pixel, so ops don't chain.
+    """
+    rgba = np.asarray(img.convert("RGBA")).copy()
+    hsv = np.asarray(img.convert("RGB").convert("HSV")).astype(float)
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    out = hsv.copy()
+    for op in ops:
+        lo, hi = op.get("hue", (0, 255))
+        m = ((h >= lo) & (h <= hi)) if lo <= hi else ((h >= lo) | (h <= hi))
+        smin, smax = op.get("sat", (0, 255))
+        vmin, vmax = op.get("val", (0, 255))
+        m &= (s >= smin) & (s <= smax) & (v >= vmin) & (v <= vmax) & (rgba[:, :, 3] > 0)
+        if "to_hue" in op:
+            out[:, :, 0][m] = op["to_hue"]
+        out[:, :, 1][m] = np.clip(s[m] * op.get("sat_mul", 1.0), 0, 255)
+        out[:, :, 2][m] = np.clip(v[m] * op.get("val_mul", 1.0) + op.get("val_add", 0), 0, 255)
+    rgb = np.asarray(Image.fromarray(out.astype(np.uint8), "HSV").convert("RGB"))
+    rgba[:, :, :3] = rgb
+    return Image.fromarray(rgba, "RGBA")
+
+
 def pack_grid(frames: list[list[Image.Image]], target_h_world: int, name: str) -> dict:
     """Align every frame bottom-center into equal cells and scale to target height."""
     rows, cols = len(frames), len(frames[0])
@@ -337,8 +364,20 @@ PANEL_FRAMES = {"SIT": 8, "TYPE": 6}
 DIR_ROWS_8 = {"down": 0, "downleft": 1, "left": 2, "upleft": 3, "up": 4, "upright": 5, "right": 6, "downright": 7}
 CHAR_V2_HEIGHT_WORLD = 78
 
-# key -> (catalog file, optional recolor (hue_band, hue_to)); recolor derives an extra outfit.
-CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | None]] = {
+# HSV ops shared by derived characters (PIL hue 0-255: red 0, orange ~20, yellow ~42, green ~85, blue ~170, purple ~200).
+# Brown hair in these packs sits at hue 5-30 and is darker than skin of the same hue, hence the val cap.
+_HAIR = {"hue": (5, 30), "sat": (60, 255), "val": (0, 175)}
+_NAVY = {"hue": (145, 190), "sat": (40, 255)}      # skirt, tie, trousers (sim1, sim3)
+_JEANS = {"hue": (130, 185), "sat": (30, 255)}     # jeans (sim4)
+HAIR_BLONDE = {**_HAIR, "to_hue": 26, "sat_mul": 1.1, "val_mul": 1.7, "val_add": 30}
+HAIR_RED = {**_HAIR, "to_hue": 6, "sat_mul": 1.25, "val_mul": 1.15}
+HAIR_AUBURN = {**_HAIR, "to_hue": 250, "sat_mul": 1.1}
+HAIR_BLACK = {**_HAIR, "sat_mul": 0.3, "val_mul": 0.42}
+
+# key -> (catalog file, recolor): None, a legacy (hue_band, hue_to) tuple, or a list of `recolor_ops` ops.
+# Derived characters (2026-09-23, user request "new characters, mostly women"): palette variants of the
+# complete catalogs -- the extra packs (sim7, karma) have truncated or tiny panels and don't slice cleanly.
+CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | list[dict] | None]] = {
     "shirt-tie": ("sim1.png", None),
     "green-hoodie": ("sim2.png", None),
     "ponytail": ("sim3.png", None),
@@ -347,6 +386,12 @@ CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | None]] = {
     "curly-yellow": ("sim6.png", None),
     "hipster": ("sim8.png", None),
     "blue-hoodie": ("sim2.png", ((55, 115), 150)),
+    "ponytail-blonde": ("sim3.png", [HAIR_BLONDE, {**_NAVY, "to_hue": 245, "sat_mul": 1.1}]),
+    "ponytail-red": ("sim3.png", [HAIR_RED, {**_NAVY, "to_hue": 95}]),
+    "ponytail-black": ("sim3.png", [HAIR_BLACK, {**_NAVY, "sat_mul": 0.15, "val_mul": 1.35}]),
+    "bun-black": ("sim4.png", [HAIR_BLACK, {**_JEANS, "to_hue": 225, "sat_mul": 1.2, "val_mul": 0.8}]),
+    "bun-auburn": ("sim4.png", [HAIR_AUBURN, {**_JEANS, "to_hue": 120, "val_mul": 0.9}]),
+    "shirt-tie-blond": ("sim1.png", [HAIR_BLONDE, {**_NAVY, "to_hue": 250, "sat_mul": 1.2}]),
 }
 
 
@@ -434,7 +479,9 @@ def catalog_frames(key: str) -> tuple[dict[str, list[Image.Image]], float]:
         return _CATALOG_CACHE[key]
     file, recolor_spec = CHARACTERS_V2[key]
     img = Image.open(CATALOGS / file).convert("RGBA")
-    if recolor_spec:
+    if isinstance(recolor_spec, list):
+        img = recolor_ops(img, recolor_spec)
+    elif recolor_spec:
         img = recolor(img, recolor_spec[0], recolor_spec[1])
     panels = catalog_panels(img)
     frames: dict[str, list[Image.Image]] = {}
@@ -546,7 +593,25 @@ def load(name: str) -> Image.Image:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--inspect", action="store_true", help="dump numbered tileset boxes and exit")
+    ap.add_argument("--only", help="comma-separated character keys: build just these and merge into the existing atlas.json "
+                    "(other files untouched, so a Pillow upgrade doesn't rewrite every PNG)")
     args = ap.parse_args()
+
+    if args.only:
+        keys = [k.strip() for k in args.only.split(",") if k.strip()]
+        unknown = [k for k in keys if k not in CHARACTERS_V2]
+        if unknown:
+            print(f"unknown character(s): {', '.join(unknown)}", file=sys.stderr)
+            return 2
+        atlas_file = OUT / "atlas.json"
+        atlas = json.loads(atlas_file.read_text(encoding="utf-8"))
+        for key in keys:
+            atlas["characters"][key] = build_character_v2(key)
+            w = atlas["characters"][key]["walk"]
+            print("character", key, w["frameW"], w["frameH"])
+        atlas_file.write_text(json.dumps(atlas, indent=2), encoding="utf-8")
+        print("atlas ->", atlas_file)
+        return 0
 
     tileset = load("objects-tileset.png")
     if args.inspect:

@@ -264,6 +264,204 @@
         "cols": 6,
         "rows": 1
       }
+    },
+    "ponytail-blonde": {
+      "walk": {
+        "image": "char-ponytail-blonde-walk.png",
+        "frameW": 97,
+        "frameH": 161,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-ponytail-blonde-sit.png",
+        "frameW": 87,
+        "frameH": 142,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-ponytail-blonde-type.png",
+        "frameW": 92,
+        "frameH": 149,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "ponytail-red": {
+      "walk": {
+        "image": "char-ponytail-red-walk.png",
+        "frameW": 97,
+        "frameH": 161,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-ponytail-red-sit.png",
+        "frameW": 87,
+        "frameH": 142,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-ponytail-red-type.png",
+        "frameW": 92,
+        "frameH": 149,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "ponytail-black": {
+      "walk": {
+        "image": "char-ponytail-black-walk.png",
+        "frameW": 97,
+        "frameH": 161,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-ponytail-black-sit.png",
+        "frameW": 87,
+        "frameH": 142,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-ponytail-black-type.png",
+        "frameW": 92,
+        "frameH": 149,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "bun-black": {
+      "walk": {
+        "image": "char-bun-black-walk.png",
+        "frameW": 83,
+        "frameH": 158,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-bun-black-sit.png",
+        "frameW": 82,
+        "frameH": 137,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-bun-black-type.png",
+        "frameW": 76,
+        "frameH": 151,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "bun-auburn": {
+      "walk": {
+        "image": "char-bun-auburn-walk.png",
+        "frameW": 83,
+        "frameH": 158,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-bun-auburn-sit.png",
+        "frameW": 82,
+        "frameH": 137,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-bun-auburn-type.png",
+        "frameW": 76,
+        "frameH": 151,
+        "cols": 6,
+        "rows": 1
+      }
+    },
+    "shirt-tie-blond": {
+      "walk": {
+        "image": "char-shirt-tie-blond-walk.png",
+        "frameW": 90,
+        "frameH": 162,
+        "cols": 6,
+        "rows": 8,
+        "dirRows": {
+          "down": 0,
+          "downleft": 1,
+          "left": 2,
+          "upleft": 3,
+          "up": 4,
+          "upright": 5,
+          "right": 6,
+          "downright": 7
+        }
+      },
+      "sit": {
+        "image": "char-shirt-tie-blond-sit.png",
+        "frameW": 83,
+        "frameH": 138,
+        "cols": 8,
+        "rows": 1
+      },
+      "type": {
+        "image": "char-shirt-tie-blond-type.png",
+        "frameW": 89,
+        "frameH": 160,
+        "cols": 6,
+        "rows": 1
+      }
     }
   },
   "cat": {

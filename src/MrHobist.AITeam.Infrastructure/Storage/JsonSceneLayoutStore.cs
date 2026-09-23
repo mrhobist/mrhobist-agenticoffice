@@ -13,7 +13,8 @@ namespace MrHobist.AITeam.Infrastructure.Storage;
 public sealed class JsonSceneLayoutStore(StoragePaths paths) : ISceneLayout
 {
     /// <summary>scene.json'da <c>sprites</c> yoksa: build'deki karakter sayfalari (scripts/build-sprites.py).</summary>
-    private static readonly string[] FallbackSprites = ["shirt-tie", "green-hoodie", "ponytail", "bun", "blond-maroon", "curly-yellow", "hipster", "blue-hoodie"];
+    private static readonly string[] FallbackSprites = ["shirt-tie", "green-hoodie", "ponytail", "bun", "blond-maroon", "curly-yellow", "hipster", "blue-hoodie",
+        "ponytail-blonde", "ponytail-red", "ponytail-black", "bun-black", "bun-auburn", "shirt-tie-blond"];
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
