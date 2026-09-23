@@ -2131,6 +2131,7 @@ export interface components {
             prompt: string;
             composedPrompt: string;
             mcp?: null | string[];
+            sprite?: null | string;
         };
         AgentListItem: {
             key: string;
@@ -2143,6 +2144,7 @@ export interface components {
             includes: string[];
             canAsk: null | string;
             mcp?: null | string[];
+            sprite?: null | string;
         };
         AgentRunWork: {
             run: components["schemas"]["Run"];
@@ -2189,6 +2191,7 @@ export interface components {
             prompt: string;
             effort?: null | string;
             mcp?: null | string[];
+            sprite?: null | string;
         };
         CreateProjectRequest: {
             key: string;
@@ -2858,6 +2861,7 @@ export interface components {
             prompt: string;
             effort?: null | string;
             mcp?: null | string[];
+            sprite?: null | string;
         };
         UsageItem: {
             provider: string;

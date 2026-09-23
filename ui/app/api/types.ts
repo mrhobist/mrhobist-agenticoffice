@@ -32,6 +32,8 @@ export interface AgentListItem {
   canAsk: string | null
   /** Yetkili MCP sunuculari (md frontmatter `mcp`). Yonetim: MCP paneli. */
   mcp?: string[] | null
+  /** Ofisteki karakteri (scene.json → agents[].sprite). PUT/POST'ta null = korunur / otomatik. */
+  sprite?: string | null
 }
 
 /** GET/PUT /api/v1/agents/{key} */

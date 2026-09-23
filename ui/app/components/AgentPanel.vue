@@ -51,6 +51,7 @@ function toUpdate(d: AgentDetail): AgentUpdate {
     includes: d.includes,
     canAsk: d.canAsk,
     prompt: d.prompt,
+    sprite: d.sprite ?? null,
   }
 }
 
@@ -144,6 +145,22 @@ const modelOptions = computed<ModelInfo[]>(() => {
 const canAskModel = computed<string>({
   get: () => form.value?.canAsk ?? '',
   set: (v) => { if (form.value) form.value.canAsk = v || null },
+})
+
+/** Karakter: null gelirse (sahnede kaydi yok) secim yapilana kadar null kalir; kaydetmek yerlesimi onarir. */
+const spriteModel = computed<string | null>({
+  get: () => form.value?.sprite ?? null,
+  set: (v) => { if (form.value) form.value.sprite = v },
+})
+
+/** Karakter → onu kullanan diger ajanlar (bilgi; ayni karakter secilebilir). */
+const spriteUsers = computed<Record<string, string[]>>(() => {
+  const map: Record<string, string[]> = {}
+  for (const a of props.agents ?? []) {
+    if (a.key === props.agentKey || !a.sprite) continue
+    ;(map[a.sprite] ??= []).push(a.name)
+  }
+  return map
 })
 
 const effortModel = computed<Effort | ''>({
@@ -333,6 +350,10 @@ defineExpose({ canLeave })
           </div>
         </div>
 
+        <div class="field">
+          <span class="lbl">Karakter <span class="sub">(ofisteki görünümü)</span></span>
+          <SpritePicker v-model="spriteModel" :used-by="spriteUsers" />
+        </div>
         <div class="field">
           <label class="lbl" for="agent-summary">Özet</label>
           <input id="agent-summary" v-model="form.summary" type="text">

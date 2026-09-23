@@ -147,6 +147,94 @@
       ]
     },
     {
+      "key": "bitbucket",
+      "name": "Bitbucket",
+      "vendor": "Atlassian (resmi Rovo MCP) · topluluk sunucuları",
+      "description": "Depo, dal, pull request, pipeline: okur, arar, PR açar ve yorumlar",
+      "docsUrl": "https://github.com/atlassian/atlassian-mcp-server",
+      "official": true,
+      "options": [
+        {
+          "id": "rovo-api-token",
+          "label": "Bitbucket Cloud · Rovo MCP · e-posta + API token (Basic)",
+          "description": "Atlassian'ın resmi uzak sunucusu (Bitbucket araçları 2026-04'ten beri). Kapsamlı (scoped) API token: id.atlassian.com → Security → API tokens.",
+          "transport": "Http",
+          "url": "https://mcp.atlassian.com/v2/mcp",
+          "notes": "Kuruluş yöneticisi Rovo MCP için API token girişini açmış ve Bitbucket çalışma alanı Atlassian kuruluşuna bağlı olmalı. Token'a Bitbucket okuma/yazma kapsamları verilmeli.",
+          "fields": [
+            { "name": "ATLASSIAN_EMAIL", "label": "Atlassian e-postası", "target": "Input", "placeholder": "ad.soyad@sirket.com" },
+            { "name": "ATLASSIAN_API_TOKEN", "label": "API token", "target": "Header", "header": "Authorization", "secret": true, "format": "Basic {base64:ATLASSIAN_EMAIL:ATLASSIAN_API_TOKEN}", "placeholder": "ATATT…" }
+          ]
+        },
+        {
+          "id": "rovo-service-key",
+          "label": "Bitbucket Cloud · Rovo MCP · servis hesabı API anahtarı (Bearer)",
+          "description": "Kişiye bağlı olmayan servis hesabı anahtarı.",
+          "transport": "Http",
+          "url": "https://mcp.atlassian.com/v2/mcp",
+          "notes": "Rovo MCP servis anahtarını kabul ediyor; Bitbucket araçlarında çalıştığı belgelerde doğrulanmadı — Bağlantıyı dene ile kontrol et.",
+          "fields": [
+            { "name": "ATLASSIAN_SERVICE_KEY", "label": "Servis hesabı API anahtarı", "target": "Header", "header": "Authorization", "secret": true, "format": "Bearer {value}" }
+          ]
+        },
+        {
+          "id": "rovo-oauth",
+          "label": "Bitbucket Cloud · Rovo MCP · OAuth",
+          "transport": "Http",
+          "url": "https://mcp.atlassian.com/v2/mcp",
+          "supported": false,
+          "notes": "Etkileşimli OAuth girişi gerekir (Bitbucket için OAuth desteği kaynaklarda da çelişkili). API token seçeneğini kullan."
+        },
+        {
+          "id": "cloud-token",
+          "label": "Bitbucket Cloud · e-posta + API token (yerel)",
+          "description": "Sunucu bu makinede çalışır; kapsamlı API token (repository, workspace, isteğe bağlı pullrequest).",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "@aashari/mcp-server-atlassian-bitbucket"],
+          "requires": ["Node.js"],
+          "notes": "Topluluk sunucusu (aashari). Salt okuma ayarı yok: araçlar genel REST çağrısıdır (GET/POST/PUT/DELETE). Yazma istemiyorsan token'a yalnız okuma kapsamı ver.",
+          "fields": [
+            { "name": "ATLASSIAN_USER_EMAIL", "label": "Atlassian e-postası", "target": "Env", "placeholder": "ad.soyad@sirket.com" },
+            { "name": "ATLASSIAN_API_TOKEN", "label": "API token", "target": "Env", "secret": true, "placeholder": "ATATT…" },
+            { "name": "BITBUCKET_DEFAULT_WORKSPACE", "label": "Varsayılan çalışma alanı", "target": "Env", "required": false, "placeholder": "sirket" }
+          ]
+        },
+        {
+          "id": "server-token",
+          "label": "Bitbucket Server / Data Center · HTTP erişim belirteci",
+          "description": "Bitbucket profil → HTTP access tokens (Bearer). Kurum içi Bitbucket için önerilen yol.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "@nexus2520/bitbucket-mcp-server"],
+          "requires": ["Node.js"],
+          "notes": "Topluluk sunucusu (@nexus2520/bitbucket-mcp-server). Salt okuma için araç gruplarını sınırla (ör. pr_core,files,search,discovery,commits,branches).",
+          "fields": [
+            { "name": "BITBUCKET_BASE_URL", "label": "Bitbucket adresi", "target": "Env", "placeholder": "https://bitbucket.sirket.local" },
+            { "name": "BITBUCKET_USERNAME", "label": "Kullanıcı adı", "target": "Env" },
+            { "name": "BITBUCKET_TOKEN", "label": "HTTP erişim belirteci", "target": "Env", "secret": true },
+            { "name": "BITBUCKET_TOOL_GROUPS", "label": "Araç grupları", "target": "Env", "required": false, "placeholder": "boş = hepsi · pr_core,files,search,discovery", "help": "Seçenekler: pr_core, pr_comments, pr_review, commits, branches, files, search, attachments, discovery." }
+          ]
+        },
+        {
+          "id": "server-basic",
+          "label": "Bitbucket Server / Data Center · kullanıcı adı + parola (Basic)",
+          "transport": "Stdio",
+          "command": "node",
+          "supported": false,
+          "notes": "Parolayla giriş yalnız garc33/bitbucket-server-mcp-server'da var ve npm'de yayımlı değil (kaynaktan derlenmeli). Derlersen \"+ Elle ekle\" ile node <yol>/build/index.js; ortam: BITBUCKET_URL, BITBUCKET_USERNAME, BITBUCKET_PASSWORD, isteğe bağlı BITBUCKET_READ_ONLY=true. Önerilen: HTTP erişim belirteci."
+        },
+        {
+          "id": "cloud-app-password",
+          "label": "Bitbucket Cloud · uygulama parolası (app password)",
+          "transport": "Stdio",
+          "command": "cmd",
+          "supported": false,
+          "notes": "Atlassian uygulama parolalarını Haziran 2026'da kaldırdı; yerine kapsamlı API token kullan."
+        }
+      ]
+    },
+    {
       "key": "slack",
       "name": "Slack",
       "vendor": "Slack (resmi) · korotovsky/slack-mcp-server (topluluk)",

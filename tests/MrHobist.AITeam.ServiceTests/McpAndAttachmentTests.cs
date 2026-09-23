@@ -22,6 +22,8 @@ public sealed class McpAndAttachmentTests : IDisposable
 {
     private static readonly CancellationToken Ct = CancellationToken.None;
 
+    private const string Dev = "mcp-test-dev";
+
     private readonly StorageFixture _fx = new();
     private readonly RunServiceTests.FakeRuntime _runtime = new();
     private readonly MarkdownAgentStore _agents;
@@ -37,12 +39,16 @@ public sealed class McpAndAttachmentTests : IDisposable
         _files = _fx.Get<IAttachmentStore>();
         _mcp = new McpService(_mcpStore, _agents, _runtime);
 
+        // Kendi ajani: "ajan basina tek is" kilidi surec geneli (statik); paralel kosan RunServiceTests 'developer'i
+        // kullanirken bu siniftaki dagitim o ajani mesgul gorup bekliyordu (aralikli dusme, 2026-09-23).
+        _agents.SaveAgentAsync(new Agent(Dev, "MCP Dev", "", ["dev"], null, null, [], null, "Sen bir developer'sin."), Ct).GetAwaiter().GetResult();
+
         var workflows = new JsonWorkflowStore(_fx.Paths);
         workflows.SaveAsync(new Workflow(
             "tek", "Tek kişi", 3, null,
             [
-                new("analiz", "Analiz", StageKind.Analyze, "developer", "dev", ""),
-                new("gelistirme", "Geliştirme", StageKind.Implement, "developer", "dev", ""),
+                new("analiz", "Analiz", StageKind.Analyze, Dev, "dev", ""),
+                new("gelistirme", "Geliştirme", StageKind.Implement, Dev, "dev", ""),
             ],
             AskRole: Workflow.UserRole,
             PlanApprover: Workflow.AutoApprove), Ct).GetAwaiter().GetResult();
@@ -103,9 +109,9 @@ public sealed class McpAndAttachmentTests : IDisposable
     public async Task Yetki_ajan_mdsine_yazilir_ve_aracli_turda_runtimea_gider()
     {
         await AddGithubAsync();
-        var view = await _mcp.SetAccessAsync("gh", new McpAccessRequest(["developer"]), Ct);
-        Assert.Equal(["developer"], view.Agents);
-        Assert.Contains("mcp: [gh]", await File.ReadAllTextAsync(Path.Combine(_fx.Paths.AgentsDir, "developer.md"), Ct), StringComparison.Ordinal);
+        var view = await _mcp.SetAccessAsync("gh", new McpAccessRequest([Dev]), Ct);
+        Assert.Equal([Dev], view.Agents);
+        Assert.Contains("mcp: [gh]", await File.ReadAllTextAsync(Path.Combine(_fx.Paths.AgentsDir, Dev + ".md"), Ct), StringComparison.Ordinal);
 
         var (_, analyze, implement) = await RunOnceAsync();
         foreach (var call in new[] { analyze, implement })
@@ -120,14 +126,14 @@ public sealed class McpAndAttachmentTests : IDisposable
         // Yetki kaldirilinca md'den de kalkar.
         await _mcp.SetAccessAsync("gh", new McpAccessRequest([]), Ct);
         var team = await _agents.LoadTeamAsync(Ct);
-        Assert.Empty(team.Agents["developer"].McpServers);
+        Assert.Empty(team.Agents[Dev].McpServers);
     }
 
     [Fact]
     public async Task Kapali_sunucu_verilmez_ve_kayda_not_duser()
     {
         await AddGithubAsync();
-        await _mcp.SetAccessAsync("gh", new McpAccessRequest(["developer"]), Ct);
+        await _mcp.SetAccessAsync("gh", new McpAccessRequest([Dev]), Ct);
         await _mcp.UpdateAsync("gh", new McpServerRequest("gh", "GitHub", McpTransport.Stdio, "npx", Enabled: false), Ct);
 
         var (run, analyze, _) = await RunOnceAsync();

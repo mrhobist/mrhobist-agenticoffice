@@ -18,6 +18,7 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `knowledge.not_found` | 404 | Böyle bir bilgi dosyası yok |
 | `knowledge.in_use` | 409 | `DELETE /knowledge`: bir ajanın `includes`'inde geçiyor |
 | `knowledge.body_empty` | 400 | Bilgi dosyası gövdesi boş |
+| `agent.unknown_sprite` | 400 | Seçilen karakter `scene.json → sprites[]` listesinde yok |
 | `agent.unknown_mcp` | 400 | `mcp` listesine kayıtlı olmayan bir MCP sunucusu eklendi |
 | `agent.mcp_unsupported` | 400 | MCP yetkisi verilen ajanın sağlayıcısı MCP çalıştıramıyor (yalnız `anthropic` / varsayılan) |
 | `mcp.invalid_key` | 400 | MCP anahtarı `[a-z0-9][a-z0-9_-]*` değil |

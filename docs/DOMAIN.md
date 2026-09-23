@@ -25,6 +25,10 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
   sprite'ı (`sprites[]`, 8 karakter; bitince tekrar) + boş ilk masa (`seats`). Masa kalmadıysa `home: {}` →
   **ziyaretçi**: ofiste evi yoktur, arada kapıdan girip panoya bakar, çıkar; iş alınca panonun önünde çalışır.
   Silinince sahneden düşer. Her değişiklikte Api `scene.reload` yayımlar, UI sahneyi yeniden kurar.
+- **Karakter seçimi (2026-09-23, kullanıcı isteği).** Yeni ajan formunda ve ajan panelinde karakter (sprite) seçilir;
+  önizleme yürüyüş sayfasının ilk karesidir. Seçim md'ye değil `scene.json → agents[].sprite`'a yazılır (görünüm
+  yerleşimdir, ekip tanımı değil). Liste `sprites[]`'tır; dışındaki ad 400 `agent.unknown_sprite`. Aynı karakteri iki
+  ajan seçebilir (kullanıcının kararı; seçici kimin kullandığını gösterir); "otomatik" kullanılmayan ilk karakteri verir.
 
 | Ajan | Ne yapar | Kod mu prompt mu |
 |---|---|---|
@@ -66,7 +70,9 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
   sırlar kurulumda kullanıcıdan alınır, **sunucuda** birleştirilir (`McpCatalogBuilder`), veritabanına yazılır. Yüklenirken
   denetlenir: bilinmeyen alana başvuran şablon ve **sır alanını argümana/adrese yazan** seçenek reddedilir (argüman yanıtta açık döner).
 - İlk katalog (kaynaklar resmi belgelerden doğrulandı, `docsUrl`): **Figma** (PAT · OAuth belirteci · masaüstü Dev Mode ·
-  uzak OAuth *henüz yok*), **Jira** (Rovo MCP: e-posta+API token Basic · servis anahtarı Bearer · OAuth *henüz yok*;
+  uzak OAuth *henüz yok*), **Bitbucket** (Rovo MCP: e-posta+API token Basic · servis anahtarı Bearer (Bitbucket için
+  doğrulanmadı) · OAuth *henüz yok*; yerel Cloud e-posta+token; Server/DC HTTP erişim belirteci; Server/DC parola ve Cloud
+  uygulama parolası *henüz yok* — ilki npm'de yayımlı değil, ikincisini Atlassian Haziran 2026'da kaldırdı), **Jira** (Rovo MCP: e-posta+API token Basic · servis anahtarı Bearer · OAuth *henüz yok*;
   mcp-atlassian: Cloud e-posta+token · Server/DC PAT · Server/DC kullanıcı+parola), **Slack** (xoxp · xoxb · xoxc+xoxd ·
   resmi OAuth *henüz yok*), önerilen üç resmi sunucu: **GitHub** (uzak PAT · Docker · GHES), **Playwright** (Microsoft; görünmez /
   görünür tarayıcı), **Context7** (Upstash; güncel kütüphane dokümanı). Seçim gerekçesi: ofis kod yazıp test eden bir ekip —

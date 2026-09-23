@@ -17,7 +17,9 @@ public sealed record AgentListItem(
     IReadOnlyList<string> Includes,
     string? CanAsk,
     /// <summary>Yetkili MCP sunuculari (docs/DOMAIN.md → MCP sunuculari). Sona eklendi (CLAUDE.md §5).</summary>
-    IReadOnlyList<string>? Mcp = null);
+    IReadOnlyList<string>? Mcp = null,
+    /// <summary>Sahnedeki karakteri (<c>scene.json → agents[].sprite</c>); sahnede yoksa null. Sona eklendi.</summary>
+    string? Sprite = null);
 
 public sealed record AgentDetail(
     string Key,
@@ -32,7 +34,9 @@ public sealed record AgentDetail(
     string Prompt,
     string ComposedPrompt,
     /// <summary>Yetkili MCP sunuculari. Sona eklendi (CLAUDE.md §5).</summary>
-    IReadOnlyList<string>? Mcp = null);
+    IReadOnlyList<string>? Mcp = null,
+    /// <summary>Sahnedeki karakteri. Sona eklendi.</summary>
+    string? Sprite = null);
 
 /// <summary>
 /// PUT govdesi; anahtar yoldan gelir. TUM alanlar tasinir: eksik/null liste ya da metin 400 <c>request.invalid</c>
@@ -40,6 +44,8 @@ public sealed record AgentDetail(
 /// <see cref="CanAsk"/> icin gecerlidir ve "yok / varsayilan" demektir; kismi guncelleme yoktur.
 /// <see cref="Provider"/> metin gelir ki bilinmeyen deger JSON hatasi degil <c>agent.invalid_provider</c> olsun.
 /// <see cref="Mcp"/> sonradan eklendi: null = mevcut yetkiler KORUNUR (alani bilmeyen istemci yetkiyi silmesin), [] = hepsi kalkar.
+/// <see cref="Sprite"/>: sahnedeki karakter (<c>scene.json → sprites[]</c>'ten biri); null = korunur, yeni ajanda bos ilk karakter.
+/// Md'ye degil sahne yerlesimine yazilir.
 /// </summary>
 public sealed record UpdateAgentRequest(
     string Name,
@@ -51,7 +57,8 @@ public sealed record UpdateAgentRequest(
     string? CanAsk,
     string Prompt,
     string? Effort = null,
-    IReadOnlyList<string>? Mcp = null);
+    IReadOnlyList<string>? Mcp = null,
+    string? Sprite = null);
 
 /// <summary>POST govdesi: <see cref="UpdateAgentRequest"/> + anahtar.</summary>
 public sealed record CreateAgentRequest(
@@ -65,7 +72,8 @@ public sealed record CreateAgentRequest(
     string? CanAsk,
     string Prompt,
     string? Effort = null,
-    IReadOnlyList<string>? Mcp = null);
+    IReadOnlyList<string>? Mcp = null,
+    string? Sprite = null);
 
 public sealed record KnowledgeItem(string Key, string Title, string Body);
 
@@ -114,13 +122,15 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
     public async Task<IReadOnlyList<AgentListItem>> ListAsync(CancellationToken ct)
     {
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
-        return team.Agents.Values.OrderBy(a => a.Key, StringComparer.Ordinal).Select(ToItem).ToList();
+        var sprites = await SpritesAsync(ct).ConfigureAwait(false);
+        return team.Agents.Values.OrderBy(a => a.Key, StringComparer.Ordinal).Select(a => ToItem(a, sprites.GetValueOrDefault(a.Key))).ToList();
     }
 
     public async Task<AgentDetail> GetAsync(string key, CancellationToken ct)
     {
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
-        return ToDetail(Find(team, key), team);
+        var agent = Find(team, key);
+        return ToDetail(agent, team, (await SpritesAsync(ct).ConfigureAwait(false)).GetValueOrDefault(agent.Key));
     }
 
     public async Task<AgentDetail> CreateAsync(CreateAgentRequest request, CancellationToken ct)
@@ -136,12 +146,14 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         var agent = Compose(
             new Agent(key, key, "", [], null, null, [], null, ""),
             new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort, request.Mcp));
+        // Karakter once denetlenir: bilinmeyen sprite md yazilmadan reddedilsin (yarim ajan kalmasin).
+        await RequireKnownSpriteAsync(request.Sprite, ct).ConfigureAwait(false);
         var detail = await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
 
-        // Sahne: bos sprite + bos masa (yoksa ziyaretci). Ekip md'si yazildiktan sonra; yerlesim hatasi ajani geri almaz.
-        await scene.UpsertAgentAsync(agent.Key, agent.Name, ct).ConfigureAwait(false);
+        // Sahne: secilen ya da bos ilk sprite + bos masa (yoksa ziyaretci). Ekip md'si yazildiktan sonra.
+        await scene.UpsertAgentAsync(agent.Key, agent.Name, ct, Blank(request.Sprite)).ConfigureAwait(false);
         PublishReload($"ajan eklendi: {agent.Key}");
-        return detail;
+        return detail with { Sprite = (await SpritesAsync(ct).ConfigureAwait(false)).GetValueOrDefault(agent.Key) };
     }
 
     public async Task<AgentDetail> UpdateAsync(string key, UpdateAgentRequest request, CancellationToken ct)
@@ -149,16 +161,17 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         ArgumentNullException.ThrowIfNull(request);
         var team = await store.LoadTeamAsync(ct).ConfigureAwait(false);
         var current = Find(team, key);
+        await RequireKnownSpriteAsync(request.Sprite, ct).ConfigureAwait(false);
         var detail = await SaveValidatedAsync(team, Compose(current, request), ct).ConfigureAwait(false);
 
         // Kosulsuz: sahne kaydi turetilmis durumdur. Ekipte olup sahnede olmayan bir ajan (md dosyasi elle
         // eklenmisse boyle olur) her kayitta kendiliginden yerlesir; hicbir sey degismediyse dosya yazilmaz.
-        if (await scene.UpsertAgentAsync(key, detail.Name, ct).ConfigureAwait(false))
+        if (await scene.UpsertAgentAsync(key, detail.Name, ct, Blank(request.Sprite)).ConfigureAwait(false))
         {
             PublishReload($"ajan sahne kaydi guncellendi: {key}");
         }
 
-        return detail;
+        return detail with { Sprite = (await SpritesAsync(ct).ConfigureAwait(false)).GetValueOrDefault(key) };
     }
 
     public async Task DeleteAsync(string key, CancellationToken ct)
@@ -297,6 +310,35 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         }
     }
 
+    private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    /// <summary>Sahne okunamiyorsa (dosya yok/bozuk) ajan listesi yine doner: karakter bilgisi yerlesimin, ekibin degil.</summary>
+    private async Task<IReadOnlyDictionary<string, string>> SpritesAsync(CancellationToken ct)
+    {
+        try
+        {
+            return (await scene.SpritesAsync(ct).ConfigureAwait(false)).ByAgent;
+        }
+        catch (DomainException)
+        {
+            return new Dictionary<string, string>();
+        }
+    }
+
+    private async Task RequireKnownSpriteAsync(string? sprite, CancellationToken ct)
+    {
+        if (Blank(sprite) is not { } s)
+        {
+            return;
+        }
+
+        var available = (await scene.SpritesAsync(ct).ConfigureAwait(false)).Available;
+        if (!available.Contains(s, StringComparer.Ordinal))
+        {
+            throw new DomainException(ErrorCodes.AgentUnknownSprite, $"'{s}' diye bir karakter yok ({string.Join(", ", available)}).");
+        }
+    }
+
     private static Agent Find(Team team, string key)
     {
         if (!Identifiers.IsValidKey(key))
@@ -309,9 +351,9 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
             : throw new NotFoundException(ErrorCodes.AgentNotFound, $"Ajan yok: '{key}'.");
     }
 
-    private static AgentListItem ToItem(Agent a)
-        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.McpServers);
+    private static AgentListItem ToItem(Agent a, string? sprite)
+        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.McpServers, sprite);
 
-    private static AgentDetail ToDetail(Agent a, Team team)
-        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge), a.McpServers);
+    private static AgentDetail ToDetail(Agent a, Team team, string? sprite = null)
+        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge), a.McpServers, sprite);
 }

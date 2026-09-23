@@ -42,6 +42,8 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
   "officeRoles": ["dev"], "provider": "anthropic", "model": "claude-opus-5", "effort": "high",
   "includes": ["mimari-kurallar", "kodlama-standartlari"], "canAsk": "manager" }
 
+// AgentListItem.sprite / AgentDetail.sprite: ofisteki karakter (scene.json). PUT/POST'ta null = korunur / otomatik;
+// sprites[] dışındaki ad 400 agent.unknown_sprite.
 // AgentListItem.mcp: yetkili MCP sunucuları (frontmatter `mcp`). PUT'ta yoksa/null → korunur, [] → hepsi kalkar.
 // AgentDetail = AgentListItem + { "prompt": "…", "composedPrompt": "…" }
 // PUT gövdesi = AgentDetail eksi composedPrompt (key yoldan gelir)

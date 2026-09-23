@@ -74,6 +74,9 @@ public static class ErrorCodes
     /// <summary>Projenin toplam butcesi asildi; yeni tur baslamaz (docs/DOMAIN.md → Butce ve limit).</summary>
     public const string ProjectBudgetExceeded = "project.budget_exceeded";
 
+    /// <summary>Secilen karakter sprite'i sahnenin <c>sprites[]</c> listesinde yok.</summary>
+    public const string AgentUnknownSprite = "agent.unknown_sprite";
+
     /// <summary>Ajan md'sindeki <c>mcp</c> listesinde kayitli olmayan bir MCP sunucusu var.</summary>
     public const string AgentUnknownMcp = "agent.unknown_mcp";
 

@@ -19,28 +19,38 @@ public sealed class JsonSceneLayoutStore(StoragePaths paths) : ISceneLayout
 
     private string File => paths.ConfigFile("scene.json");
 
-    public async Task<bool> UpsertAgentAsync(string key, string name, CancellationToken ct)
+    public async Task<bool> UpsertAgentAsync(string key, string name, CancellationToken ct, string? sprite = null)
     {
         var root = await ReadAsync(ct).ConfigureAwait(false);
         var agents = root["agents"] as JsonArray ?? throw new DomainException(ErrorCodes.ConfigFileInvalid, "scene.json: 'agents' dizisi yok.");
+        var sprites = SpriteList(root);
+        if (sprite is not null && !sprites.Contains(sprite, StringComparer.Ordinal))
+        {
+            throw new DomainException(ErrorCodes.AgentUnknownSprite, $"'{sprite}' diye bir karakter yok ({string.Join(", ", sprites)}).");
+        }
 
         var existing = agents.OfType<JsonObject>().FirstOrDefault(a => a["key"]?.GetValue<string>() == key);
         if (existing is not null)
         {
-            // Ad da ayniysa yazma: her ajan kaydinda scene.json'i bosuna degistirmeyelim.
-            if (existing["name"]?.GetValue<string>() == name)
+            // Ad ve karakter ayniysa yazma: her ajan kaydinda scene.json'i bosuna degistirmeyelim.
+            var spriteChanged = sprite is not null && existing["sprite"]?.GetValue<string>() != sprite;
+            if (existing["name"]?.GetValue<string>() == name && !spriteChanged)
             {
                 return false;
             }
 
             existing["name"] = name;
+            if (spriteChanged)
+            {
+                existing["sprite"] = sprite;
+            }
+
             await WriteAsync(root, ct).ConfigureAwait(false);
             return true;
         }
 
         var used = agents.OfType<JsonObject>().Select(a => a["sprite"]?.GetValue<string>() ?? "").ToHashSet(StringComparer.Ordinal);
-        var sprites = (root["sprites"] as JsonArray)?.Select(s => s?.GetValue<string>() ?? "").Where(s => s.Length > 0).ToList() ?? [.. FallbackSprites];
-        var sprite = sprites.FirstOrDefault(s => !used.Contains(s)) ?? sprites[agents.Count % Math.Max(1, sprites.Count)];
+        sprite ??= sprites.FirstOrDefault(s => !used.Contains(s)) ?? sprites[agents.Count % Math.Max(1, sprites.Count)];
 
         var takenSeats = agents.OfType<JsonObject>().Select(a => a["home"]?["seat"]?.GetValue<string>()).Where(s => s is not null).ToHashSet(StringComparer.Ordinal);
         var seat = (root["seats"] as JsonObject)?.Select(kv => kv.Key).FirstOrDefault(s => !takenSeats.Contains(s));
@@ -55,6 +65,24 @@ public sealed class JsonSceneLayoutStore(StoragePaths paths) : ISceneLayout
         await WriteAsync(root, ct).ConfigureAwait(false);
         return true;
     }
+
+    public async Task<SceneSprites> SpritesAsync(CancellationToken ct)
+    {
+        var root = await ReadAsync(ct).ConfigureAwait(false);
+        var byAgent = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var a in (root["agents"] as JsonArray)?.OfType<JsonObject>() ?? [])
+        {
+            if (a["key"]?.GetValue<string>() is { } k && a["sprite"]?.GetValue<string>() is { } s)
+            {
+                byAgent[k] = s;
+            }
+        }
+
+        return new SceneSprites(SpriteList(root), byAgent);
+    }
+
+    private static List<string> SpriteList(JsonObject root)
+        => (root["sprites"] as JsonArray)?.Select(s => s?.GetValue<string>() ?? "").Where(s => s.Length > 0).ToList() ?? [.. FallbackSprites];
 
     public async Task RemoveAgentAsync(string key, CancellationToken ct)
     {

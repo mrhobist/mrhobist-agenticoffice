@@ -15,6 +15,7 @@ const MESSAGES: Record<string, string> = {
   'agent.invalid_effort': 'Efor geçersiz: low, medium, high ya da max olmalı.',
   'agent.exists': 'Bu anahtarla bir ajan zaten var.',
   'agent.in_use': 'Ajan bir iş akışında ya da başka bir ajanın "Sorabilir" alanında kullanılıyor; önce oradan çıkarın.',
+  'agent.unknown_sprite': 'Seçilen karakter sahnenin karakter listesinde yok.',
   'agent.unknown_mcp': 'Seçilen MCP sunucularından biri kayıtlı değil.',
   'agent.mcp_unsupported': 'Bu ajanın sağlayıcısı MCP araçlarını çalıştıramıyor; MCP yetkisi yalnız Anthropic (Claude) ajanlarına verilebilir.',
 

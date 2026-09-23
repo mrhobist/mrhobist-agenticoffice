@@ -35,6 +35,13 @@ const adding = ref(false)
 const nKey = ref(''); const nName = ref(''); const nSummary = ref(''); const nRoles = ref<string[]>(['dev'])
 const nProvider = ref<Provider | ''>(''); const nModel = ref(''); const nEffort = ref<Effort | ''>(''); const nCanAsk = ref(''); const nIncludes = ref<string[]>([])
 const nPrompt = ref('')
+/** Ofisteki karakter; null = otomatik (kullanilmayan ilk karakter). */
+const nSprite = ref<string | null>(null)
+const spriteUsers = computed<Record<string, string[]>>(() => {
+  const map: Record<string, string[]> = {}
+  for (const a of props.agents ?? []) if (a.sprite) (map[a.sprite] ??= []).push(a.name)
+  return map
+})
 const addBusy = ref(false)
 const addError = ref<string | null>(null)
 function slug(s: string): string { return s.toLowerCase().replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's').replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c').replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') }
@@ -50,10 +57,10 @@ async function addAgent() {
     await api.post('/api/v1/agents', {
       key: nKey.value.trim(), name: nName.value.trim(), summary: nSummary.value.trim(), officeRoles: nRoles.value,
       provider: nProvider.value || null, model: nModel.value.trim() || null, effort: nEffort.value || null,
-      includes: nIncludes.value, canAsk: nCanAsk.value || null, prompt: nPrompt.value.trim(),
+      includes: nIncludes.value, canAsk: nCanAsk.value || null, prompt: nPrompt.value.trim(), sprite: nSprite.value,
     })
     adding.value = false
-    nKey.value = ''; nName.value = ''; nSummary.value = ''; nRoles.value = ['dev']; nProvider.value = ''; nModel.value = ''; nEffort.value = ''; nCanAsk.value = ''; nIncludes.value = []; nPrompt.value = ''
+    nKey.value = ''; nName.value = ''; nSummary.value = ''; nRoles.value = ['dev']; nProvider.value = ''; nModel.value = ''; nEffort.value = ''; nCanAsk.value = ''; nIncludes.value = []; nPrompt.value = ''; nSprite.value = null
     emit('changed')
   } catch (e) {
     addError.value = errorText(e)
@@ -321,6 +328,10 @@ onMounted(() => { void loadKnowledge(); void loadWorkflows() })
           <div class="row">
             <div class="field"><label class="lbl" for="n-name">Ad</label><input id="n-name" v-model="nName" type="text" required placeholder="Örn. Veri Mühendisi"></div>
             <div class="field"><label class="lbl" for="n-key">Anahtar</label><input id="n-key" v-model="nKey" type="text" required pattern="[a-z0-9][a-z0-9_\-]*" placeholder="veri-muhendisi"></div>
+          </div>
+          <div class="field">
+            <span class="lbl">Karakter <span class="sub">(ofisteki görünümü)</span></span>
+            <SpritePicker v-model="nSprite" :used-by="spriteUsers" allow-auto />
           </div>
           <div class="field"><label class="lbl" for="n-sum">Özet</label><input id="n-sum" v-model="nSummary" type="text" required placeholder="Ne yapar, tek cümle"></div>
           <div class="field">

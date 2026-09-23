@@ -34,6 +34,25 @@ public sealed class SceneLayoutTests : IDisposable
         // olarak tekrar kullanilir, masa kalmayinca ajan "ziyaretci" olur (docs/SCENE.md → Ajan yerlesimi).
     }
 
+    /// <summary>Kullanici istegi 2026-09-23: ekipteki karakterin gorunumu secilsin. Secim yazilir, null korur, bilinmeyen reddedilir.</summary>
+    [Fact]
+    public async Task Karakter_secilir_bos_birakilinca_korunur_bilinmeyen_reddedilir()
+    {
+        var store = new JsonSceneLayoutStore(_fx.Paths);
+        var ct = CancellationToken.None;
+        var available = (await store.SpritesAsync(ct)).Available;
+        var pick = available[^1];
+
+        Assert.True(await store.UpsertAgentAsync("secen", "Seçen", ct, pick));          // yeni ajan secilen karakterle
+        Assert.Equal(pick, (await store.SpritesAsync(ct)).ByAgent["secen"]);
+        Assert.False(await store.UpsertAgentAsync("secen", "Seçen", ct));               // null: korunur, yazma yok
+        Assert.True(await store.UpsertAgentAsync("secen", "Seçen", ct, available[0]));  // degistirildi
+        Assert.Equal(available[0], (await store.SpritesAsync(ct)).ByAgent["secen"]);
+
+        var ex = await Assert.ThrowsAsync<Domain.DomainException>(() => store.UpsertAgentAsync("secen", "Seçen", ct, "yok-boyle"));
+        Assert.Equal(Domain.ErrorCodes.AgentUnknownSprite, ex.ErrorCode);
+    }
+
     [Fact]
     public async Task Yeni_ajan_bos_sprite_ve_bos_masa_alir_masa_bitince_ziyaretci_olur_silinince_duser()
     {

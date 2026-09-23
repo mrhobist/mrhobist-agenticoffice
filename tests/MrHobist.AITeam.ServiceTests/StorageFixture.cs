@@ -50,7 +50,12 @@ public sealed class StorageFixture : IDisposable
         _provider.Dispose();
 
         // Havuzdaki acik SQLite baglantilari kapatilmazsa .db dosyasi kilitli kalir ve gecici dizin silinmez.
-        SqliteConnection.ClearAllPools();
+        // YALNIZ bu fixture'in havuzu: ClearAllPools paralel kosan baska test sinifinin kullandigi baglantiyi da
+        // kapatiyordu (aralikli ObjectDisposedException, 2026-09-23). Baglanti dizesi DI'dakiyle ayni olmali.
+        using (var own = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Paths.DatabaseFile, ForeignKeys = true }.ToString()))
+        {
+            SqliteConnection.ClearPool(own);
+        }
 
         try
         {
