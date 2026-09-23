@@ -922,3 +922,4 @@ Bekleyen kaldıraçlar (öneri, sıralı): kesilen turun maliyetini de kaydet (�
 (~%6–7, kalite ölçülmedi) · görev başında önceki görevlerin dosya/imza özeti (tekrar okumayı keser, ~%6) · "bağlayıcı
 kurallar"ı göreve indir (~%3) · işe göre tek bilgi dosyası (~%1, bağlam temizliği). Değişmesi gerekmeyen: maxTurns,
 compactor, build/test çıktı kırpma (israf döngüsü yok).
+
