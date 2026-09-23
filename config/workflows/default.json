@@ -1,32 +1,24 @@
 {
-  "_comment": "Varsayılan akış. Bir çalışma akış seçmezse bunu kullanır; silinemez. kind: analyze (bir kez, görev grafiğini üretir) | design (rehberlik üretir, kod yazmaz) | implement (kod yazar) | review (denetler, reddederse önceki implement adımına döner) | handoff (devir notu, bloklamaz). handoffRole: her adım geçişinde devir notu üreten ajan (organizatör); null = devir notu yok. role: config/agents/ altındaki bir ajan anahtarı.",
-  "title": "Tek kişi",
-  "maxReviewRounds": 3,
-  "handoffRole": "organizer",
+  "_comment": "Varsayılan akış. Bir çalışma akış seçmezse bunu kullanır; silinemez. kind: analyze (bir kez, görev grafiğini üretir) | design (rehberlik üretir, kod yazmaz) | implement (kod yazar) | review (denetler, reddederse önceki implement adımına döner) | handoff (devir notu, bloklamaz). handoffRole: her adım geçişinde devir notu üreten ajan (organizatör); null = devir notu yok. role: config/agents/ altındaki bir ajan anahtarı. 2026-09-23: eski ekip (10 ajan, 5 akış) test fikstürüne taşındı; yedek data/backup/config-20260923-111925.",
+  "title": "Tek Kişilik Dev Kadro",
+  "maxReviewRounds": 1,
+  "handoffRole": null,
   "stages": [
     {
       "id": "analiz",
       "title": "Analiz",
       "kind": "analyze",
-      "role": "analist-developer",
+      "role": "tek-kisilik-dev-kadro",
       "officeRole": "pm",
-      "description": "Brief plana çevrilir."
+      "description": "Asgari plan, tek görev."
     },
     {
       "id": "gelistirme",
       "title": "Geliştirme",
       "kind": "implement",
-      "role": "analist-developer",
+      "role": "tek-kisilik-dev-kadro",
       "officeRole": "dev",
-      "description": "Kendi planını uygular."
-    },
-    {
-      "id": "test",
-      "title": "Test",
-      "kind": "review",
-      "role": "analist-developer",
-      "officeRole": "qa",
-      "description": "Kendi işini denetler; red → geliştirmeye döner."
+      "description": "Yaz, çalıştır, doğrula, bitir."
     }
   ],
   "askRole": "user",

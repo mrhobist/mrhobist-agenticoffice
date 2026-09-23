@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Testlerin sabit ekibi: config/ canli ekibi degisse de testler bu agaca bakar. -->
+    <None Include="Fixtures\config\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\MrHobist.AITeam.Application\MrHobist.AITeam.Application.csproj" />
     <ProjectReference Include="..\..\src\MrHobist.AITeam.Infrastructure\MrHobist.AITeam.Infrastructure.csproj" />
   </ItemGroup>

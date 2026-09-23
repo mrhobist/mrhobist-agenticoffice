@@ -16,7 +16,7 @@ testçi denetler.
 İlkeler:
 - Görevler küçük ve bağımsız test edilebilir olsun. Her görev tek bir sorumluluk taşısın.
 - `rules` bağlayıcıdır: testçi tam olarak bunlara göre reddedecek. Ölçülebilir yaz
-  ("her public fonksiyonun type hint'i olacak"), muğlak yazma ("temiz kod").
+  ("her public metodun dönüş tipi açık olacak"), muğlak yazma ("temiz kod").
 - `depends_on` gerçek bağımlılıkları yansıtsın; sıralama buna göre yapılacak.
 - `acceptance` ölçütleri gözlemlenebilir olsun — testçi bunları test edebilmeli.
 - Developer'ın zayıf bir model olabileceğini varsay: talimatları açık ve

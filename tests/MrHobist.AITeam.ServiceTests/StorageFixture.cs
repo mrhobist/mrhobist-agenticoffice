@@ -7,8 +7,9 @@ using MrHobist.AITeam.Infrastructure.Storage;
 namespace MrHobist.AITeam.ServiceTests;
 
 /// <summary>
-/// Her test kendi gecici calisma alanini alir: gercek <c>config/</c> agaci kopyalanir (ajan md'leri, bilgi,
-/// akislar, sahne) ve yaninda BOS bir SQLite veritabani kurulur. Sema, uretimdeki yoldan uygulanir --
+/// Her test kendi gecici calisma alanini alir: testlerin sabit <c>Fixtures/config/</c> agaci kopyalanir (ajan
+/// md'leri, bilgi, akislar, sahne). Canli <c>config/</c> degil: kullanicinin ekibi (2026-09-23'ten beri tek ajan)
+/// degistikce testler kirilmasin diye eski tam ekip burada sabit durur ve yaninda BOS bir SQLite veritabani kurulur. Sema, uretimdeki yoldan uygulanir --
 /// yani test "sema betikleri + EF eslemesi" ciftini de dogrular (drift testi, ARCHITECTURE.md §8.5).
 /// Depolar elle degil DI'dan alinir: kayit yanlissa test de patlar.
 /// </summary>
@@ -18,7 +19,7 @@ public sealed class StorageFixture : IDisposable
 
     public StorageFixture()
     {
-        var repoConfig = StoragePaths.Discover(AppContext.BaseDirectory).ConfigRoot;
+        var repoConfig = Path.Combine(AppContext.BaseDirectory, "Fixtures", "config");
         Root = Path.Combine(Path.GetTempPath(), "aiteam-tests", Guid.NewGuid().ToString("N"));
         var config = Path.Combine(Root, "config");
         CopyTree(repoConfig, config);

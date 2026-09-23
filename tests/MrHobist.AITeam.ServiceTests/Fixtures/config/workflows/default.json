@@ -1,0 +1,34 @@
+{
+  "_comment": "Varsayılan akış. Bir çalışma akış seçmezse bunu kullanır; silinemez. kind: analyze (bir kez, görev grafiğini üretir) | design (rehberlik üretir, kod yazmaz) | implement (kod yazar) | review (denetler, reddederse önceki implement adımına döner) | handoff (devir notu, bloklamaz). handoffRole: her adım geçişinde devir notu üreten ajan (organizatör); null = devir notu yok. role: config/agents/ altındaki bir ajan anahtarı.",
+  "title": "Tek kişi",
+  "maxReviewRounds": 3,
+  "handoffRole": "organizer",
+  "stages": [
+    {
+      "id": "analiz",
+      "title": "Analiz",
+      "kind": "analyze",
+      "role": "analist-developer",
+      "officeRole": "pm",
+      "description": "Brief plana çevrilir."
+    },
+    {
+      "id": "gelistirme",
+      "title": "Geliştirme",
+      "kind": "implement",
+      "role": "analist-developer",
+      "officeRole": "dev",
+      "description": "Kendi planını uygular."
+    },
+    {
+      "id": "test",
+      "title": "Test",
+      "kind": "review",
+      "role": "analist-developer",
+      "officeRole": "qa",
+      "description": "Kendi işini denetler; red → geliştirmeye döner."
+    }
+  ],
+  "askRole": "user",
+  "planApprover": "auto"
+}

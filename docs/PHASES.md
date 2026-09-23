@@ -846,3 +846,26 @@ kendiliğinden sürer. **Bu yüzden üç ölçüm de bekliyor:**
 
 Kod tarafı bitti ve testlerle bağlandı: **38 birim + 98 servis + 47 Python** (main ile birleştikten sonra, Windows), `verify.ps1` tüm
 adımlarda geçiyor.
+
+## Ekip sıfırlandı: tek kişilik dev kadro (2026-09-23, kullanıcı kararı) ✅
+
+Canlı `config/`'ta yalnız bir ajan ve iki ek bilgi kaldı: `tek-kisilik-dev-kadro` (eski `solo`'nun Claude Code
+gibi çalışan hâli; analist + developer, `office_roles: [pm, dev]`) ve `backend-developer` (kurumun referans
+backend deseni) + `frontend-developer-nuxt` (referans Nuxt panel deseni + `kurallar.py` denetimi grep olarak).
+Kurum ve ürün adları yer tutucudur (`<Urun>`, `<Kok>`): yerel pre-commit koruması kurum izini reddeder, ajan gerçek adları hedef koddan okur.
+`default` akışı iki adım (analiz → geliştirme), `handoffRole: null`. Sahnede tek ajan.
+
+**Eski ekip silinmedi, taşındı:** 10 ajan, 5 akış, 5 bilgi dosyası `tests/MrHobist.AITeam.ServiceTests/Fixtures/config/`
+altında testlerin sabit ekibi oldu — `StorageFixture` artık canlı `config/`'u değil bunu kopyalar. Sebep: servis
+testleri manager/tam-kadro/tasarimli'ye bağlıydı; kullanıcı ekibi değiştirdikçe testler kırılmamalı. Canlı config
+için ayrı `LiveConfigTests`: yalnız çözülebilirliği denetler (akış rolleri ve `includes` var mı), içeriği değil.
+Tam yedek ayrıca `data/backup/config-20260923-111925/` (git dışı).
+
+**Veri de temizlendi:** 11 çalışma ve 10 deneme projesi silindi (hedef dizinlerdeki dosyalara dokunulmadı);
+öncesi `data/backup/aiteam-20260923-*.db`.
+
+**Hook notu:** hedef projenin `.claude/settings.json` hook'ları ofis ajanlarında çalışmaz (runtime `setting_sources`
+vermiyor); bu yüzden frontend bilgisi denetimi ajanın kendisinin koşacağı tek `grep` olarak taşır.
+
+**Doğrulama:** 38 birim + 99 servis testi (yeni `LiveConfigTests` dahil) geçti; Api canlı config'le hatasız kalkıyor.
+

@@ -647,11 +647,83 @@
   ],
   "agents": [
     {
-      "key": "tek-kisilik-dev-kadro",
-      "name": "Tek Kişilik Dev Kadro",
-      "sprite": "hipster",
+      "key": "analyst",
+      "name": "Analist",
+      "sprite": "shirt-tie",
       "home": {
         "seat": "deskA-left"
+      }
+    },
+    {
+      "key": "designer",
+      "name": "Tasarımcı",
+      "sprite": "ponytail",
+      "home": {
+        "seat": "deskA-right"
+      }
+    },
+    {
+      "key": "tester",
+      "name": "Testçi",
+      "sprite": "bun",
+      "home": {
+        "seat": "deskB-left"
+      }
+    },
+    {
+      "key": "developer",
+      "name": "Developer",
+      "sprite": "green-hoodie",
+      "home": {
+        "seat": "deskB-right"
+      }
+    },
+    {
+      "key": "manager",
+      "name": "Manager",
+      "sprite": "blond-maroon",
+      "home": {
+        "seat": "meeting"
+      }
+    },
+    {
+      "key": "organizer",
+      "name": "Organizatör",
+      "sprite": "curly-yellow",
+      "home": {
+        "spot": "board"
+      }
+    },
+    {
+      "key": "analist-developer",
+      "name": "Analist-Developer",
+      "sprite": "hipster",
+      "home": {
+        "seat": "deskC-left"
+      }
+    },
+    {
+      "key": "analist-tasarimci",
+      "name": "Analist-Tasarımcı",
+      "sprite": "blue-hoodie",
+      "home": {
+        "seat": "deskC-right"
+      }
+    },
+    {
+      "key": "developer-testci",
+      "name": "Developer-Testçi",
+      "sprite": "shirt-tie",
+      "home": {
+        "seat": "deskD-left"
+      }
+    },
+    {
+      "key": "solo",
+      "name": "Solo",
+      "sprite": "green-hoodie",
+      "home": {
+        "seat": "deskD-right"
       }
     }
   ],

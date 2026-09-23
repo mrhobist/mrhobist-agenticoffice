@@ -1,7 +1,8 @@
 # MrHobist.AITeam
 
-Yapay zekâ ekibi üretim ofisi. Altı rol (analist · tasarımcı · developer · testçi · manager ·
-organizatör) bir brief'i alıp kod üretir; akış 2B piksel bir ofiste canlı izlenir.
+Yapay zekâ ekibi üretim ofisi. Ekip (`config/agents` + `config/workflows`) bir brief'i alıp kod üretir;
+akış 2B piksel bir ofiste canlı izlenir. Canlı ekip 2026-09-23'ten beri tek ajan (`tek-kisilik-dev-kadro`);
+eski altı rollü ekip testlerin sabit fikstürüdür (`tests/…ServiceTests/Fixtures/config/`).
 
 | Klasör | Ne | Port |
 |---|---|---|
