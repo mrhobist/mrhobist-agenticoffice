@@ -904,3 +904,21 @@ iş Failed → "Yeniden dene"). Ajan t1'i yine de bitirmişti: diskte build temi
   limit) yeniden koşarken ajana "DEVAM: baştan yazma, durumu çıkar, eksikleri tamamla" notu gider. Aynı turu iki kez ödememek için.
 - Test: hareketsiz tur zaman aşımına düşer → Failed/Timeout → Yeniden dene DEVAM notuyla tamamlanır; kesilmeyen görev notsuz.
 
+### Token maliyeti analizi (alt ajan, 2026-09-23) — backend koşusu
+
+Görevden göreve artış **birikme değil işin kendisi**: geçmiş taşınmıyor (kullanıcı istemi görev başına ~21–25K karakter
+sabit). t1→t2 artışının %80'i çıktı (yazılan kod + düşünme); t1 yalnız doğrulamaydı. Maliyet payı: önbellek YAZMA %45,
+çıktı %39, önbellek okuma %16 (Opus 5.5: okuma 0,20 · yazma(1 sa) 8 · çıktı 20 $/M, satırlardan türetildi).
+**Gizli maliyet:** kesilen ilk t1 denemesi 3,07 $ harcadı, `run_turn`'e yazılmadı → gerçek toplam **~11,1 $** (kayıtlı 8,04).
+
+**Asıl israf — alt süreç kullanıcının Claude Code ortamını devralıyordu:** runtime `setting_sources` / `strict_mcp_config`
+vermediği için CLI claude.ai MCP bağlayıcılarını (48 araç şeması ≈ 32K token/çağrı), kullanıcı ayarlarını ve CLAUDE.md'leri
+yüklüyordu; her görevde ~47K token yeniden önbelleğe yazılıyordu (~%18). Kullanıcının e-postası ve commit imza kuralı da
+ajan bağlamına sızıyordu. **Düzeltildi:** `setting_sources=[]`, `strict_mcp_config=True`, `ENABLE_CLAUDEAI_MCP_SERVERS=false`
+(runtime, test var). Frontend koşusu bittikten sonra runtime yeniden başlayınca devreye girer; ölçüm: çağrı 1'in okuduğu önek
+≈ çağrı 0 bağlamı olmalı.
+
+Bekleyen kaldıraçlar (öneri, sıralı): kesilen turun maliyetini de kaydet (§4 deliniyordu) · geliştirmede effort high→medium
+(~%6–7, kalite ölçülmedi) · görev başında önceki görevlerin dosya/imza özeti (tekrar okumayı keser, ~%6) · "bağlayıcı
+kurallar"ı göreve indir (~%3) · işe göre tek bilgi dosyası (~%1, bağlam temizliği). Değişmesi gerekmeyen: maxTurns,
+compactor, build/test çıktı kırpma (israf döngüsü yok).

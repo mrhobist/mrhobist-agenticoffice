@@ -270,6 +270,13 @@ class AnthropicProvider:
             ),
             "effort": request.reasoning_effort,
             "cli_path": self.cli,
+            # Alt surec kullanicinin Claude Code ortamini DEVRALMAZ (2026-09-23 olcumu): ayar/CLAUDE.md/hook
+            # kaynaklari ve claude.ai MCP baglayicilari (Docs, Figma...) kapali. Onceden cagri basina ~32K token MCP
+            # semasi geliyor, her gorevde ~47K yeniden onbellege yaziliyordu (~%18 maliyet); kullanicinin e-postasi ve
+            # commit imza kurali da ajanin baglamina siziyordu. Ajan hedef projenin CLAUDE.md'sini kendi araciyla okur.
+            "setting_sources": [],
+            "strict_mcp_config": True,
+            "env": {"ENABLE_CLAUDEAI_MCP_SERVERS": "false"},
         }
         if prompt_file:
             # Uzun istem komut satirina sigmaz (bkz. PROMPT_FILE_THRESHOLD): ayni metin dosyadan okunur.
@@ -300,7 +307,7 @@ class AnthropicProvider:
         key = credentials.api_key(PROVIDER_NAME)
         if key:
             # Kayitli API anahtari varsa CLI onu kullanir: fatura Anthropic Console'a, Claude Code oturumu devre disi.
-            opts["env"] = {"ANTHROPIC_API_KEY": key}
+            opts["env"] = {**opts["env"], "ANTHROPIC_API_KEY": key}
         return ClaudeAgentOptions(**opts)
 
     #: Dosya degistiren araclar: hedef yol cwd disindaysa reddedilir.

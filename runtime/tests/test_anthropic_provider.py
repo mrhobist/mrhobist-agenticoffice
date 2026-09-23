@@ -436,7 +436,7 @@ def test_apikey_girisi_dogrular_saklar_ve_oturumun_onune_gecer(monkeypatch, cli_
     st = p.auth(refresh=True)
     assert st.logged_in and st.method == "apikey" and st.account == "sk-…wxyz"
     opts = p._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m"}))
-    assert opts.env == {"ANTHROPIC_API_KEY": "sk-ant-test-1234wxyz"}
+    assert opts.env["ANTHROPIC_API_KEY"] == "sk-ant-test-1234wxyz"
     lim = p.limits(refresh=True)
     assert not lim.available and "fatura" in lim.detail
 
@@ -474,7 +474,14 @@ def test_uzun_istem_komut_satiri_yerine_dosyadan_verilir(cli_present):
 
 def test_apikey_yokken_options_env_tasimaz(cli_present):
     opts = AnthropicProvider()._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m"}))
-    assert not opts.env
+    assert "ANTHROPIC_API_KEY" not in opts.env
+
+
+def test_alt_surec_kullanici_ortamini_devralmaz(cli_present):
+    """2026-09-23: CLI kullanicinin ayarlarini ve claude.ai MCP baglayicilarini devraliyordu (~32K token/cagri, e-posta sizintisi)."""
+    opts = AnthropicProvider()._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m", "tools": ["Read"], "cwd": "."}))
+    assert opts.setting_sources == [] and opts.strict_mcp_config is True
+    assert opts.env["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
 
 
 def test_scope_nesneden_model_adi_cikarilir():
