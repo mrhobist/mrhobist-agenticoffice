@@ -61,7 +61,8 @@ public sealed class RunService(
     ISceneEventPublisher scene,
     IWorkspaceLocator workspace,
     IRunScheduler scheduler,
-    IHistoryCompactor? compactor = null) : IRunService
+    IHistoryCompactor? compactor = null,
+    IWorkspaceSnapshot? snapshots = null) : IRunService
 {
     private const string PlanRevisionSubject = "plan-revision";
 
@@ -668,6 +669,8 @@ public sealed class RunService(
             {
                 case StageKind.Implement:
                 {
+                    // Yazmadan ONCEKI hal: red tavaninda kullanici "geri al" derse donulecek nokta (ornek: opencode snapshot).
+                    var before = await (snapshots ?? new NoWorkspaceSnapshot()).TrackAsync(root, ct).ConfigureAwait(false);
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round), ct).ConfigureAwait(false);
                     var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
@@ -697,23 +700,25 @@ public sealed class RunService(
 
                         if (asked.Answered)
                         {
-                            await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis($"soru → {asked.Target}: {q}", 200), ct).ConfigureAwait(false);
+                            await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis($"soru → {asked.Target}: {q}", 200), ct, snapshot: before).ConfigureAwait(false);
                             break; // dagitici Failed → ayni adim; cevap notlar arasinda gider. Ust uste hata tavani asagida korur.
                         }
 
-                        await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis("soru: " + q, 200), ct).ConfigureAwait(false);
+                        await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis("soru: " + q, 200), ct, snapshot: before).ConfigureAwait(false);
                         var context = asked.EscalateReason is null ? body : $"{body}\n\n{asked.Target}: {asked.EscalateReason}";
                         return await AskUserAsync(run, a.Agent, q, Options("Cevapla ve yeniden dene", "Cevabın developer'a not olarak gider; görev aynı adımdan sürer.", "Bu adımı geç", "Elle hallettim ya da gerekmiyor: görev bir sonraki adıma geçer.", retryNeedsNote: true), a, context, ct).ConfigureAwait(false);
                     }
 
-                    await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Done, started, Ellipsis(report.Summary, 200), ct).ConfigureAwait(false);
+                    await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Done, started, Ellipsis(report.Summary, 200), ct, snapshot: before).ConfigureAwait(false);
                     PublishAgent(run, a.Agent, "done", Ellipsis(report.Summary, 40), a.Task.Id);
                     break;
                 }
 
                 case StageKind.Review:
                 {
-                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, round, wf.MaxReviewRounds), ct).ConfigureAwait(false);
+                    // Kapinin beklettiği uretici adim: hem istemi sekillendirir (kod mu, tasarim mi) hem de redde geri donus hedefi.
+                    var producer = wf.ProducerBefore(a.Stage);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, producer, round, wf.MaxReviewRounds), ct).ConfigureAwait(false);
                     var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
@@ -722,7 +727,7 @@ public sealed class RunService(
 
                     run = await AddCostAsync(run, reply, ct).ConfigureAwait(false);
                     var report = StepSchemas.ParseReview(reply.StructuredJson, reply.Text);
-                    var developer = wf.ProducerBefore(a.Stage).Role;
+                    var developer = producer.Role;
                     if (report.Accepted)
                     {
                         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, a.Agent, developer, $"Kabul ({a.Stage.Title}). {(report.TestsRun ? "Testler çalıştırıldı." : "Testler çalıştırılmadı.")} {report.Feedback}".Trim(), a.Task.Id, a.Stage.Id, Subject: "review-accept"), ct).ConfigureAwait(false);
@@ -741,7 +746,8 @@ public sealed class RunService(
                     {
                         // Red tavani (kapi basina sayilir, docs/DOMAIN.md → Geri donus kurali): kullaniciya sorulur.
                         var q = $"{a.Stage.Title} {round}. kez reddetti (tavan {wf.MaxReviewRounds}). Son bulgu: {Ellipsis((report.Findings.Count > 0 ? report.Findings[0] : report.Feedback), 160)}";
-                        return await AskUserAsync(run, a.Agent, q, Options("Bir tur daha", "Notunla birlikte developer'a geri gider; sonraki redde yine sorulur.", "Olduğu gibi kabul et", $"{a.Stage.Title} adımı geçilir; görev bir sonraki adıma geçer.", retryNeedsNote: false), a, feedback, ct).ConfigureAwait(false);
+                        var options = Options("Bir tur daha", "Notunla birlikte developer'a geri gider; sonraki redde yine sorulur.", "Olduğu gibi kabul et", $"{a.Stage.Title} adımı geçilir; görev bir sonraki adıma geçer.", retryNeedsNote: false);
+                        return await AskUserAsync(run, a.Agent, q, await WithRevertAsync(run, a.Task.Id, producer, options, ct).ConfigureAwait(false), a, feedback, ct).ConfigureAwait(false);
                     }
 
                     break;
@@ -814,9 +820,9 @@ public sealed class RunService(
         }
     }
 
-    private async Task ClosePhaseAsync(Run run, Workflow wf, Assignment a, int round, PhaseStatus status, DateTimeOffset started, string? detail, CancellationToken ct, PhaseCause? cause = null)
+    private async Task ClosePhaseAsync(Run run, Workflow wf, Assignment a, int round, PhaseStatus status, DateTimeOffset started, string? detail, CancellationToken ct, PhaseCause? cause = null, string? snapshot = null)
     {
-        var phase = new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, status, (DateTimeOffset.UtcNow - started).TotalSeconds, detail, cause);
+        var phase = new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, status, (DateTimeOffset.UtcNow - started).TotalSeconds, detail, cause, snapshot);
         await runs.AppendPhaseAsync(run.Id, phase, ct).ConfigureAwait(false);
 
         // Pano canli kalsin: faz kapaninca not hedef sutuna gecer (atamada yalniz "active" yayimlaniyordu; bitince yerinde kaliyordu).
@@ -946,6 +952,29 @@ public sealed class RunService(
     }
 
     /// <summary>Akis takildi: calisma <c>AwaitingInput</c>, soru calisma satirinda, kayit mesajlarda (ask, ref). Bildirim zili bunu gosterir.</summary>
+    /// <summary>
+    /// Geri alma secenegini yalniz DONULECEK BIR HAL varsa ekler: uretici adimin kaydedilmis anlik goruntusu yoksa
+    /// (git kurulu degil, ilk tur, kayit basarisiz) kullaniciya tutmayacagi bir soz verilmez. Seceneğin yeri iptalden
+    /// oncedir: "kapat" listenin sonunda kalir.
+    /// </summary>
+    private async Task<IReadOnlyList<QuestionOption>> WithRevertAsync(Run run, string taskId, Stage producer, IReadOnlyList<QuestionOption> options, CancellationToken ct)
+    {
+        var point = await LastSnapshotAsync(run.Id, taskId, producer.Id, ct).ConfigureAwait(false);
+        if (point is null)
+        {
+            return options;
+        }
+
+        var revert = new QuestionOption("revert", "Son turu geri al ve yeniden dene",
+            $"\"{producer.Title}\" adımının son turda yazdıkları SILINIR, dizin o turdan önceki haline döner; görev notunla birlikte o adımdan yeniden başlar.", NeedsNote: true);
+        return [.. options.Where(o => o.Id != "cancel"), revert, .. options.Where(o => o.Id == "cancel")];
+    }
+
+    /// <summary>Bir gorevin bir adimindaki son kaydedilmis calisma alani hali; yoksa null.</summary>
+    private async Task<string?> LastSnapshotAsync(string runId, string taskId, string stageId, CancellationToken ct)
+        => (await runs.ReadPhasesAsync(runId, taskId, ct).ConfigureAwait(false))
+            .LastOrDefault(p => p.Stage == stageId && !string.IsNullOrWhiteSpace(p.Snapshot))?.Snapshot;
+
     private async Task<Run> AskUserAsync(Run run, string agent, string text, IReadOnlyList<QuestionOption> options, Assignment a, string? context, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
@@ -995,6 +1024,25 @@ public sealed class RunService(
                     Publish(SceneEventTypes.BoardMove, new { task = q.Task, stage = stage.Id, state = "queued", run = run.Id });
                 }
 
+                break;
+            }
+
+            case "revert":
+            {
+                // YIKICI ve yalniz burada: kullanici acikca sectiginde calisir (bkz. IWorkspaceSnapshot).
+                // Sonrasi "retry" ile ayni: faz Rejected kaldigi icin dagitici zaten uretici adima doner.
+                var wf = await RequireWorkflowAsync(run.Id, ct).ConfigureAwait(false);
+                var gate = wf.Stages.FirstOrDefault(s => s.Id == q.Stage);
+                var producer = gate is null ? null : Workflow.ProducerBefore(wf.Stages, gate.Id);
+                var point = q.Task is null || producer is null ? null : await LastSnapshotAsync(run.Id, q.Task, producer.Id, ct).ConfigureAwait(false);
+                var root = await RootAsync(run, ct).ConfigureAwait(false);
+                var done = point is not null && await (snapshots ?? new NoWorkspaceSnapshot()).RestoreAsync(root, point, ct).ConfigureAwait(false);
+
+                // Basarisizsa calisma durmaz ama kullanici YANLIS bilgilenmesin: dizinin donmedigi ajana da yazilir.
+                var note = done
+                    ? $"Kullanıcı çalışma alanını \"{producer!.Title}\" adımının son turundan önceki haline döndürdü; o turda yazılanlar silindi."
+                    : "Kullanıcı geri almak istedi ama çalışma alanı döndürülemedi: dizin son turun bıraktığı hâlde. Dosyaların şu anki durumunu kendin kontrol et.";
+                await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, "user", producer?.Role ?? q.Agent, note, q.Task, producer?.Id ?? q.Stage, Subject: "revert"), ct).ConfigureAwait(false);
                 break;
             }
 

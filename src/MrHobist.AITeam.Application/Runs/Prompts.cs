@@ -151,19 +151,43 @@ public static class Prompts
         return sb.ToString();
     }
 
-    /// <summary>Testci / manager: kurallari denetler, testi kosar, kabul ya da gerekceli red.</summary>
-    public static string ReviewTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, Stage stage, int round, int maxRounds)
+    /// <summary>
+    /// Inceleme adimi. Istem, kapinin BEKLETTIGI URETICI adima gore sekillenir
+    /// (<see cref="Workflow.ProducerBefore(Stage)"/>): <c>implement</c> kapisinda ortada kod vardir, komutlar fiilen
+    /// kosulur; <c>design</c> kapisinda HENUZ KOD YOKTUR, degerlendirilen sey rehber metnidir.
+    ///
+    /// Tek istem ikisine birden uymuyordu: tasarim kapisindaki ajana "developer dosyalari yazdi, build'i kos"
+    /// deniyor, kosacak sey bulamiyor, sonra "supheyle reddet" talimatini uyguluyordu. Olculdu 2026-09-21:
+    /// tam-kadro ard arda 3 red verdi, $1.70 harcadi, tek satir kod uretmedi (docs/LESSONS.md).
+    /// Supheyle red yonu de kapiya baglidir: ARA kapida red bedava degil, bir tur daha maliyet demek ve
+    /// eksigi zaten sonraki test adimi yakalar; SON kapida ise hatali kodu gecirmek daha pahalidir.
+    /// </summary>
+    public static string ReviewTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, Stage stage, Stage producer, int round, int maxRounds)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(stage);
+        ArgumentNullException.ThrowIfNull(producer);
         var sb = TaskContext(spec, a, projectRoot, notes);
         sb.AppendLine($"# Yapılacak — {stage.Title} ({round}/{maxRounds}. tur)");
         sb.AppendLine(stage.Description);
-        sb.AppendLine("Developer dosyaları bu dizine yazdı. Read/Glob/Grep ile kodu oku; kabul ölçütlerindeki ve kurallardaki komutları Bash ile FİİLEN çalıştır (build, test, çalıştırma). Tahminle karar verme.");
-        sb.AppendLine("Gerekirse test dosyası yazabilirsin; uygulama kodunu DEĞİŞTİRME — düzeltme developer'ın işidir, feedback'e yaz.");
-        sb.AppendLine("Her kural ve kabul ölçütünü tek tek kontrol et. İhlal varsa verdict=reject ve findings'e yaz; feedback developer'a doğrudan gider: somut, adım adım.");
-        sb.AppendLine("Kozmetik tercih için reddetme. Şüphedeyken reddet. testsRun yalnız fiilen çalıştırdıysan true.");
+
+        if (producer.Kind == StageKind.Design)
+        {
+            sb.AppendLine($"Değerlendirdiğin şey KOD DEĞİL: \"{producer.Title}\" adımının ürettiği tasarım rehberi. Bu noktada dizinde henüz kod yok — build/test koşma, komut çalıştırma: commandsRun boş kalsın, testsRun=false.");
+            sb.AppendLine("Tek ölçüt şu: developer bu rehberle işe başlayıp TAHMİN ETMEDEN ilerleyebilir mi? Kabul ölçütlerinin her biri için rehberde bir karşılık var mı?");
+            sb.AppendLine("Şüphedeyken KABUL ET. Burası bir ARA kapı: eksik kalanı ilerideki test adımı zaten yakalar, ama her red bir tur daha maliyet demektir. Red yalnız developer'ı GERÇEKTEN tıkayan bir boşluk için doğrudur: çelişkili karar, ya da hiç karşılığı olmayan bir kabul ölçütü.");
+            sb.AppendLine($"RED verirsen iş \"{producer.Title}\" adımına döner ve feedback oraya gider: hangi kabul ölçütü karşılıksız, ne eklenmeli.");
+        }
+        else
+        {
+            sb.AppendLine($"\"{producer.Title}\" adımı dosyaları bu dizine yazdı. Read/Glob/Grep ile kodu oku; kabul ölçütlerindeki ve kurallardaki komutları Bash ile FİİLEN çalıştır (build, test, çalıştırma). Tahminle karar verme.");
+            sb.AppendLine("Gerekirse test dosyası yazabilirsin; uygulama kodunu DEĞİŞTİRME — düzeltme üreten adımın işidir, feedback'e yaz.");
+            sb.AppendLine("Her kural ve kabul ölçütünü tek tek kontrol et. İhlal varsa verdict=reject ve findings'e yaz; feedback doğrudan üreten ajana gider: somut, adım adım.");
+            sb.AppendLine("Kozmetik tercih için reddetme. Şüphedeyken reddet. testsRun yalnız fiilen çalıştırdıysan true.");
+        }
+
+        sb.AppendLine("Kapsamla orantılı ol: brief'in ve kabul ölçütlerinin istemediği ek özellik, ek belge ya da ek mimari talep etme. Küçük bir iş küçük bir çıktı ister.");
         sb.AppendLine("Verilen JSON şemasına uyan raporu ver: verdict, testsRun, findings, feedback, commandsRun.");
         return sb.ToString();
     }

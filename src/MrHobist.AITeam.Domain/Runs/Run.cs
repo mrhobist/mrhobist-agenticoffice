@@ -192,7 +192,13 @@ public sealed record Phase(
     PhaseStatus Status,
     double? DurationS = null,
     string? Detail = null,
-    PhaseCause? Cause = null)
+    PhaseCause? Cause = null,
+    /// <summary>
+    /// Bu adim KOSMADAN ONCEKI calisma alani hali (golge git taniticisi); alinamadiysa null. Uretici adimlarda
+    /// doldurulur: red tavaninda kullanici "son turu geri al" derse donulecek nokta budur. Sutun YOK -- faz
+    /// govdesiyle birlikte <c>run_phase.data</c> JSON'unda tasinir, sorgulanmaz.
+    /// </summary>
+    string? Snapshot = null)
 {
     /// <summary>Sistemden dogan faz (limit, iptal, kesinti): ajanin hatasi degil; tur sayilmaz, tavana girmez.</summary>
     public bool IsSystemFailure => Status == PhaseStatus.Failed && Cause is PhaseCause.Limit or PhaseCause.Cancelled or PhaseCause.Interrupted;

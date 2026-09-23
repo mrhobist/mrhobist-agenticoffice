@@ -3,9 +3,30 @@ using MrHobist.AITeam.Domain.Agents;
 
 namespace MrHobist.AITeam.Application.Runs;
 
+/// <summary>
+/// Bekleme bitisinin kullaniciya yazilisi. Saat TEK BASINA yaniltir: haftalik kota gunler sonrasina sifirlanir ve
+/// "07:00'de sürer" bugunu isaret ediyormus gibi okunur (2026-09-22'de birebir yasandi: gercek sifirlanma 3 gun
+/// sonraydi). Bugun degilse tarih de yazilir.
+/// </summary>
+public static class ResumeText
+{
+    public static string For(DateTimeOffset? resumeAt)
+    {
+        if (resumeAt is not { } at)
+        {
+            return "sıfırlanma zamanı bilinmiyor";
+        }
+
+        var local = at.ToLocalTime();
+        return local.Date == DateTimeOffset.Now.Date
+            ? $"{local:HH:mm}'de sürer"
+            : $"{local:d MMMM HH:mm}'de sürer";
+    }
+}
+
 /// <summary>Saglayicinin kota penceresi esige ulasti: yeni LLM turu baslamaz. <see cref="ResumeAt"/> pencerenin sifirlanma zamani.</summary>
 public sealed class LimitReachedException(Provider provider, double percent, int threshold, DateTimeOffset? resumeAt, Exception? inner = null)
-    : Exception($"{Providers.Wire(provider)} kullanımı %{percent:0} ≥ eşik %{threshold}; {(resumeAt is null ? "sıfırlanma zamanı bilinmiyor" : $"{resumeAt.Value.ToLocalTime():HH:mm}'de sürer")}", inner)
+    : Exception($"{Providers.Wire(provider)} kullanımı %{percent:0} ≥ eşik %{threshold}; {ResumeText.For(resumeAt)}", inner)
 {
     public Provider Provider { get; } = provider;
 

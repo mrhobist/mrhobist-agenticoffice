@@ -783,3 +783,66 @@ kalibre oran eşiği taşır (Türkçe metin), depo yalnız araçsız + aynı mo
 **Ölçülmedi:** gerçek koşu yok (`data/aiteam.db`'de tur yok). Kalibrasyonun gerçek değeri ve sıkıştırmanın
 tetiklenme sıklığı ilk koşulardan sonra `context-report.py` ile okunacak; 4. adım (LLM özeti) o rakama bağlı.
 
+## Tasarım kapısı, geri alma ve ziyaretçi turu (2026-09-22) 🔶 ölçüm bekliyor
+
+### 1. Tasarım kapısı yakınsamıyordu — kök neden istemdeydi
+
+`tam-kadro` 2026-09-21'de ard arda 3 red verip **$1,70 harcadı ve tek satır kod üretmedi**. Suç
+manager'ın md'sinde sanılmıştı; asıl neden `Prompts.ReviewTask`'ın **tek bir inceleme türü** varsayması:
+
+> "Developer dosyaları bu dizine yazdı… komutları Bash ile FİİLEN çalıştır" … "Şüphedeyken reddet."
+
+`tasarim-onay` adımında ortada kod yok — tasarımcı bir rehber üretti. Manager'a olmayan bir build'i
+koşması söyleniyor, bulamıyor, sonra "şüphedeyken reddet" talimatını uyguluyordu.
+
+**Düzeltme (özel durum değil, genelleme):** inceleme istemi artık kapının **beklettiği üretici adıma**
+göre şekilleniyor — bilgi zaten tek kaynakta duruyordu (`Workflow.ProducerBefore`). `design` kapısında:
+komut koşulmaz, `testsRun=false`, ölçüt "developer bu rehberle tahmin etmeden ilerleyebilir mi", ve
+**şüphedeyken kabul** (ara kapıda red bedava değil; eksiği sonraki test adımı zaten yakalar).
+`implement` kapısında eski davranış aynen korunur, şüphedeyken red.
+
+Aynı ayrım `manager.md` (§2a ara kapı / §2b son kapı) ve `karar-ilkeleri.md`'ye de girdi. Oradaki
+**"karşılanmamış kabul ölçütü varsa hüküm RED'dir"** kuralı asıl kilitti: bir rehber kabul ölçütünü
+*karşılamaz*, onu kod karşılar — kural manager'ı reddetmeye zorluyordu. Artık yalnız son kapı için.
+Her iki kapıya ölçek kuralı eklendi: brief'in istemediği ek özellik/belge/mimari talep edilmez.
+
+### 2. Geri alma: opencode `snapshot` aktarıldı
+
+Ajanlar dosyayı kendileri yazar; red turunda yarım kalan dosyalar sonraki tura kalıyordu ve **geri
+alma yolu yoktu**. Örnek [sst/opencode](https://github.com/sst/opencode) `snapshot`: proje dizininin
+**dışında** duran bir gölge git deposu (`--git-dir` ayrı, `--work-tree` proje kökü) — kullanıcının
+kendi git geçmişine, dallarına ve staging alanına dokunulmaz, proje hiç git deposu olmasa da çalışır.
+
+Alınan: mekanizma (`track` + `restore`). Alınmayan: yama/diff/budama (opencode'da 800 satır).
+`IWorkspaceSnapshot` (Application) · `GitWorkspaceSnapshot` (Infrastructure). Her `implement` turundan
+**önce** hâl kaydedilir; tanıtıcı `Phase.Snapshot`'ta taşınır — **SQL değişikliği yok**, faz gövdesiyle
+birlikte `run_phase.data` JSON'una biner (sorgulanmıyor).
+
+**Geri alma kendiliğinden ASLA olmaz:** yarım iş çoğu zaman doğruya yakındır ve red geri bildirimi
+"şunu düzelt" der, "baştan yap" demez. Yalnız red tavanı sorusunda, yalnız kaydedilmiş bir hâl varsa
+dördüncü seçenek olarak çıkar (`choice: revert`) ve yalnız kullanıcı seçerse koşar. Dönüş başarısızsa
+ajana **"dizin dönmedi, kendin kontrol et"** notu gider: sessiz yanlış bilgilendirme olmaz.
+
+### 3. Ziyaretçi turu zenginleşti (kullanıcı kararı)
+
+Ofiste 9 masa, 10 ajan var. Karar: **masa eklenmedi**, masasız ajanın hayatı zenginleştirildi —
+kapıdan girer, kahve/pano/su/pencere duraklarından karışık sırayla 2–3'ünü gezer, içeceğini alıp
+taşır, çıkarken elini boşaltır. Başka bir ofisten uğramış gibi. Ayrıntı ve tuzağı `docs/SCENE.md`.
+
+### 4. Limit beklemesi yanlış okunuyordu
+
+Ölçüm koşusu sırasında yakalandı: haftalık kota 3 gün sonrasına sıfırlanıyordu ama mesaj yalnız
+**"07:00'de sürer"** diyordu — bugün sanılıyor. `ResumeText.For` artık bugün değilse tarihi de yazar.
+
+### Ölçülemedi — Anthropic haftalık kotası doldu
+
+`tam-kadro` koşusu başlatıldı (`20260922-052033-c45c`) ama ilk turda limit koruması devreye girdi:
+`weekly_scoped` %99, sıfırlanma **2026-09-25T04:00Z**. Çalışma `Paused` duruyor ve pencere açılınca
+kendiliğinden sürer. **Bu yüzden üç ölçüm de bekliyor:**
+
+1. tasarım kapısı düzeltmesi gerçek koşuda yakınsıyor mu,
+2. compact gerçek red döngüsünde ne kazandırıyor (hâlâ yalnız sentetik ölçüldü),
+3. `SystemPromptModes`'un ikinci veri noktası (n=1'de kazanç **sıfır** ölçülmüştü).
+
+Kod tarafı bitti ve testlerle bağlandı: **38 birim + 98 servis + 47 Python** (main ile birleştikten sonra, Windows), `verify.ps1` tüm
+adımlarda geçiyor.

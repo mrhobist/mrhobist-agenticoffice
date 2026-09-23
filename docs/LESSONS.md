@@ -193,3 +193,27 @@ girdi tokeni **iç turların toplamı** (yapısal çıktı en az 2 tur, araçlı
 istemde görünmeyen ~4,5k token ekliyor. 10k karakterlik bir istemde düz oran ~1,4 çıkar, tahmin ~3 kat şişer ve
 sıkıştırma hep erken tetiklenir. Doğrusu: yalnız araçsız turlar, tur başına girdi, eğim (sabit terim ek yükü yutar).
 
+## Bir istem iki işe hizmet ediyorsa, biri sessizce bozulur (2026-09-22)
+
+`tam-kadro` tasarım kapısında 3 kez reddedip $1,70 harcadı ve kod üretmedi. Önce ajanın md'si suçlandı.
+Asıl neden `ReviewTask` isteminin tek bir inceleme türü varsaymasıydı: "dosyalar yazıldı, build'i koş" +
+"şüphedeyken reddet". Tasarım kapısında ortada kod yok, koşacak şey yok → ikinci cümle devreye giriyor.
+
+**Ders:** aynı istem iki farklı bağlamda kullanılıyorsa, **bağlamı isteme yaz**. Burada bilgi zaten tek
+kaynakta duruyordu (`Workflow.ProducerBefore`) — istem onu sormuyordu. Özel durum eklemek yerine istemi
+o bilgiye bağlamak hem `tam-kadro`'yu hem gelecekteki her ara kapıyı düzeltti.
+
+**İkinci ders:** "şüphedeyken reddet" bedava değil. Ara kapıda her red bir tur daha maliyet demek ve
+eksiği zaten sonraki test adımı yakalıyor; son kapıda ise hatalı kodu geçirmek daha pahalı. Aynı ilke
+iki kapıda **zıt** yönde doğru.
+
+**Üçüncü ders:** `karar-ilkeleri.md`'deki "karşılanmamış kabul ölçütü varsa hüküm RED'dir" kuralı, bir
+rehber metni değerlendirirken manager'ı reddetmeye **zorluyordu** — bir rehber kabul ölçütünü karşılamaz,
+onu kod karşılar. Mutlak yazılmış bir bilgi kuralı, yazıldığı bağlamın dışında bir yerde kullanılırsa
+kural olmaktan çıkıp hataya dönüşür. Kuralın kapsamını kuralın yanına yaz.
+
+## Saat tek başına "bugün" sanılır (2026-09-22)
+
+Limit beklemesi mesajı `{resumeAt:HH:mm}` basıyordu. Haftalık kota 3 gün sonrasına sıfırlandığında
+kullanıcı "07:00'de sürer" okuyup bir buçuk saat bekledi. Kullanıcıya gelecekteki bir an yazılıyorsa
+**gün bilgisi de** yazılmalı; aynı gün değilse tarih şart.

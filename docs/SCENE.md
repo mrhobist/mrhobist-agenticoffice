@@ -108,9 +108,18 @@ oturtmak için `agents[].home.seat` o koltuğa çevrilir. Üçüncü ada (`deskC
 
 `agents[]` artık Api tarafından da yazılır (`JsonSceneLayoutStore`): yeni ajan → `sprites[]` içinden kullanılmayan
 ilk karakter (hepsi doluysa sırayla tekrar) + `seats` içinde hiçbir ajanın evi olmayan ilk masa. Masa yoksa
-`home: {}` → **ziyaretçi**: dışarıda başlar, 15–45 s içinde kapıdan girip panoya bakar (6–10 s), çıkar; 60–150 s
-sonra yine. İş alınca (`agent.state working`) hemen girer, panonun önünde durur; bitince çıkar. Koordinatlara ve
-diğer alanlara dokunulmaz. Elle düzenleme serbest; Api yalnız `agents[]`'e ekler/siler.
+`home: {}` → **ziyaretçi**: dışarıda başlar, 15–45 s içinde kapıdan girer, **2–3 durak dolaşır** ve çıkar;
+60–150 s sonra yine uğrar. İş alınca (`agent.state working`) hemen girer, panonun önünde durur; bitince çıkar.
+Koordinatlara ve diğer alanlara dokunulmaz. Elle düzenleme serbest; Api yalnız `agents[]`'e ekler/siler.
+
+**Ziyaretçi turu (2026-09-22, kullanıcı kararı).** Ofise masa eklemek yerine ziyaretçi hayatı zenginleştirildi:
+masasız ajan `coffee`, `board`, `water`, `window` duraklarından **karışık sırayla** 2–3 tanesini gezer; kahve/su
+durağında içeceğini alır ve elinde taşır, pano/pencere durağında 4–8 s bekler. Çıkarken elini boşaltır — kupa
+dışarı taşınmaz. Başka bir ofisten uğramış gibi görünür; oturacak yeri olmadığı için hiçbir masayı işgal etmez.
+
+⚠ Çok duraklı tur bir şeye dikkat ister: durak rezervasyonu (`a.spot`) **yalnız yeni komutta** sıfırlanır
+(`entities.ts` → `command`). Tek kuyrukta birden çok durak gezen ajan her durağı **elle bırakmalıdır**, yoksa
+panonun önünde dururken kahve makinesini de tutar ve sıradakini kilitler.
 
 ## Olaylar
 

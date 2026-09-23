@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddSingleton<ProgressRegistry>();
         services.AddSingleton<AgentCaller>();
         services.AddSingleton<IHistoryCompactor, MafHistoryCompactor>();
+        services.AddSingleton<IWorkspaceSnapshot, GitWorkspaceSnapshot>();
         services.AddSingleton<IRunService, RunService>();
         return services;
     }

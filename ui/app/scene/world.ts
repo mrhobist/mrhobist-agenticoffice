@@ -502,13 +502,45 @@ export class World {
     ]
   }
 
-  /** Ziyaretci turu: panoya bakar, cikar ve 60-150 s sonra yine ugrar. */
+  /**
+   * Ziyaretci turu: masasi olmayan ajan kapidan girer, 2-3 durak dolasir (kahve, pano, su, pencere)
+   * ve cikar -- baska bir ofisten ugramis gibi. Duraklar her turda karisir, ayni sira tekrar etmesin.
+   * Kullanici karari 2026-09-22: ofise masa eklemek yerine ziyaretci hayatini zenginlestir.
+   *
+   * Durak rezervasyonu (`a.spot`) yalniz YENI KOMUTTA sifirlanir (entities.ts `command`), bu yuzden cok duraklı
+   * turda her duragi elle birakmak gerekir; yoksa ziyaretci panoda dururken kahve makinesini de tutar.
+   */
   private visitTour(a: Agent): Action[] {
-    return [
-      ...this.tripTo(a, 'board'),
-      { t: 'wait', ms: 6000 + Math.random() * 4000 },
-      ...this.leaveActions(a, 60_000 + Math.random() * 90_000),
-    ]
+    const stops = ['coffee', 'board', 'water', 'window']
+      .filter(key => this.cfg.spots[key] && this.spotFree(key, a))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 2 + Math.floor(Math.random() * 2))
+
+    const actions: Action[] = []
+    for (const key of stops) {
+      actions.push(...this.tripTo(a, key))
+      if (key === 'coffee' || key === 'water') {
+        const kind: Drink = key === 'coffee' ? 'coffee' : 'water'
+        actions.push(
+          { t: 'wait', ms: kind === 'coffee' ? 2500 + Math.random() * 1500 : 1500 + Math.random() * 1000 },
+          { t: 'call', fn: () => { a.carrying = kind; a.bubble = { kind: 'talk', until: performance.now() + 1600 } } },
+          { t: 'wait', ms: 700 },
+        )
+      } else {
+        actions.push({ t: 'wait', ms: 4000 + Math.random() * 4000 })
+      }
+
+      actions.push({ t: 'call', fn: () => { a.spot = null } }) // durak birakilir: sira bekleyen kilitlenmesin
+    }
+
+    // Butun duraklar doluysa tur bos kalmasin: panonun onunde bekleyip cikar.
+    if (!actions.length) {
+      actions.push(...this.tripTo(a, 'board'), { t: 'wait', ms: 6000 + Math.random() * 4000 }, { t: 'call', fn: () => { a.spot = null } })
+    }
+
+    // Kupa disari tasinmasin: ziyaretci elini bosaltip cikar.
+    actions.push({ t: 'call', fn: () => { a.carrying = null } })
+    return [...actions, ...this.leaveActions(a, 60_000 + Math.random() * 90_000)]
   }
 
   /**

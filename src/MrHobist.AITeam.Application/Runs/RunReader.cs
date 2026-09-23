@@ -159,7 +159,7 @@ public sealed class RunReader(IRunStore runs) : IRunReader
         // Karar: limit korumasi calismayi bekletti; kullanici isterse hemen surdurur (retry) ya da kapatir. Sifirlanmada kendisi surer.
         if (run.Status == RunStatus.Paused && run.ResumeAt is { } resume)
         {
-            items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Decision, lastTs, $"Limit doldu · {resume.ToLocalTime():HH:mm}'de sürer", run.Detail, null));
+            items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Decision, lastTs, $"Limit doldu · {ResumeText.For(resume)}", run.Detail, null));
         }
 
         // Soru: bir ajan kullaniciya ask yazdi ve ref'i eslesen answer yok. Bugun uretilmiyor; sozlesme hazir.
