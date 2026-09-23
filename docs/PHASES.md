@@ -903,3 +903,4 @@ iş Failed → "Yeniden dene"). Ajan t1'i yine de bitirmişti: diskte build temi
 - **Devam et:** önceki denemesi yarıda kesilen görev (`Phase.IsCutShort`: zaman aşımı, yeniden başlatma, çağrı sırasında
   limit) yeniden koşarken ajana "DEVAM: baştan yazma, durumu çıkar, eksikleri tamamla" notu gider. Aynı turu iki kez ödememek için.
 - Test: hareketsiz tur zaman aşımına düşer → Failed/Timeout → Yeniden dene DEVAM notuyla tamamlanır; kesilmeyen görev notsuz.
+
