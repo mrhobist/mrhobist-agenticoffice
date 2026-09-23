@@ -51,7 +51,7 @@ public sealed class RunReader(IRunStore runs) : IRunReader
         var order = spec is null ? [] : TaskGraph.Order(spec.Tasks).Select(t => t.Id).ToList();
         return new RunDetail(
             run.Id, run.Label, run.Brief, run.Sensitivity, run.Workflow, run.Status, run.StartedAt, run.FinishedAt,
-            run.TotalCostUsd, run.Detail, run.MaxCostUsd, run.Retries, run.Project, run.OwnerId, run.Question, run.ResumeAt, wf is null ? null : WorkflowMapping.ToDetail(wf), spec, order, tasks, messages, run.Step, run.WaitingSince);
+            run.TotalCostUsd, run.Detail, run.MaxCostUsd, run.Retries, run.Project, run.OwnerId, run.Question, run.ResumeAt, wf is null ? null : WorkflowMapping.ToDetail(wf), spec, order, tasks, messages, run.Step, run.WaitingSince, run.Attachments);
     }
 
     public async Task<IReadOnlyList<AgentRunWork>> GetAgentWorkAsync(string agentKey, int runLimit, CancellationToken ct)

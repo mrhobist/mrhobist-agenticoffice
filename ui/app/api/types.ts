@@ -30,6 +30,8 @@ export interface AgentListItem {
   includes: string[]
   /** Soru sorabildigi ajan anahtari ya da null. */
   canAsk: string | null
+  /** Yetkili MCP sunuculari (md frontmatter `mcp`). Yonetim: MCP paneli. */
+  mcp?: string[] | null
 }
 
 /** GET/PUT /api/v1/agents/{key} */
@@ -286,6 +288,8 @@ export interface RunRequest {
   label?: string | null
   /** Butce ust siniri ($); asilinca calisma BudgetExceeded ile durur. null = sinir yok. */
   maxCostUsd?: number | null
+  /** POST /attachments'in dondurdugu gecici ek kimlikleri. */
+  attachments?: string[] | null
 }
 
 /** run.json */
@@ -439,7 +443,27 @@ export interface RunDetail extends RunSummary {
   order: string[]
   tasks: Array<{ id: string; phases: Phase[] }>
   messages: RunMessage[]
+  /** Is verilirken eklenen dosyalar; indirme GET /runs/{id}/attachments/{fileName}. */
+  attachments?: RunAttachment[] | null
 }
+
+// ------------------------------------------------------------------ ekler (docs/DOMAIN.md → Ekler)
+
+export type AttachmentKind = NonNullable<Schemas['AttachmentKind']>
+/** POST /api/v1/attachments ogesi: yuklendi, henuz bir ise bagli degil. */
+export type StagedAttachment = Schemas['StagedAttachment']
+export type RunAttachment = Schemas['RunAttachment']
+/** GET /api/v1/attachments/rules */
+export type AttachmentRules = Schemas['AttachmentRulesView']
+
+// ------------------------------------------------------------------ MCP (docs/DOMAIN.md → MCP sunuculari)
+
+export type McpTransport = NonNullable<Schemas['McpTransport']>
+/** GET /api/v1/mcp ogesi. env/headers degerleri DONMEZ; yalniz ad + kayitli mi. */
+export type McpServerView = Schemas['McpServerView']
+/** POST/PUT govdesi. env/headers satirinda value null → kayitli deger korunur. */
+export type McpServerRequest = Schemas['McpServerRequest']
+export type McpTestResult = Schemas['McpTestResult']
 
 /** RFC 9457 govdesi + errorCode. `title`/`detail` EKRANA BASILMAZ; yalniz errorCode eslenir. */
 export interface ProblemDetails {

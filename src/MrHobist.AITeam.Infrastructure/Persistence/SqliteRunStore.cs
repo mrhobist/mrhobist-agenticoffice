@@ -321,6 +321,7 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
         row.FinishedAt = run.FinishedAt;
         row.ResumeAt = run.ResumeAt;
         row.WaitingSince = run.WaitingSince;
+        row.Attachments = run.Attachments is { Count: > 0 } a ? PersistenceJson.Write(a) : null;
         row.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
@@ -344,5 +345,6 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
         row.Step,
         row.WaitingSince,
         row.InputTokens,
-        row.OutputTokens);
+        row.OutputTokens,
+        PersistenceJson.Read<List<RunAttachment>>(row.Attachments));
 }

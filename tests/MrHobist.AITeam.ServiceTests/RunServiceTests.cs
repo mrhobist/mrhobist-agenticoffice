@@ -875,7 +875,7 @@ public sealed class RunServiceTests : IDisposable
     // ------------------------------------------------------------------ sahteler
 
     /// <summary>Python yerine: sema istenirse plan JSON'u, yoksa devir notu metni. Cagrilari kaydeder.</summary>
-    private sealed class FakeRuntime : IAgentRuntimeService
+    internal sealed class FakeRuntime : IAgentRuntimeService
     {
         public List<RuntimeTurnRequest> Calls { get; } = [];
 
@@ -1022,13 +1022,21 @@ public sealed class RunServiceTests : IDisposable
         public Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<RuntimeLocalUsage>>([]);
 
+        public List<RuntimeMcpServer> Probes { get; } = [];
+
+        public Task<RuntimeMcpProbe> ProbeMcpAsync(RuntimeMcpServer server, CancellationToken ct)
+        {
+            Probes.Add(server);
+            return Task.FromResult(new RuntimeMcpProbe(true, "", [new RuntimeMcpTool("echo", "yankı")], "sahte", "1.0"));
+        }
+
         public Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<RuntimeProviderLimits>>(LimitPercent is { } p
                 ? [new RuntimeProviderLimits(Provider.Anthropic, true, "sahte", "max", DateTimeOffset.UtcNow, [new RuntimeUsageLimit("five_hour", null, p, "warning", DateTimeOffset.UtcNow.AddHours(1), null, true)])]
                 : []);
     }
 
-    private sealed class FakeScene : ISceneEventPublisher
+    internal sealed class FakeScene : ISceneEventPublisher
     {
         public List<(string Type, string Json)> Events { get; } = [];
 
@@ -1036,7 +1044,7 @@ public sealed class RunServiceTests : IDisposable
     }
 
     /// <summary>Is kanali yerine: RunService'in kuyruga koydugu (calisma, adim) ciftlerini kaydeder.</summary>
-    private sealed class FakeScheduler : IRunScheduler
+    internal sealed class FakeScheduler : IRunScheduler
     {
         public List<(string RunId, RunStep Step)> Scheduled { get; } = [];
 

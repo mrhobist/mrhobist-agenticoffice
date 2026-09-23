@@ -143,6 +143,9 @@ class OpenAiProvider:
     # -- arayuz --------------------------------------------------------------
 
     async def complete(self, request: TurnRequest) -> TurnResponse:
+        if request.mcp_servers:
+            # Codex MCP'yi destekliyor ama baglanmadi. Sessizce yok saymak "yetki verildi ama arac yok" demek olurdu.
+            raise _error(501, "runtime.mcp_unsupported", "OpenAI saglayicisinda MCP araclari henuz baglanmadi; MCP yetkisi yalniz anthropic ajanlarinda calisir.")
         if credentials.api_key(PROVIDER_NAME):
             return await self._complete_api(request)
         return await self._complete_codex(request)

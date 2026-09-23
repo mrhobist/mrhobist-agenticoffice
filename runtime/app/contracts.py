@@ -28,6 +28,35 @@ class Message(BaseModel):
     content: str
 
 
+class McpServerConfig(BaseModel):
+    """Bir MCP sunucusuna baglanti (Agent SDK bicimi). Hangi ajanin hangisini alacagi .NET'in karari; burasi yalniz iletir.
+    `stdio`: command/args/env · `http` | `sse`: url/headers. Degerler sir tasiyabilir: gunluge ve yanita yazilmaz."""
+
+    type: Literal["stdio", "http", "sse"] = "stdio"
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class McpToolInfo(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class McpProbeResult(BaseModel):
+    """Baglanti denemesi: sunucu acildi mi, hangi araclari sunuyor. Durum degil, anlik olcum; hata da sonuctur (ok=false)."""
+
+    ok: bool
+    detail: str = ""
+    tools: list[McpToolInfo] = Field(default_factory=list)
+    server_name: str | None = Field(default=None, alias="serverName")
+    server_version: str | None = Field(default=None, alias="serverVersion")
+
+    model_config = {"populate_by_name": True}
+
+
 class TurnRequest(BaseModel):
     """Bir LLM cagrisinin tamami. Gecmis `messages` ile gelir; sunucu hicbir sey hatirlamaz."""
 
@@ -57,6 +86,12 @@ class TurnRequest(BaseModel):
     #: arac cagrisi, ajanin metni/dusuncesi, mesaj basina kullanim. .NET verir; runtime yalniz bildirir, cevabi
     #: beklemez, hata yutulur. None = akis yok.
     progress_url: str | None = Field(default=None, alias="progressUrl")
+    #: Ajana acilan MCP sunuculari (anahtar -> baglanti). Yalniz aracli turda anlamli; araclari `mcp__{anahtar}__{arac}` adini alir.
+    #: Hangi ajanin hangisini aldigi .NET'in karari (ajan md'si `mcp`); None = yok.
+    mcp_servers: dict[str, McpServerConfig] | None = Field(default=None, alias="mcpServers")
+    #: cwd DISINDA okunabilecek dizinler (is ekleri). Yazma araclari yine yalniz cwd'de; Bash bu dizinlerdeki yollari
+    #: kullanabilir (ornegin bir resmi projeye kopyalamak). .NET verir; runtime hicbir yolu kendisi secmez.
+    read_dirs: list[str] | None = Field(default=None, alias="readDirs")
 
     model_config = {"populate_by_name": True}
 

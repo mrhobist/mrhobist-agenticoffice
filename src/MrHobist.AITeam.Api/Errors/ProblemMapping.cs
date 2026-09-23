@@ -46,10 +46,11 @@ public sealed partial class ProblemMapping(ILogger<ProblemMapping> logger) : IEx
     {
         ErrorCodes.ConfigFileInvalid or ErrorCodes.KnowledgeInvalidKey => StatusCodes.Status500InternalServerError,
         ErrorCodes.AuthInvalidCredentials or ErrorCodes.AuthRequired => StatusCodes.Status401Unauthorized,
-        ErrorCodes.ConfigFileMissing or ErrorCodes.WorkflowNotFound or ErrorCodes.ProjectNotFound or ErrorCodes.ProjectLaunchMissing or ErrorCodes.KnowledgeNotFound => StatusCodes.Status404NotFound,
+        ErrorCodes.ConfigFileMissing or ErrorCodes.WorkflowNotFound or ErrorCodes.ProjectNotFound or ErrorCodes.ProjectLaunchMissing or ErrorCodes.KnowledgeNotFound or ErrorCodes.McpNotFound => StatusCodes.Status404NotFound,
         ErrorCodes.AgentExists or ErrorCodes.AgentInUse or ErrorCodes.WorkflowDefaultProtected
             or ErrorCodes.RunNotAwaitingApproval or ErrorCodes.RunNotRetryable or ErrorCodes.RunNotCancellable or ErrorCodes.RunNotAwaitingInput
-            or ErrorCodes.ProjectExists or ErrorCodes.ProjectInUse or ErrorCodes.KnowledgeInUse => StatusCodes.Status409Conflict,
+            or ErrorCodes.ProjectExists or ErrorCodes.ProjectInUse or ErrorCodes.KnowledgeInUse
+            or ErrorCodes.McpExists or ErrorCodes.McpInUse => StatusCodes.Status409Conflict,
         _ => StatusCodes.Status400BadRequest,
     };
 

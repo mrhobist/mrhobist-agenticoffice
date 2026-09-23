@@ -155,6 +155,7 @@ public sealed class RunStoreTests : IDisposable
                 "0001_create_core_tables.sql",
                 "0002_add_cache_tokens_to_run_turn.sql",
                 "0003_project_budget_and_run_tokens.sql",
+                "0004_mcp_servers_and_run_attachments.sql",
             ],
             ScalarList("SELECT script_name FROM schema_change_log ORDER BY script_name"));
         Assert.Equal("wal", Scalar("PRAGMA journal_mode"));
@@ -257,7 +258,7 @@ public sealed class RunStoreTests : IDisposable
     public async Task Sema_ile_esleme_ayrismaz()
     {
         // Drift denetimi (ARCHITECTURE.md §8.5): betikteki sutun adi ile EF eslemesi ayrisirsa bu sorgu patlar.
-        Assert.Equal(6, await _fx.Services.ProbeDatabaseAsync(Ct));
+        Assert.Equal(7, await _fx.Services.ProbeDatabaseAsync(Ct));
     }
 
     [Fact]

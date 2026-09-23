@@ -47,6 +47,7 @@ from ..contracts import (
     LoginStarted,
     ModelInfo,
     LocalUsage,
+    McpServerConfig,
     ProgressEvent,
     ProviderLimits,
     ToolUse,
@@ -255,6 +256,21 @@ def _block_chars(block: Any) -> int:
     return 0
 
 
+def _sdk_mcp(cfg: McpServerConfig) -> dict[str, Any]:
+    """Sozlesmedeki baglanti -> SDK bicimi (McpStdioServerConfig / McpHttpServerConfig / McpSSEServerConfig). Bos alan yazilmaz."""
+    if cfg.type == "stdio":
+        out: dict[str, Any] = {"type": "stdio", "command": cfg.command or ""}
+        if cfg.args:
+            out["args"] = list(cfg.args)
+        if cfg.env:
+            out["env"] = dict(cfg.env)
+        return out
+    out = {"type": cfg.type, "url": cfg.url or ""}
+    if cfg.headers:
+        out["headers"] = dict(cfg.headers)
+    return out
+
+
 def _usage_of(raw: dict[str, Any] | None) -> Usage:
     """SDK kullanim sozlugu -> sozlesme. Girdi = dogrudan + onbellege yazilan + onbellekten okunan."""
     raw = raw or {}
@@ -322,10 +338,17 @@ class AnthropicProvider:
             # `allowed_tools` VERILMEZ: verilirse SDK araci geri cagriyi sormadan onaylar (CanUseToolShadowedWarning) ve
             # yazma siniri devre disi kalir. Arac kumesi `tools`, her cagrinin karari `_guard`.
             opts["tools"] = tools
-            opts["can_use_tool"] = self._guard(request.cwd)
+            opts["can_use_tool"] = self._guard(request.cwd, request.read_dirs)
             opts["max_turns"] = request.max_turns or 80
             if request.cwd:
                 opts["cwd"] = request.cwd
+            if request.read_dirs:
+                # Is ekleri cwd disinda: Claude Code okumayi bu dizinlerde de serbest birakir. Yazma siniri `_guard`'da, cwd'de kalir.
+                opts["add_dirs"] = list(request.read_dirs)
+            if request.mcp_servers:
+                # Ajanin MCP sunuculari (.NET secti). `strict_mcp_config` acik: kullanicinin kendi MCP'leri DEGIL yalniz bunlar yuklenir.
+                # Araclar `mcp__{anahtar}__{arac}` adini alir; izin karari yine `_guard` (dosya yazmayan arac serbest).
+                opts["mcp_servers"] = {key: _sdk_mcp(cfg) for key, cfg in request.mcp_servers.items()}
         else:
             # Yerlesik arac tanimlari prompt'a girmesin: 23k → 4.5k token / cagri (olculdu, 2026-09-19).
             opts["allowed_tools"] = []
@@ -349,16 +372,24 @@ class AnthropicProvider:
     _BASH_ALLOW_PREFIXES = ("/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/tmp")
 
     @classmethod
-    def _guard(cls, cwd: str | None):
-        """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: dosya yazma ve Bash yalniz verilen dizinde."""
+    def _guard(cls, cwd: str | None, read_dirs: list[str] | None = None):
+        """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: dosya yazma yalniz verilen dizinde; Bash verilen
+        dizinde ve .NET'in actigi okuma dizinlerinde (is ekleri: ornegin bir resmi projeye kopyalamak)."""
         root = Path(cwd).resolve() if cwd else None
+        extra = [Path(d).resolve() for d in (read_dirs or [])]
 
-        def inside(raw: str) -> bool:
+        def under(raw: str, base: Path) -> bool:
             try:
-                target = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+                target = (base / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
             except (OSError, ValueError):
                 return False
-            return root == target or root in target.parents
+            return base == target or base in target.parents
+
+        def inside(raw: str) -> bool:
+            return under(raw, root)
+
+        def readable(raw: str) -> bool:
+            return inside(raw) or any(under(raw, d) for d in extra if Path(raw).is_absolute())
 
         async def decide(tool: str, tool_input: dict[str, Any], _ctx: ToolPermissionContext):
             if root is None:
@@ -376,7 +407,7 @@ class AnthropicProvider:
                     raw = m.group(0)
                     if raw.startswith(cls._BASH_ALLOW_PREFIXES):
                         continue
-                    if raw.startswith("~") or not inside(raw):
+                    if raw.startswith("~") or not readable(raw):
                         return PermissionResultDeny(message=f"Komut bu dizinin disina cikiyor: {raw}. Yalniz {root} altinda calis.")
             return PermissionResultAllow()
 

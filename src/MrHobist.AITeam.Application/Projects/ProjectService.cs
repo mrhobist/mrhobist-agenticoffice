@@ -100,7 +100,7 @@ public interface IProjectService
     Task<IReadOnlyList<ProjectCard>> ReorderAsync(ReorderRequest request, CancellationToken ct);
 }
 
-public sealed class ProjectService(IProjectStore projects, IWorkflowStore workflows, IRunStore runs, IWorkspaceLocator workspace, IProjectLauncher launcher) : IProjectService
+public sealed class ProjectService(IProjectStore projects, IWorkflowStore workflows, IRunStore runs, IWorkspaceLocator workspace, IProjectLauncher launcher, IAttachmentStore? attachments = null) : IProjectService
 {
     public const string LauncherFile = "run.cmd";
 
@@ -200,6 +200,7 @@ public sealed class ProjectService(IProjectStore projects, IWorkflowStore workfl
         foreach (var run in history)
         {
             await runs.DeleteAsync(run.Id, ct).ConfigureAwait(false);
+            attachments?.DeleteRun(run.Id);
         }
 
         var filesDeleted = deleteFiles && workspace.DeleteRoot(project);

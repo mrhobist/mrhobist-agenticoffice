@@ -3,6 +3,7 @@ using MrHobist.AITeam.Api.Auth;
 using MrHobist.AITeam.Api.Config;
 using MrHobist.AITeam.Api.Errors;
 using MrHobist.AITeam.Api.Jobs;
+using MrHobist.AITeam.Api.Mcp;
 using MrHobist.AITeam.Api.Projects;
 using MrHobist.AITeam.Api.Runs;
 using MrHobist.AITeam.Api.Runtime;
@@ -100,6 +101,7 @@ app.MapConfig();
 app.MapScene();
 app.MapRuns();
 app.MapProjects();
+app.MapMcp();
 app.MapGet("/api/v1/jobs/health", (JobChannel q) => Results.Ok(new { status = "ok", pending = q.Pending }));
 
 if (appliedScripts > 0)

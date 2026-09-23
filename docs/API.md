@@ -26,6 +26,12 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
 | `POST /api/v1/knowledge/import` `{ key, markdown }` | **201** `KnowledgeItem` | yüklenen md: frontmatter `title` yoksa ilk `# Başlık`, o da yoksa anahtar |
 | `DELETE /api/v1/knowledge/{key}` | **204** | bir ajanın `includes`'inde ise 409 `knowledge.in_use`; yoksa 404 `knowledge.not_found` |
 | `POST /api/v1/agents/import` `{ key, markdown }` | **201** `AgentDetail` | hazır ajan md'si (frontmatter + prompt); bozuk biçim 400 `agent.markdown_invalid`; var olan anahtar 409 `agent.exists`; sahneye yerleşir |
+| `GET /api/v1/mcp` · `GET /api/v1/mcp/{key}` | `McpServerView[]` · `McpServerView` | Kayıtlı MCP sunucuları (docs/DOMAIN.md → MCP sunucuları). `env`/`headers` değer **dönmez**: `[{ name, hasValue }]`; `agents[]` = yetkili ajanlar |
+| `POST /api/v1/mcp` `McpServerRequest` | **201** `McpServerView` | `{ key, name, transport: stdio\|http\|sse, command?, args?, url?, env?: [{ name, value? }], headers?: [{ name, value? }], enabled?, description? }`. stdio komut, http/sse http(s) adres ister (400 `mcp.invalid`); anahtar kuralı ajanla aynı (400 `mcp.invalid_key`); var olan 409 `mcp.exists` |
+| `PUT /api/v1/mcp/{key}` `McpServerRequest` | `McpServerView` | tam gövde; `env`/`headers` satırında `value: null` → kayıtlı değer korunur, listede olmayan ad silinir. 404 `mcp.not_found` |
+| `DELETE /api/v1/mcp/{key}` | **204** | bir ajana yetkiliyse 409 `mcp.in_use` |
+| `PUT /api/v1/mcp/{key}/access` `{ agents: [] }` | `McpServerView` | yetkili ajanların **tam** listesi; ajan md'lerinin `mcp` alanı yazılır (değişmeyen md yazılmaz, hepsi-ya-hiç). Bilinmeyen ajan 404 `agent.not_found`; MCP çalıştıramayan sağlayıcı 400 `agent.mcp_unsupported` |
+| `POST /api/v1/mcp/{key}/test` | `McpTestResult` `{ ok, detail, tools: [{ name, description }], serverName, serverVersion }` | runtime sunucuyu açar, araçlarını listeler, kapatır; bağlanamamak `ok: false` (hata değil). Runtime kapalıysa 503 |
 | `GET /api/v1/agents/{key}/work?runs=30` | `AgentRunWork[]` `{ run: RunSummary, turns: Turn[], messages: Message[], phases: Phase[] }` | Ajan panelinin **İşler** sekmesi: son N çalışmada bu ajanın her LLM turu (tam gönderilen metin ve çıktı, o anki sağlayıcı/model), ona gelen/giden notlar (devir, hata, tekrar), faz geçişleri. Payı olmayan çalışma listede yoktur |
 
 ```jsonc
@@ -34,6 +40,7 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
   "officeRoles": ["dev"], "provider": "anthropic", "model": "claude-opus-5", "effort": "high",
   "includes": ["mimari-kurallar", "kodlama-standartlari"], "canAsk": "manager" }
 
+// AgentListItem.mcp: yetkili MCP sunucuları (frontmatter `mcp`). PUT'ta yoksa/null → korunur, [] → hepsi kalkar.
 // AgentDetail = AgentListItem + { "prompt": "…", "composedPrompt": "…" }
 // PUT gövdesi = AgentDetail eksi composedPrompt (key yoldan gelir)
 ```
@@ -161,7 +168,10 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 
 | Uç | Dönen | Not |
 |---|---|---|
-| `POST /api/v1/runs` `{ project, brief, workflow?, sensitivity?, label?, maxCostUsd? }` | **202** `RunSummary` | `project` zorunlu (400 `run.project_required`, 404 `project.not_found`); `workflow` yoksa projenin varsayılanı; `sensitivity` yoksa `anthropic`; boş `brief` 400 `run.brief_empty` |
+| `POST /api/v1/runs` `{ project, brief, workflow?, sensitivity?, label?, maxCostUsd?, attachments? }` | **202** `RunSummary` | `project` zorunlu (400 `run.project_required`, 404 `project.not_found`); `workflow` yoksa projenin varsayılanı; `sensitivity` yoksa `anthropic`; boş `brief` 400 `run.brief_empty`; `attachments` = `POST /attachments` kimlikleri (bilinmeyen/süresi dolmuş 400 `attachment.not_found`, 10'dan fazla 400 `attachment.too_many`) |
+| `POST /api/v1/attachments` (multipart, alan `files`, bir ya da birkaç dosya) | `StagedAttachment[]` `{ id, name, mediaType, size, kind: document\|image\|text\|word }` | Geçici yükleme (docs/DOMAIN.md → Ekler). Desteklenmeyen tür 400 `attachment.type_unsupported`, boş 400 `attachment.empty`, 20 MB üstü 400 `attachment.too_large` |
+| `GET /api/v1/attachments/rules` | `{ extensions, maxBytes, maxPerRun }` | dosya seçicinin `accept`'i ve sınırlar (tek kaynak `AttachmentRules`) |
+| `GET /api/v1/runs/{id}/attachments/{fileName}` | dosya | çalışmanın eki ya da Word'ün çıkarılmış metni (`textFile`); kayıtlı olmayan ad 404 `attachment.not_found` |
 | `GET /api/v1/runs?limit=20&project=` | `RunSummary[]` | yeni → eski; `project` ile süzülür |
 | `GET /api/v1/runs/{id}` | `RunDetail` | 404 `run.not_found` |
 | `GET /api/v1/runs/{id}/turns?agent=` | `Turn[]` | Tüm ajanların LLM turları, **tam prompt ve çıktı** ile, sırasıyla (`run_turn`). Günlük ekranı |
@@ -181,6 +191,8 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 `resumeAt` (limit beklemesi), `step` (`analyze | approval | dispatch`: kaldığı adım, "yeniden dene" buradan sürer),
 `waitingSince` (`running` ama hazır görevin ajanı başka çalışmada dolu; sunucu bir adım kapanınca kendisi yeniden dağıtır). `Turn` ek alanlar: `toolUses: [{ tool, target }]`, `turns` (ajan döngüsünün iç tur sayısı).
 `totalCostUsd` **eşdeğer** maliyettir (docs/DOMAIN.md → Bütçe ve limit).
+`RunDetail.attachments` (ek yoksa `null`): `[{ id, name, fileName, mediaType, size, kind, textFile }]` — `fileName` diskteki güvenli ad,
+`textFile` Word'den çıkarılan metnin dosyası.
 
 ```jsonc
 // RunSummary — run.json

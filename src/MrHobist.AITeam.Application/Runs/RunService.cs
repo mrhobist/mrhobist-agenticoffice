@@ -62,7 +62,8 @@ public sealed class RunService(
     IWorkspaceLocator workspace,
     IRunScheduler scheduler,
     IHistoryCompactor? compactor = null,
-    IWorkspaceSnapshot? snapshots = null) : IRunService
+    IWorkspaceSnapshot? snapshots = null,
+    IAttachmentStore? attachments = null) : IRunService
 {
     private const string PlanRevisionSubject = "plan-revision";
 
@@ -123,6 +124,17 @@ public sealed class RunService(
         var label = string.IsNullOrWhiteSpace(request.Label) ? Ellipsis(brief, 48) : request.Label.Trim();
         var run = new Run(NewId(), label, brief, sensitivity, DateTimeOffset.UtcNow, RunStatus.Running, Workflow: wfKey, Detail: "analiz", MaxCostUsd: request.MaxCostUsd, Project: project.Key, OwnerId: project.OwnerId, Step: RunStep.Analyze);
 
+        // Ekler (docs/DOMAIN.md → Ekler): gecici alandan calismanin dizinine tasinir; bilinmeyen kimlik is baslamadan 400.
+        if (request.Attachments is { Count: > 0 } staged)
+        {
+            if (attachments is null)
+            {
+                throw new DomainException(ErrorCodes.AttachmentNotFound, "Ek deposu bagli degil.");
+            }
+
+            run = run with { Attachments = await attachments.ClaimAsync(run.Id, staged, ct).ConfigureAwait(false) };
+        }
+
         // Politika calisma baslamadan: tek aykiri rol varsa hic baslamaz (v1 dersi, CLAUDE.md §4).
         var violations = wf.Roles
             .Select(r => (Role: r, Target: AgentTarget.Of(team.Agents[r])))
@@ -176,7 +188,7 @@ public sealed class RunService(
         {
             var root = await RootAsync(run, ct).ConfigureAwait(false);
             var history = await AnalystHistoryAsync(run, wf, notes, root, ct).ConfigureAwait(false);
-            var reply = await caller.CallAsync(run, analyze.Role, history, SpecSchema.Json, analyze.Id, null, null, ct, ToolAccess.ForKind(StageKind.Analyze, root)).ConfigureAwait(false);
+            var reply = await caller.CallAsync(run, analyze.Role, history, SpecSchema.Json, analyze.Id, null, null, ct, WithAttachments(run, ToolAccess.ForKind(StageKind.Analyze, root))).ConfigureAwait(false);
             if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
             {
                 return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -289,6 +301,14 @@ public sealed class RunService(
         return run;
     }
 
+    /// <summary>Calismanin ekleri (yoksa null): istemde yol listesi olarak gecer.</summary>
+    private AttachmentContext? AttachmentsOf(Run run)
+        => run.Attachments is { Count: > 0 } items && attachments is not null ? new AttachmentContext(attachments.DirectoryOf(run.Id), items) : null;
+
+    /// <summary>Ek varsa ajana ek dizinini okuma izniyle acar (yazma yine yalniz cwd'de). Arac yoksa dokunmaz.</summary>
+    private ToolAccess? WithAttachments(Run run, ToolAccess? tools)
+        => tools is not null && AttachmentsOf(run) is { } att ? tools with { ReadDirs = [att.Directory] } : tools;
+
     /// <summary>Projenin hedef dizini (mutlak); Infrastructure yoksa olusturur. Ajan araclari burada acilir.</summary>
     private async Task<string> RootAsync(Run run, CancellationToken ct)
         => workspace.RootOf(await projects.LoadAsync(run.Project, ct).ConfigureAwait(false));
@@ -300,7 +320,7 @@ public sealed class RunService(
         var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
         var knowledge = team.Agents.Values.SelectMany(x => x.Includes).Distinct(StringComparer.Ordinal)
             .Where(team.Knowledge.ContainsKey).Select(k => team.Knowledge[k]).ToList();
-        var list = new List<RuntimeMessage> { new("user", Prompts.AnalystBrief(run, wf, root, knowledge)) };
+        var list = new List<RuntimeMessage> { new("user", Prompts.AnalystBrief(run, wf, root, knowledge, AttachmentsOf(run))) };
 
         var turns = (await runs.ReadTurnsAsync(run.Id, analyze.Role, ct).ConfigureAwait(false))
             .Where(t => t.Stage == analyze.Id && !string.IsNullOrWhiteSpace(t.Output))
@@ -675,7 +695,8 @@ public sealed class RunService(
             .OrderBy(m => m.Ts)
             .ToList();
         var prior = Prompts.PriorTasks(spec, a.Task, messages);
-        var tools = ToolAccess.ForKind(a.Stage.Kind, root);
+        var tools = WithAttachments(run, ToolAccess.ForKind(a.Stage.Kind, root));
+        var att = AttachmentsOf(run);
 
         try
         {
@@ -688,7 +709,7 @@ public sealed class RunService(
                     // Onceki deneme yarida kesildiyse (zaman asimi, yeniden baslatma) dizinde onun isi var: ajan bastan yazmasin, devam etsin.
                     var cutShort = (await runs.ReadPhasesAsync(run.Id, a.Task.Id, ct).ConfigureAwait(false))
                         .LastOrDefault(p => p.Stage == a.Stage.Id && p.Status != PhaseStatus.Started) is { IsCutShort: true };
-                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort, prior), ct).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort, prior, att), ct).ConfigureAwait(false);
                     var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
@@ -735,7 +756,7 @@ public sealed class RunService(
                 {
                     // Kapinin beklettiği uretici adim: hem istemi sekillendirir (kod mu, tasarim mi) hem de redde geri donus hedefi.
                     var producer = wf.ProducerBefore(a.Stage);
-                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, producer, round, wf.MaxReviewRounds, prior), ct).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, producer, round, wf.MaxReviewRounds, prior, att), ct).ConfigureAwait(false);
                     var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
@@ -772,7 +793,7 @@ public sealed class RunService(
 
                 case StageKind.Design:
                 {
-                    var history = await AgentTaskHistoryAsync(run, a, Prompts.DesignTask(spec, a, root, notes), ct).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.DesignTask(spec, a, root, notes, att), ct).ConfigureAwait(false);
                     var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
@@ -929,8 +950,8 @@ public sealed class RunService(
 
         try
         {
-            var prompt = Prompts.AskColleague(spec, a, root, notes, asker.Name, question, report);
-            var reply = await caller.CallAsync(run, target, [new RuntimeMessage("user", prompt)], StepSchemas.Ask, a.Stage.Id, a.Task.Id, round, ct, new ToolAccess(ToolAccess.ReadOnly, root, 20)).ConfigureAwait(false);
+            var prompt = Prompts.AskColleague(spec, a, root, notes, asker.Name, question, report, AttachmentsOf(run));
+            var reply = await caller.CallAsync(run, target, [new RuntimeMessage("user", prompt)], StepSchemas.Ask, a.Stage.Id, a.Task.Id, round, ct, WithAttachments(run, new ToolAccess(ToolAccess.ReadOnly, root, 20))).ConfigureAwait(false);
             if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
             {
                 return new ColleagueAsk(await reader.GetAsync(run.Id, ct).ConfigureAwait(false), false, target, null);

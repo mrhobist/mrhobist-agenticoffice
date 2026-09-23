@@ -1,3 +1,5 @@
+using McpSupport = MrHobist.AITeam.Domain.Mcp.McpSupport;
+
 namespace MrHobist.AITeam.Domain.Agents;
 
 /// <summary>LLM saglayicisi. JSON'da adiyla tasinir; yeni uye sona eklenir.</summary>
@@ -53,8 +55,17 @@ public sealed record Agent(
     IReadOnlyList<string> Includes,
     string? CanAsk,
     string Prompt,
-    string? Effort = null)
+    string? Effort = null,
+    /// <summary>
+    /// Kullanabilecegi MCP sunucularinin anahtarlari (md frontmatter <c>mcp</c>; docs/DOMAIN.md → MCP sunuculari). Tanimlar
+    /// veritabanindadir; anahtarin kayitli oldugu ajan KAYDEDILIRKEN denetlenir, calisma aninda silinmis/kapali olan atlanir.
+    /// Sona eklendi (CLAUDE.md §5); null = yok.
+    /// </summary>
+    IReadOnlyList<string>? Mcp = null)
 {
+    /// <summary><see cref="Mcp"/>, bos liste olarak.</summary>
+    public IReadOnlyList<string> McpServers => Mcp ?? [];
+
     /// <summary>Kendi basina tutarli mi: anahtar, bos prompt, include anahtarlari, efor.</summary>
     public void Validate()
     {
@@ -74,6 +85,17 @@ public sealed record Agent(
         if (CanAsk is not null)
         {
             Identifiers.Require(CanAsk, ErrorCodes.AgentUnknownCanAsk, "can_ask");
+        }
+
+        foreach (var mcp in McpServers)
+        {
+            Identifiers.Require(mcp, ErrorCodes.AgentUnknownMcp, "MCP sunucusu");
+        }
+
+        // Saglayici bossa varsayilan (anthropic) kullanilir; MCP'yi calistiramayan saglayiciya yetki vermek sessizce hicbir sey yapmazdi.
+        if (McpServers.Count > 0 && Provider is { } p && !McpSupport.Supports(p))
+        {
+            throw new DomainException(ErrorCodes.AgentMcpUnsupported, $"{Key}: '{Providers.Wire(p)}' saglayicisi MCP araclarini calistiramiyor (yalniz anthropic).");
         }
     }
 

@@ -15,7 +15,9 @@ public sealed record AgentListItem(
     string? Model,
     string? Effort,
     IReadOnlyList<string> Includes,
-    string? CanAsk);
+    string? CanAsk,
+    /// <summary>Yetkili MCP sunuculari (docs/DOMAIN.md → MCP sunuculari). Sona eklendi (CLAUDE.md §5).</summary>
+    IReadOnlyList<string>? Mcp = null);
 
 public sealed record AgentDetail(
     string Key,
@@ -28,13 +30,16 @@ public sealed record AgentDetail(
     IReadOnlyList<string> Includes,
     string? CanAsk,
     string Prompt,
-    string ComposedPrompt);
+    string ComposedPrompt,
+    /// <summary>Yetkili MCP sunuculari. Sona eklendi (CLAUDE.md §5).</summary>
+    IReadOnlyList<string>? Mcp = null);
 
 /// <summary>
 /// PUT govdesi; anahtar yoldan gelir. TUM alanlar tasinir: eksik/null liste ya da metin 400 <c>request.invalid</c>
 /// (Api JSON secenekleri nullable notlarina uyar). <c>null</c> yalniz <see cref="Provider"/>, <see cref="Model"/>,
 /// <see cref="CanAsk"/> icin gecerlidir ve "yok / varsayilan" demektir; kismi guncelleme yoktur.
 /// <see cref="Provider"/> metin gelir ki bilinmeyen deger JSON hatasi degil <c>agent.invalid_provider</c> olsun.
+/// <see cref="Mcp"/> sonradan eklendi: null = mevcut yetkiler KORUNUR (alani bilmeyen istemci yetkiyi silmesin), [] = hepsi kalkar.
 /// </summary>
 public sealed record UpdateAgentRequest(
     string Name,
@@ -45,7 +50,8 @@ public sealed record UpdateAgentRequest(
     IReadOnlyList<string> Includes,
     string? CanAsk,
     string Prompt,
-    string? Effort = null);
+    string? Effort = null,
+    IReadOnlyList<string>? Mcp = null);
 
 /// <summary>POST govdesi: <see cref="UpdateAgentRequest"/> + anahtar.</summary>
 public sealed record CreateAgentRequest(
@@ -58,7 +64,8 @@ public sealed record CreateAgentRequest(
     IReadOnlyList<string> Includes,
     string? CanAsk,
     string Prompt,
-    string? Effort = null);
+    string? Effort = null,
+    IReadOnlyList<string>? Mcp = null);
 
 public sealed record KnowledgeItem(string Key, string Title, string Body);
 
@@ -99,7 +106,7 @@ public interface IAgentService
 
 }
 
-public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, ISceneLayout scene, ISceneEventPublisher events) : IAgentService
+public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, ISceneLayout scene, ISceneEventPublisher events, IMcpStore? mcp = null) : IAgentService
 {
     /// <summary>Sahne yerlesimi degisti: UI yeniden kurar (docs/SCENE.md → scene.reload).</summary>
     private void PublishReload(string reason) => events.Publish(SceneEventTypes.SceneReload, JsonSerializer.Serialize(new { reason }));
@@ -128,7 +135,7 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
 
         var agent = Compose(
             new Agent(key, key, "", [], null, null, [], null, ""),
-            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort));
+            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort, request.Mcp));
         var detail = await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
 
         // Sahne: bos sprite + bos masa (yoksa ziyaretci). Ekip md'si yazildiktan sonra; yerlesim hatasi ajani geri almaz.
@@ -255,6 +262,7 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         Includes = request.Includes,
         CanAsk = string.IsNullOrWhiteSpace(request.CanAsk) ? null : request.CanAsk.Trim(),
         Prompt = request.Prompt,
+        Mcp = request.Mcp is null ? current.Mcp : request.Mcp.Select(m => m.Trim()).Distinct(StringComparer.Ordinal).ToList() is { Count: > 0 } list ? list : null,
     };
 
     /// <summary>Once ekip butunu dogrulanir: yazilan dosya bir sonraki yuklemede patlamamali.</summary>
@@ -263,9 +271,30 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         var agents = new Dictionary<string, Agent>(team.Agents, StringComparer.Ordinal) { [agent.Key] = agent };
         var next = team with { Agents = agents };
         next.Validate();
+        await RequireKnownMcpAsync(agent, team.Agents.GetValueOrDefault(agent.Key), ct).ConfigureAwait(false);
 
         await store.SaveAgentAsync(agent, ct).ConfigureAwait(false);
         return ToDetail(agent, next);
+    }
+
+    /// <summary>
+    /// Yeni verilen MCP yetkisi kayitli bir sunucuya isaret etmeli. Onceden var olan anahtar denetlenmez: sunucu sonradan
+    /// silindiyse ajanin baska bir alanini kaydetmek engellenmesin (calisma aninda atlanir ve kayda yazilir).
+    /// </summary>
+    private async Task RequireKnownMcpAsync(Agent agent, Agent? before, CancellationToken ct)
+    {
+        var added = agent.McpServers.Except(before?.McpServers ?? [], StringComparer.Ordinal).ToList();
+        if (added.Count == 0 || mcp is null)
+        {
+            return;
+        }
+
+        var known = (await mcp.ListAsync(ct).ConfigureAwait(false)).Select(s => s.Key).ToHashSet(StringComparer.Ordinal);
+        var unknown = added.Where(a => !known.Contains(a)).ToList();
+        if (unknown.Count > 0)
+        {
+            throw new DomainException(ErrorCodes.AgentUnknownMcp, $"{agent.Key}: kayitli olmayan MCP sunucusu: {string.Join(", ", unknown)}.");
+        }
     }
 
     private static Agent Find(Team team, string key)
@@ -281,8 +310,8 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
     }
 
     private static AgentListItem ToItem(Agent a)
-        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk);
+        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.McpServers);
 
     private static AgentDetail ToDetail(Agent a, Team team)
-        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge));
+        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge), a.McpServers);
 }

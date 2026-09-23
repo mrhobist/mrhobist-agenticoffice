@@ -399,6 +399,14 @@ defineExpose({ canLeave })
         </div>
 
         <div class="field">
+          <span class="lbl">MCP yetkileri</span>
+          <div class="chips">
+            <code v-for="m in form.mcp ?? []" :key="m" class="tag">{{ m }}</code>
+            <span class="sub">{{ form.mcp?.length ? 'Araçlı adımlarda bu sunucuların araçlarını kullanır.' : 'Yok.' }} Yetki üst çubuktaki MCP panelinden verilir (M).</span>
+          </div>
+        </div>
+
+        <div class="field">
           <label class="lbl" for="agent-prompt">Sistem promptu</label>
           <textarea id="agent-prompt" v-model="form.prompt" class="prompt" spellcheck="false" />
         </div>

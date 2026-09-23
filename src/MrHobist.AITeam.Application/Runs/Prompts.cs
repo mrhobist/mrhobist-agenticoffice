@@ -5,6 +5,9 @@ using MrHobist.AITeam.Domain.Workflows;
 
 namespace MrHobist.AITeam.Application.Runs;
 
+/// <summary>Calismanin ekleri ve diskteki dizini (mutlak). Istemde yalniz yol ve tur gecer; icerik gomulmez.</summary>
+public sealed record AttachmentContext(string Directory, IReadOnlyList<RunAttachment> Items);
+
 /// <summary>Bagimli olunan, bitmis bir gorevin raporu: sonraki gorev ayni dosyalari yeniden kesfetmesin.</summary>
 public sealed record PriorTask(string Id, string Title, string Report);
 
@@ -15,12 +18,18 @@ public sealed record PriorTask(string Id, string Title, string Report);
 public static class Prompts
 {
     /// <summary>Analistin ilk mesaji: brief, proje dizini, akis, beklenen sema.</summary>
-    public static string AnalystBrief(Run run, Workflow wf, string projectRoot, IReadOnlyList<Knowledge>? knowledge = null)
+    public static string AnalystBrief(Run run, Workflow wf, string projectRoot, IReadOnlyList<Knowledge>? knowledge = null, AttachmentContext? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(wf);
         var sb = new StringBuilder();
         sb.AppendLine("# Brief").AppendLine(run.Brief).AppendLine();
+        if (attachments is { Items.Count: > 0 })
+        {
+            AppendAttachments(sb, attachments);
+            sb.AppendLine("Brief bu eklere dayanıyorsa planlamadan ÖNCE ilgili olanları oku. Görev açıklamasına hangi ekin ne için gerektiğini yaz (uygulayıcı da aynı listeyi görür).").AppendLine();
+        }
+
         sb.AppendLine("# Proje dizini");
         sb.AppendLine($"Tüm dosyalar şu dizinin İÇİNDE yaşar: `{projectRoot}`. Plandaki dosya yolları bu dizine göre GÖRELİ yazılır (ör. `src/App/Program.cs`), dizinin adı yola eklenmez, dışına çıkılmaz.");
         sb.AppendLine("Dizinde zaten kod olabilir; okuma araçların varsa önce bak, var olanın üstüne planla.").AppendLine();
@@ -170,8 +179,52 @@ public static class Prompts
         return list;
     }
 
+    /// <summary>
+    /// Ek listesi (docs/DOMAIN.md → Ekler). Icerik GOMULMEZ: her ic turda yeniden odenirdi (2026-09-23 maliyet olcumleri); ajan
+    /// yolu gorur, gerektiginde okur. Claude'un Read araci PDF'i sayfa sayfa, resmi goruntu olarak okur; Word'un metni yaninda .txt.
+    /// </summary>
+    private static void AppendAttachments(StringBuilder sb, AttachmentContext attachments)
+    {
+        sb.AppendLine("# Ekler");
+        sb.AppendLine($"Kullanıcı işi verirken bu dosyaları ekledi. Çalışma dizininin DIŞINDALAR ve yalnız okunur: `{attachments.Directory}`. "
+            + "İçerikleri isteme gömülmedi; gerektiğinde Read aracıyla mutlak yoluyla oku (Read PDF'i sayfa sayfa, resmi görüntü olarak okur). "
+            + "Projede dosya olarak kullanılacaksa (ör. logo, örnek veri) Bash ile çalışma dizinine KOPYALA; eki değiştirme, silme.");
+        foreach (var a in attachments.Items)
+        {
+            var path = Path.Combine(attachments.Directory, a.FileName);
+            sb.Append("- `").Append(a.Name).Append("` — ").Append(KindLabel(a.Kind)).Append(", ").Append(Size(a.Size)).Append(": `").Append(path).Append('`');
+            if (a.TextFile is not null)
+            {
+                sb.Append(" · metni: `").Append(Path.Combine(attachments.Directory, a.TextFile)).Append('`');
+            }
+            else if (a.Kind == AttachmentKind.Word)
+            {
+                sb.Append(" · metni çıkarılamadı");
+            }
+
+            sb.AppendLine();
+        }
+
+        sb.AppendLine();
+    }
+
+    private static string KindLabel(AttachmentKind kind) => kind switch
+    {
+        AttachmentKind.Document => "PDF",
+        AttachmentKind.Image => "resim",
+        AttachmentKind.Word => "Word",
+        _ => "metin",
+    };
+
+    private static string Size(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / 1024.0 / 1024.0:0.#} MB",
+    };
+
     /// <summary>Gorev baglami: plan + gorev + kurallar + dizin. Uc yurutucu de bunu kullanir.</summary>
-    private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, IReadOnlyList<PriorTask>? prior = null)
+    private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# Görev {a.Task.Id} — {a.Task.Title}").AppendLine(a.Task.Description).AppendLine();
@@ -189,6 +242,11 @@ public static class Prompts
         }
 
         sb.AppendLine();
+        if (attachments is { Items.Count: > 0 })
+        {
+            AppendAttachments(sb, attachments);
+        }
+
         if (prior is { Count: > 0 })
         {
             sb.AppendLine("# Bağımlı olduğun biten görevler");
@@ -212,11 +270,11 @@ public static class Prompts
     }
 
     /// <summary>Developer: araclarla dosyalari yazar, build'i kosar, sonunda rapor semasini doldurur.</summary>
-    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round, bool resumed = false, IReadOnlyList<PriorTask>? prior = null)
+    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round, bool resumed = false, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
-        var sb = TaskContext(spec, a, projectRoot, notes, prior);
+        var sb = TaskContext(spec, a, projectRoot, notes, prior, attachments);
         sb.AppendLine("# Yapılacak");
         sb.AppendLine(round > 1
             ? $"Bu görevin {round}. turu: yukarıdaki geri bildirimi (red/hata notu) MADDE MADDE gider, sonra kabul ölçütlerini yeniden doğrula."
@@ -249,13 +307,13 @@ public static class Prompts
     /// Supheyle red yonu de kapiya baglidir: ARA kapida red bedava degil, bir tur daha maliyet demek ve
     /// eksigi zaten sonraki test adimi yakalar; SON kapida ise hatali kodu gecirmek daha pahalidir.
     /// </summary>
-    public static string ReviewTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, Stage stage, Stage producer, int round, int maxRounds, IReadOnlyList<PriorTask>? prior = null)
+    public static string ReviewTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, Stage stage, Stage producer, int round, int maxRounds, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(stage);
         ArgumentNullException.ThrowIfNull(producer);
-        var sb = TaskContext(spec, a, projectRoot, notes, prior);
+        var sb = TaskContext(spec, a, projectRoot, notes, prior, attachments);
         sb.AppendLine($"# Yapılacak — {stage.Title} ({round}/{maxRounds}. tur)");
         sb.AppendLine(stage.Description);
 
@@ -280,11 +338,11 @@ public static class Prompts
     }
 
     /// <summary>Tasarimci: kod yazmaz, developer'in uyacagi rehberligi uretir.</summary>
-    public static string DesignTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes)
+    public static string DesignTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, AttachmentContext? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
-        var sb = TaskContext(spec, a, projectRoot, notes);
+        var sb = TaskContext(spec, a, projectRoot, notes, attachments: attachments);
         sb.AppendLine("# Yapılacak — Tasarım");
         sb.AppendLine("Bu görev için developer'ın uyacağı tasarım rehberliğini yaz: arayüz/akış kararları, isimlendirme, hata durumları, kabul ölçütlerine nasıl ulaşılacağı. Kod yazma, dosya değiştirme. Dizini okuyabilirsin.");
         sb.AppendLine("Verilen JSON şemasına uyan çıktıyı ver: guidance, decisions.");
@@ -295,11 +353,11 @@ public static class Prompts
     /// <c>can_ask</c> hedefine (manager) giden soru: gorev baglami + takilan ajanin raporu + sorusu. Hedef kod yazmaz;
     /// dizini okuyabilir. Tek karar ister; yetki disiysa yukseltir (docs/DOMAIN.md → Takilma, ajan → ajan sorusu).
     /// </summary>
-    public static string AskColleague(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, string askerName, string question, string report)
+    public static string AskColleague(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, string askerName, string question, string report, AttachmentContext? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
-        var sb = TaskContext(spec, a, projectRoot, notes);
+        var sb = TaskContext(spec, a, projectRoot, notes, attachments: attachments);
         sb.AppendLine($"# Soru — {askerName} ({a.Agent}) takıldı");
         sb.AppendLine("## Raporu").AppendLine(report).AppendLine();
         sb.AppendLine("## Sorusu").AppendLine(question).AppendLine();

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AgentListItem, LaunchResult, LiveTurn, ProjectCard, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
+import type { AgentListItem, AttachmentKind, AttachmentRules, LaunchResult, LiveTurn, ProjectCard, RunAttachment, RunDetail, RunRequest, RunStatus, RunSummary, StagedAttachment, Turn, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { COST_TITLE, RUN_CANCELLABLE, RUN_RETRYABLE, RUN_STATUS_LABEL, fmtCost, subjectLabel } from '~/api/labels'
@@ -39,6 +39,9 @@ const recent = ref<RunSummary[]>([])
 const projectCard = ref<ProjectCard | null>(null)
 async function loadForm() {
   try { workflows.value = await api.get<WorkflowListItem[]>('/api/v1/workflows') } catch { workflows.value = [] }
+  if (!attachRules.value) {
+    try { attachRules.value = await api.get<AttachmentRules>('/api/v1/attachments/rules') } catch { attachRules.value = null }
+  }
   if (props.project) {
     try {
       projectCard.value = await api.get<ProjectCard>(`/api/v1/projects/${encodeURIComponent(props.project)}`)
@@ -51,8 +54,97 @@ async function loadForm() {
   }
 }
 
+// ------------------------------------------------------------------ ekler (docs/DOMAIN.md → Ekler)
+// Dosya secilince hemen yuklenir (gecici alan, kimlik doner); is gonderilirken kimlikler govdeye girer. Icerik isteme
+// gomulmez: ajan yolu gorur, Read ile okur (PDF sayfa sayfa, resim goruntu olarak).
+
+const attachRules = ref<AttachmentRules | null>(null)
+const staged = ref<StagedAttachment[]>([])
+const uploading = ref(0)
+const uploadError = ref<string | null>(null)
+const dragOver = ref(false)
+const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
+const acceptList = computed(() => attachRules.value?.extensions.join(',') ?? '')
+
+const KIND_LABEL: Record<AttachmentKind, string> = { document: 'PDF', image: 'Resim', text: 'Metin', word: 'Word' }
+
+/** Sozlesmede 64 bit sayilar `number | string` uretilir (OpenAPI); ekranda sayiya cevrilir. */
+function fmtSize(value: number | string): string {
+  const bytes = Number(value)
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+async function addFiles(files: File[]) {
+  uploadError.value = null
+  const rules = attachRules.value
+  for (const f of files) {
+    if (rules && staged.value.length + uploading.value >= Number(rules.maxPerRun)) {
+      uploadError.value = `Bir işe en fazla ${rules.maxPerRun} dosya eklenebilir.`
+      break
+    }
+    if (rules && f.size > Number(rules.maxBytes)) {
+      uploadError.value = `${f.name}: ${fmtSize(f.size)}; üst sınır ${fmtSize(rules.maxBytes)}.`
+      continue
+    }
+    uploading.value++
+    try {
+      const form = new FormData()
+      form.append('files', f, f.name)
+      staged.value.push(...await api.upload<StagedAttachment[]>('/api/v1/attachments', form))
+    } catch (e) {
+      uploadError.value = `${f.name}: ${errorText(e)}`
+    } finally {
+      uploading.value--
+    }
+  }
+}
+
+function onPick(e: Event) {
+  const input = e.target as HTMLInputElement
+  void addFiles(Array.from(input.files ?? []))
+  input.value = ''
+}
+
+function onDrop(e: DragEvent) {
+  dragOver.value = false
+  void addFiles(Array.from(e.dataTransfer?.files ?? []))
+}
+
+/** Ekran goruntusu brief'e yapistirilabilir: panodaki dosya ek olur, metin yapistirma bozulmaz. */
+function onPaste(e: ClipboardEvent) {
+  const files = Array.from(e.clipboardData?.files ?? [])
+  if (!files.length) return
+  e.preventDefault()
+  const stamp = new Date().toISOString().slice(11, 19).replaceAll(':', '')
+  void addFiles(files.map((f, i) => f.name && f.name !== 'image.png' ? f : new File([f], `ekran-${stamp}${i ? `-${i}` : ''}.png`, { type: f.type })))
+}
+
+function removeStaged(id: string) {
+  staged.value = staged.value.filter(a => a.id !== id)
+}
+
+/** Ek indirme: JWT basligi gerekir, duz baglanti olmaz. PDF/resim yeni sekmede acilir, digerleri iner. */
+async function openAttachment(a: RunAttachment, file?: string) {
+  if (!run.value) return
+  const name = file ?? a.fileName
+  try {
+    const blob = await api.blob(`/api/v1/runs/${encodeURIComponent(run.value.id)}/attachments/${encodeURIComponent(name)}`)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    if (!file && (a.kind === 'document' || a.kind === 'image')) link.target = '_blank'
+    else link.download = file ?? a.name
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (e) {
+    actError.value = errorText(e)
+  }
+}
+
 async function start() {
-  if (starting.value || !brief.value.trim()) return
+  if (starting.value || !brief.value.trim() || uploading.value) return
   starting.value = true
   startError.value = null
   if (!props.project) { startError.value = 'İş bir projenin içinde başlar; önce proje seç.'; return }
@@ -64,10 +156,13 @@ async function start() {
       workflow: workflowKey.value || null,
       label: label.value.trim() || null,
       maxCostUsd: Number.isFinite(budget) && budget > 0 ? budget : null,
+      attachments: staged.value.length ? staged.value.map(a => a.id) : null,
     }
     const run = await api.post<RunSummary>('/api/v1/runs', body)
     brief.value = ''
     label.value = ''
+    staged.value = []
+    uploadError.value = null
     emit('open', run.id)
   } catch (e) {
     startError.value = errorText(e)
@@ -412,7 +507,29 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
       <form v-else-if="!runId" class="form" @submit.prevent="start">
         <div class="field">
           <label class="lbl" for="run-brief">Brief</label>
-          <textarea id="run-brief" v-model="brief" class="brief" placeholder="Ne yapılacak? Analist bunu plana çevirir; plan senin onayına gelir." required />
+          <textarea id="run-brief" v-model="brief" class="brief" placeholder="Ne yapılacak? Analist bunu plana çevirir; plan senin onayına gelir." required @paste="onPaste" />
+        </div>
+        <div class="field">
+          <span class="lbl">Ekler <span class="sub">(PDF, resim, Word, metin · en fazla {{ attachRules?.maxPerRun ?? 10 }} dosya, dosya başına {{ fmtSize(attachRules?.maxBytes ?? 20 * 1024 * 1024) }})</span></span>
+          <div
+            class="drop" :class="{ over: dragOver }"
+            @dragenter.prevent="dragOver = true" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop"
+          >
+            <button type="button" class="small" @click="fileInput?.click()">Dosya seç</button>
+            <span class="sub">ya da buraya sürükle · ekran görüntüsünü brief'e yapıştırabilirsin</span>
+            <input ref="fileInput" type="file" multiple :accept="acceptList" hidden @change="onPick">
+          </div>
+          <ul v-if="staged.length || uploading" class="att-list">
+            <li v-for="a in staged" :key="a.id">
+              <span class="att-kind" :class="a.kind">{{ KIND_LABEL[a.kind] }}</span>
+              <span class="att-name" :title="a.name">{{ a.name }}</span>
+              <span class="sub">{{ fmtSize(a.size) }}</span>
+              <button type="button" class="att-x" :aria-label="`${a.name} ekini kaldır`" @click="removeStaged(a.id)">×</button>
+            </li>
+            <li v-if="uploading" class="sub">{{ uploading }} dosya yükleniyor…</li>
+          </ul>
+          <span v-if="uploadError" class="err" role="alert">{{ uploadError }}</span>
+          <span v-if="staged.length" class="sub">İçerik isteme gömülmez: ajan dosyaların yolunu görür ve gerektiğinde okur (PDF ve resmi Claude okuyabilir; Word'ün metni çıkarılır).</span>
         </div>
         <div class="row">
           <div class="field">
@@ -435,7 +552,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
         </div>
         <p class="sub">Proje: <strong>{{ projectCard?.title ?? project }}</strong><template v-if="projectCard"> · hedef <code>{{ projectCard.targetDir }}</code></template>. Hassasiyet: <strong>anthropic</strong>. Plan onaylanmadan hiçbir ajan iş almaz.</p>
         <div class="actions">
-          <button class="primary" type="submit" :disabled="starting || !brief.trim()">{{ starting ? 'Başlatılıyor…' : 'Analize gönder' }}</button>
+          <button class="primary" type="submit" :disabled="starting || !brief.trim() || uploading > 0">{{ starting ? 'Başlatılıyor…' : uploading ? 'Ekler yükleniyor…' : 'Analize gönder' }}</button>
           <span v-if="startError" class="err" role="alert">{{ startError }}</span>
         </div>
 
@@ -529,6 +646,18 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
           <details class="brief-box">
             <summary>Brief</summary>
             <pre>{{ run.brief }}</pre>
+          </details>
+
+          <details v-if="run.attachments?.length" class="brief-box" open>
+            <summary>Ekler ({{ run.attachments.length }})</summary>
+            <ul class="att-list">
+              <li v-for="a in run.attachments" :key="a.id">
+                <span class="att-kind" :class="a.kind">{{ KIND_LABEL[a.kind] }}</span>
+                <button type="button" class="link att-name" :title="`${a.name} — aç`" @click="openAttachment(a)">{{ a.name }}</button>
+                <span class="sub">{{ fmtSize(a.size) }}</span>
+                <button v-if="a.textFile" type="button" class="link small-link" title="Word'den çıkarılan metin (ajan bunu okur)" @click="openAttachment(a, a.textFile)">metni</button>
+              </li>
+            </ul>
           </details>
 
           <!-- Hata varsa en uste: "takildi" tek basina bilgi degildir. -->
@@ -698,6 +827,18 @@ input[type="text"], select, textarea {
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid #4f8ef7; outline-offset: 0; }
 .brief { min-height: 160px; resize: vertical; line-height: 1.45; }
+.drop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px; border: 1px dashed #b9b2a0; border-radius: 6px; background: #faf8f2; }
+.drop.over { border-color: #4f8ef7; background: #eef4ff; }
+.att-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.att-list li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.att-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-kind { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; background: #e5e7ee; color: #4a5068; }
+.att-kind.document { background: #f7dcdc; color: #7a2323; }
+.att-kind.image { background: #dcf1d3; color: #2d5a22; }
+.att-kind.word { background: #d8ebfa; color: #1d4f7a; }
+.att-x { margin-left: auto; flex: none; width: 22px; height: 22px; padding: 0; border: none; background: none; font-size: 16px; line-height: 1; color: #6b7285; }
+.att-x:hover { background: rgba(35,40,58,0.10); color: #23283a; }
+.small-link { font-size: 11px; }
 .note { min-height: 70px; resize: vertical; }
 .sub { font-size: 11px; color: #6b7285; line-height: 1.4; }
 .sub.right { margin-left: auto; }

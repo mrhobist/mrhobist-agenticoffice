@@ -1,6 +1,8 @@
 using MrHobist.AITeam.Api.Jobs;
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Runs;
+using MrHobist.AITeam.Application.Common;
+using MrHobist.AITeam.Domain;
 using MrHobist.AITeam.Domain.Runs;
 
 namespace MrHobist.AITeam.Api.Runs;
@@ -44,6 +46,50 @@ public static class RunEndpoints
         g.MapPost("/{id}/answer", async (string id, AnswerRequest body, IRunService runs, IRunScheduler scheduler, CancellationToken ct)
             => ScheduleAndAccept(await runs.BeginAnswerAsync(id, body, ct).ConfigureAwait(false), scheduler));
 
+        // Ekler (docs/DOMAIN.md → Ekler): once dosya yuklenir (gecici alan, kimlik doner), sonra POST /runs govdesinde kimlik verilir.
+        // Tek istekte bir ya da birkac dosya; her biri AttachmentRules'tan gecer. JWT ile korunur, antiforgery gerekmez.
+        app.MapPost("/api/v1/attachments", async (HttpRequest http, IAttachmentStore store, CancellationToken ct) =>
+        {
+            if (!http.HasFormContentType)
+            {
+                throw new BadHttpRequestException("multipart/form-data bekleniyor.");
+            }
+
+            var form = await http.ReadFormAsync(ct).ConfigureAwait(false);
+            if (form.Files.Count == 0)
+            {
+                throw new DomainException(ErrorCodes.AttachmentEmpty, "dosya yok.");
+            }
+
+            if (form.Files.Count > AttachmentRules.MaxPerRun)
+            {
+                throw new DomainException(ErrorCodes.AttachmentTooMany, $"En fazla {AttachmentRules.MaxPerRun} ek verilebilir.");
+            }
+
+            var result = new List<StagedAttachment>();
+            foreach (var file in form.Files)
+            {
+                await using var stream = file.OpenReadStream();
+                result.Add(await store.StageAsync(file.FileName, file.Length, stream, ct).ConfigureAwait(false));
+            }
+
+            return result;
+        }).DisableAntiforgery().Accepts<IFormFileCollection>("multipart/form-data").Produces<List<StagedAttachment>>();
+
+        // UI'in dosya secicisi icin kurallar: izinli uzantilar, boyut ve adet siniri (tek kaynak AttachmentRules).
+        app.MapGet("/api/v1/attachments/rules", () => new AttachmentRulesView(AttachmentRules.Extensions, AttachmentRules.MaxBytes, AttachmentRules.MaxPerRun));
+
+        // Calismanin eki: indirme. Ad calismanin kayitli eklerinden biri olmali (disari cikma yok).
+        g.MapGet("/{id}/attachments/{file}", async (string id, string file, IRunReader reader, IAttachmentStore store, CancellationToken ct) =>
+        {
+            var run = await reader.GetAsync(id, ct).ConfigureAwait(false);
+            var att = run.Attachments?.FirstOrDefault(a => a.FileName == file || a.TextFile == file)
+                ?? throw new NotFoundException(ErrorCodes.AttachmentNotFound, $"Ek yok: '{file}'.");
+            var path = store.PathOf(run.Id, file) ?? throw new NotFoundException(ErrorCodes.AttachmentNotFound, $"Ek dosyasi diskte yok: '{file}'.");
+            var type = att.TextFile == file ? "text/plain; charset=utf-8" : att.MediaType;
+            return Results.File(path, type, att.TextFile == file ? file : att.Name);
+        });
+
         // Canli arac akisi: runtime suren turda her arac cagrisini buraya bildirir (belirtec = yetki, JWT yok). Bilinmeyen belirtec 204: tur bitmis.
         app.MapPost("/api/v1/progress/{token}", (string token, ProgressEvent body, ProgressRegistry registry) =>
         {
@@ -73,3 +119,6 @@ public static class RunEndpoints
         return Results.Accepted($"/api/v1/runs/{run.Id}", run);
     }
 }
+
+/// <summary><c>GET /attachments/rules</c>: izinli uzantilar (<c>.pdf</c>...), tek dosya ust siniri (bayt), is basina en fazla ek.</summary>
+public sealed record AttachmentRulesView(IReadOnlyList<string> Extensions, long MaxBytes, int MaxPerRun);

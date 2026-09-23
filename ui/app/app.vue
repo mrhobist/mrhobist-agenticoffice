@@ -19,6 +19,7 @@
           <span v-if="inboxCount" class="badge" :aria-label="`${inboxCount} iş senden cevap bekliyor`">{{ inboxCount }}</span>
         </button>
         <button type="button" class="chip action" :class="{ on: teamPanel }" aria-label="Ekip yönetimi" title="Ekip yönetimi (E): ajanlar ve takımlar" @click="toggleTeam">Ekip</button>
+        <button type="button" class="chip action" :class="{ on: mcpPanel }" aria-label="MCP sunucuları" title="MCP sunucuları (M): ekle, dene, ajanlara yetki ver" @click="toggleMcp">MCP</button>
         <span class="help-wrap">
           <button type="button" class="chip action help" aria-label="Kısayollar" title="Kısayollar" @click="help = !help">?</button>
           <div v-if="help" class="help-menu" role="dialog" aria-label="Kısayollar">
@@ -28,6 +29,7 @@
               <dt><kbd>I</kbd></dt><dd>İşler</dd>
               <dt><kbd>B</kbd></dt><dd>Sprint panosu (Kanban)</dd>
               <dt><kbd>E</kbd></dt><dd>Ekip yönetimi</dd>
+              <dt><kbd>M</kbd></dt><dd>MCP sunucuları</dd>
               <dt><kbd>S</kbd></dt><dd>Ayarlar</dd>
               <dt><kbd>Esc</kbd></dt><dd>Açık paneli kapat</dd>
             </dl>
@@ -125,7 +127,7 @@
         <!-- Ekip pusulasi: sahnede kim ne yapiyor; tiklaninca ajan paneli. Yari saydam, sahneyi kapatmaz. -->
         <!-- Ekip pusulasi: sahnede kim ne yapiyor. Kucultulebilir (kullanici istegi 2026-09-20): kapaliyken yalniz renkli
              noktalar + mesgul sayisi; tiklaninca acilir. Secim localStorage'da kalir. -->
-        <div v-if="!selected && !runPanel && !settings && !jobs && !board && !teamPanel" class="compass" :class="{ min: compassMin }" aria-label="Ekip">
+        <div v-if="!selected && !runPanel && !settings && !jobs && !board && !teamPanel && !mcpPanel" class="compass" :class="{ min: compassMin }" aria-label="Ekip">
           <button type="button" class="compass-head" :title="compassMin ? 'Ekibi göster' : 'Ekibi küçült'" @click="toggleCompass">
             <span class="compass-title">Ekip</span>
             <span v-if="compassMin" class="compass-dots"><span v-for="a in agents" :key="a.key" class="dot" :class="{ busy: a.state !== 'idle' && a.state !== 'done' }" :style="{ background: roleHex(a.key) }" :title="`${a.name}: ${a.note || STATE_LABEL[a.state as AgentState]}`" /></span>
@@ -169,6 +171,7 @@
 
         <!-- Ayarlar: LLM baglantilari (tek tikla giris) ve kullanim. -->
         <SettingsPanel v-if="settings" @close="settings = false" @changed="loadProviders(); limitsBar?.reload()" />
+        <McpPanel v-if="mcpPanel" :agents="team" @close="mcpPanel = false" @changed="loadTeam()" />
 
         <AgentPanel
           v-if="selected"
@@ -190,6 +193,7 @@ import KanbanPanel, { type BoardSnapshot } from '~/components/KanbanPanel.vue'
 import AgentPanel from '~/components/AgentPanel.vue'
 import RunPanel from '~/components/RunPanel.vue'
 import SettingsPanel from '~/components/SettingsPanel.vue'
+import McpPanel from '~/components/McpPanel.vue'
 import LimitsBar from '~/components/LimitsBar.vue'
 import JobsPanel from '~/components/JobsPanel.vue'
 import ProjectPanel from '~/components/ProjectPanel.vue'
@@ -395,6 +399,8 @@ const runProject = ref<string | null>(null)
 /** Panodan acilan gorev: calisma paneli canli akisi bu goreve odaklar. */
 const runFocus = ref<string | null>(null)
 const settings = ref(false)
+/** MCP sunuculari paneli (docs/DOMAIN.md → MCP sunuculari). Diger yan paneller gibi tek basina acilir. */
+const mcpPanel = ref(false)
 const jobs = ref(false)
 const bell = ref(false)
 function toggleBell() { bell.value = !bell.value; if (bell.value) void loadOverview() }
@@ -414,6 +420,7 @@ function closeOthers() {
   selected.value = null
   board.value = null
   settings.value = false
+  mcpPanel.value = false
   jobs.value = false
   teamPanel.value = false
 }
@@ -451,7 +458,17 @@ function toggleSettings() {
   runPanel.value = false
   jobs.value = false
   teamPanel.value = false
+  mcpPanel.value = false
   settings.value = true
+}
+
+function toggleMcp() {
+  if (mcpPanel.value) { mcpPanel.value = false; return }
+  if (selected.value && !leaveAgent()) return
+  closeOthers()
+  runPanel.value = false
+  mcpPanel.value = true
+  void loadTeam()
 }
 
 function toggleJobs() {
@@ -461,6 +478,7 @@ function toggleJobs() {
   board.value = null
   runPanel.value = false
   settings.value = false
+  mcpPanel.value = false
   teamPanel.value = false
   jobs.value = true
   void loadOverview()
@@ -473,7 +491,7 @@ function leaveAgent(): boolean {
 function selectAgent(key: string | null) {
   if (key === selected.value || !leaveAgent()) return
   selected.value = key
-  if (key) { board.value = null; runPanel.value = false; settings.value = false; jobs.value = false; teamPanel.value = false }
+  if (key) { board.value = null; runPanel.value = false; settings.value = false; mcpPanel.value = false; jobs.value = false; teamPanel.value = false }
 }
 
 function closeAgent() {
@@ -495,6 +513,7 @@ function openBoard(s: BoardSnapshot) {
   selected.value = null
   runPanel.value = false
   settings.value = false
+  mcpPanel.value = false
   jobs.value = false
   teamPanel.value = false
   board.value = s
@@ -526,6 +545,7 @@ function onKey(e: KeyboardEvent) {
     if (help.value) help.value = false
     else if (bell.value) bell.value = false
     else if (teamPanel.value) teamPanel.value = false
+    else if (mcpPanel.value) mcpPanel.value = false
     else if (settings.value) settings.value = false
     else if (jobs.value) jobs.value = false
     else if (runPanel.value) runPanel.value = false
@@ -541,6 +561,7 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 's' || e.key === 'S') toggleSettings()
   if (e.key === 'i' || e.key === 'I') toggleJobs()
   if (e.key === 'e' || e.key === 'E') toggleTeam()
+  if (e.key === 'm' || e.key === 'M') toggleMcp()
 }
 function bootData() {
   void loadTeam()

@@ -4,6 +4,80 @@
  */
 
 export interface paths {
+    "/api/v1/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": components["schemas"]["IFormFileCollection"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StagedAttachment"][];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/attachments/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AttachmentRulesView"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/progress/{token}": {
         parameters: {
             query?: never;
@@ -1387,6 +1461,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{id}/attachments/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{id}/cancel": {
         parameters: {
             query?: never;
@@ -1715,6 +1825,221 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpServerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpServerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpAccessRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpTestResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1731,6 +2056,7 @@ export interface components {
             canAsk: null | string;
             prompt: string;
             composedPrompt: string;
+            mcp?: null | string[];
         };
         AgentListItem: {
             key: string;
@@ -1742,6 +2068,7 @@ export interface components {
             effort: null | string;
             includes: string[];
             canAsk: null | string;
+            mcp?: null | string[];
         };
         AgentRunWork: {
             run: components["schemas"]["Run"];
@@ -1752,6 +2079,15 @@ export interface components {
         AnswerRequest: {
             choice: string;
             note?: null | string;
+        };
+        /** @enum {unknown} */
+        AttachmentKind: "document" | "image" | "text" | "word";
+        AttachmentRulesView: {
+            extensions: string[];
+            /** Format: int64 */
+            maxBytes: number | string;
+            /** Format: int32 */
+            maxPerRun: number | string;
         };
         ContextStats: {
             /** Format: int32 */
@@ -1778,6 +2114,7 @@ export interface components {
             canAsk: null | string;
             prompt: string;
             effort?: null | string;
+            mcp?: null | string[];
         };
         CreateProjectRequest: {
             key: string;
@@ -1798,6 +2135,9 @@ export interface components {
             parent: null | string;
             dirs: components["schemas"]["WorkspaceDirectory"][];
         };
+        /** Format: binary */
+        IFormFile: string;
+        IFormFileCollection: components["schemas"]["IFormFile"][];
         ImportMarkdownRequest: {
             key: string;
             markdown: string;
@@ -1865,6 +2205,54 @@ export interface components {
             expiresAt: string;
             user: components["schemas"]["UserInfo"];
         };
+        McpAccessRequest: {
+            agents: string[];
+        };
+        McpSecretEntry: {
+            name: string;
+            hasValue: boolean;
+        };
+        McpSecretInput: {
+            name: string;
+            value?: null | string;
+        };
+        McpServerRequest: {
+            key: string;
+            name: string;
+            transport: components["schemas"]["McpTransport"];
+            command?: null | string;
+            args?: null | string[];
+            url?: null | string;
+            env?: null | components["schemas"]["McpSecretInput"][];
+            headers?: null | components["schemas"]["McpSecretInput"][];
+            /** @default true */
+            enabled: boolean;
+            description?: null | string;
+        };
+        McpServerView: {
+            key: string;
+            name: string;
+            description: string;
+            transport: components["schemas"]["McpTransport"];
+            command: null | string;
+            args: string[];
+            url: null | string;
+            env: components["schemas"]["McpSecretEntry"][];
+            headers: components["schemas"]["McpSecretEntry"][];
+            enabled: boolean;
+            /** Format: date-time */
+            updatedAt: null | string;
+            agents: string[];
+        };
+        McpTestResult: {
+            ok: boolean;
+            detail: string;
+            tools: components["schemas"]["RuntimeMcpTool"][];
+            serverName: null | string;
+            serverVersion: null | string;
+        };
+        /** @enum {unknown} */
+        McpTransport: "stdio" | "http" | "sse";
         Message: {
             /** Format: date-time */
             ts: string;
@@ -1904,12 +2292,14 @@ export interface components {
         /** @enum {unknown} */
         PhaseStatus: "started" | "done" | "rejected" | "failed" | "skipped";
         ProgressEvent: {
-            tool: null | string;
-            target: null | string;
+            tool?: null | string;
+            target?: null | string;
             kind?: null | string;
             text?: null | string;
             messageId?: null | string;
             usage?: null | components["schemas"]["RuntimeUsage"];
+            /** Format: int32 */
+            chars?: null | number | string;
         };
         ProjectCard: {
             key: string;
@@ -2051,10 +2441,21 @@ export interface components {
              * @default 0
              */
             outputTokens: number | string;
+            attachments?: null | components["schemas"]["RunAttachment"][];
             /** Format: int64 */
             totalTokens?: number | string;
             isCancellable?: boolean;
             isRetryable?: boolean;
+        };
+        RunAttachment: {
+            id: string;
+            name: string;
+            fileName: string;
+            mediaType: string;
+            /** Format: int64 */
+            size: number | string;
+            kind: components["schemas"]["AttachmentKind"];
+            textFile?: null | string;
         };
         RunDetail: {
             id: string;
@@ -2087,6 +2488,7 @@ export interface components {
             step?: null | components["schemas"]["RunStep"];
             /** Format: date-time */
             waitingSince?: null | string;
+            attachments?: null | components["schemas"]["RunAttachment"][];
         };
         RunRequest: {
             brief: string;
@@ -2096,6 +2498,7 @@ export interface components {
             /** Format: double */
             maxCostUsd?: null | number | string;
             project?: null | string;
+            attachments?: null | string[];
         };
         /** @enum {unknown} */
         RunStatus: "running" | "completed" | "failed" | "interrupted" | "budgetExceeded" | "policyRejected" | "awaitingApproval" | "paused" | "cancelled" | "awaitingInput";
@@ -2143,6 +2546,10 @@ export interface components {
             provider: components["schemas"]["Provider"];
             started: boolean;
             detail: string;
+        };
+        RuntimeMcpTool: {
+            name: string;
+            description: null | string;
         };
         RuntimeModelInfo: {
             provider: components["schemas"]["Provider"];
@@ -2249,6 +2656,7 @@ export interface components {
             /** Format: double */
             quotaPoints: null | number | string;
             lines: components["schemas"]["SpendLine"][];
+            unpricedModels?: null | string[];
         };
         /** @enum {unknown} */
         StageKind: "analyze" | "design" | "implement" | "review" | "handoff";
@@ -2259,6 +2667,14 @@ export interface components {
             role: string;
             officeRole: string;
             description: string;
+        };
+        StagedAttachment: {
+            id: string;
+            name: string;
+            mediaType: string;
+            /** Format: int64 */
+            size: number | string;
+            kind: components["schemas"]["AttachmentKind"];
         };
         TaskPhases: {
             id: string;
@@ -2314,6 +2730,7 @@ export interface components {
             canAsk: null | string;
             prompt: string;
             effort?: null | string;
+            mcp?: null | string[];
         };
         UsageItem: {
             provider: string;

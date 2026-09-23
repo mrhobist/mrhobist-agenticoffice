@@ -945,3 +945,22 @@ compactor, build/test çıktı kırpma (israf döngüsü yok).
 - **`.env*` yasağı:** ofis ajanı artık kullanıcının Claude Code ayarlarını devralmıyor (`setting_sources=[]`), o
   yasak ajana uygulanmıyor. Ofis kuralı olarak eklenmedi; sırlar zaten kurum desenine göre user-secrets'ta.
 
+### Ara iş: iş eklerinde PDF/resim/belge + MCP yönetimi ve ajan yetkisi — 2026-09-23 ✅
+
+**Kullanıcı isteği:** "İş verilirken PDF vb. doküman, resim verilebilsin. MCP yönetim ekranı olsun, MCP eklenip yönetilebilsin,
+ekipteki kişilere MCP yetkisi verilsin." Kararlar belgede (DOMAIN.md → Ekler, MCP sunucuları; varsayımla ilerlenir).
+
+- **Ekler:** yeni iş formunda seç / sürükle-bırak / brief'e ekran görüntüsü yapıştır → `POST /attachments` (geçici) → `POST /runs`
+  `attachments[]` → `data/attachments/{runId}/`, üstveri `run.attachments`. İçerik isteme gömülmez; analiz ve görev istemlerinde
+  `# Ekler` (ad, tür, boyut, mutlak yol), ajana `readDirs` ile okuma izni (SDK `add_dirs`), yazma yine yalnız cwd. Word'ün metni
+  `.docx.txt` olarak çıkarılır. Çalışma detayında ekler listelenir/indirilir. Proje silinince ek dizinleri de gider.
+- **MCP:** tanım `mcp_server` tablosunda (betik 0004; belirteç git'e girmesin), yetki ajan md'sinde `mcp: [...]`. Üst çubukta
+  **MCP** paneli (kısayol M): ekle/düzenle/sil, aç/kapat, **Bağlantıyı dene** (runtime `mcp` istemcisiyle araçları listeler),
+  ajan başına yetki kutuları. Sırlar (env/başlık değeri) hiçbir yanıta yazılmaz. Yetkili ajan araçlı turlarda sunucuyu alır;
+  kapalı/silinmiş anahtar atlanır ve kayda not düşer. Yalnız Anthropic ajanları (diğerine yetki 400 `agent.mcp_unsupported`).
+- **Doğrulama:** 46 birim + 147 servis + 61 Python testi, `-warnaserror` derleme, UI typecheck. Python testi gerçek bir stdio MCP
+  sunucusuna (`runtime/tests/fixtures/echo_mcp.py`) bağlanıyor. Canlı Api'de uçlar denendi; arayüzden sunucu eklendi, bağlantı
+  denendi, yetki verilip kaldırıldı (ajan md'si byte-byte geri döndü), ek yüklendi, `.exe` reddedildi. **Uçtan uca gerçek tur**
+  (Haiku 4.5, $0,01): ajan cwd dışındaki eki Read ile okudu, `mcp__echo__echo` aracını çağırdı.
+- **Görülmedi:** eki olan bir çalışmanın detay ekranı (gerçek iş kota harcar); PDF/resim okumanın Opus'la büyük dosyada davranışı.
+- **Bilinçli dışarıda:** revize/devam brief'ine ek; Codex (openai) MCP bağlantısı; MCP araç çağrısı başına izin sorma.

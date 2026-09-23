@@ -13,6 +13,8 @@ public sealed class SpendReaderTests
     {
         public DateTimeOffset? Since { get; private set; }
 
+        public Task<RuntimeMcpProbe> ProbeMcpAsync(RuntimeMcpServer server, CancellationToken ct) => throw new NotSupportedException();
+
         public Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
         {
             Since = since;

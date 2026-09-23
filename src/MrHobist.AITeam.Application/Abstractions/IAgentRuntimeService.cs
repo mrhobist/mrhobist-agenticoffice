@@ -23,7 +23,31 @@ public sealed record RuntimeTurnRequest(
     /// Sistem promptunun SDK'ya nasil verildigi (<see cref="SystemPromptModes"/>). Karar burada, .NET'te;
     /// runtime yalniz esler. Yeni alan SONA eklendi (CLAUDE.md §5); yoksa eski davranis (<c>replace</c>).
     /// </summary>
-    string SystemPromptMode = SystemPromptModes.Replace);
+    string SystemPromptMode = SystemPromptModes.Replace,
+    /// <summary>
+    /// Ajana acilan MCP sunuculari (anahtar → baglanti). Yalniz aracli turda ve MCP destekleyen saglayicida dolu; hangi ajanin
+    /// hangisini aldigi .NET'in karari (ajan md'si <c>mcp</c>). Sona eklendi (CLAUDE.md §5); null = yok.
+    /// </summary>
+    IReadOnlyDictionary<string, RuntimeMcpServer>? McpServers = null,
+    /// <summary>
+    /// Cwd DISINDA okunabilecek dizinler (is ekleri). Yazma araclari yine yalniz <see cref="Cwd"/> altinda; Bash bu dizinlerdeki yollari
+    /// kullanabilir (ör. bir resmi projeye kopyalamak). Sona eklendi; null = yok.
+    /// </summary>
+    IReadOnlyList<string>? ReadDirs = null);
+
+/// <summary>Runtime'a giden MCP baglantisi (SDK bicimi): <c>stdio</c> komut/args/env · <c>http</c>|<c>sse</c> url/basliklar.</summary>
+public sealed record RuntimeMcpServer(
+    string Type,
+    string? Command = null,
+    IReadOnlyList<string>? Args = null,
+    IReadOnlyDictionary<string, string>? Env = null,
+    string? Url = null,
+    IReadOnlyDictionary<string, string>? Headers = null);
+
+/// <summary>MCP baglanti denemesinin sonucu: sunucu acildi mi, hangi araclari sunuyor. Durum degil, anlik olcum.</summary>
+public sealed record RuntimeMcpProbe(bool Ok, string Detail, IReadOnlyList<RuntimeMcpTool> Tools, string? ServerName = null, string? ServerVersion = null);
+
+public sealed record RuntimeMcpTool(string Name, string? Description);
 
 /// <summary>
 /// Claude Code'un KENDI sistem promptu korunsun mu. Olculdu 2026-09-21 (ayni brief/model/efor):
@@ -114,6 +138,12 @@ public interface IAgentRuntimeService
     /// ofis ajani <c>sdk-py</c>, etkilesimli oturumlar <c>cli</c> / <c>claude-desktop</c>... Fiyat ve pay burada degil, .NET'te.
     /// </summary>
     Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct);
+
+    /// <summary>
+    /// MCP sunucusuna baglanip araclarini listeler (yonetim ekrani "Baglantiyi dene"). Durumsuz: runtime sunucuyu acar, listeler,
+    /// kapatir. Baglanamazsa hata degil <see cref="RuntimeMcpProbe.Ok"/> = false + neden.
+    /// </summary>
+    Task<RuntimeMcpProbe> ProbeMcpAsync(RuntimeMcpServer server, CancellationToken ct);
 }
 
 public sealed record RuntimeLocalUsage(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens);

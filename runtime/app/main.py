@@ -12,7 +12,8 @@ from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
 
-from .contracts import AuthStatus, LocalUsage, LoginRequest, LoginStarted, LogoutRequest, ModelInfo, ProviderLimits, TurnRequest, TurnResponse
+from . import mcp_probe
+from .contracts import AuthStatus, LocalUsage, LoginRequest, LoginStarted, LogoutRequest, McpProbeResult, McpServerConfig, ModelInfo, ProviderLimits, TurnRequest, TurnResponse
 from .providers.anthropic import AnthropicProvider
 from .providers.openai import OpenAiProvider
 from .providers.base import LlmProvider
@@ -101,3 +102,9 @@ def usage_limits(provider: str | None = None, refresh: bool = False) -> list[Pro
     """Kalan kullanim: saglayicinin kota pencereleri. Belirtec hicbir yanita yazilmaz."""
     targets = [_provider(provider)] if provider else list(PROVIDERS.values())
     return [p.limits(refresh=refresh) for p in targets]
+
+
+@app.post("/v1/mcp/probe", response_model=McpProbeResult, response_model_by_alias=True)
+async def mcp_probe_endpoint(server: McpServerConfig) -> McpProbeResult:
+    """MCP sunucusuna baglanir, araclarini listeler, kapatir. Durumsuz; baglanamazsa 200 + ok=false (neden veridir)."""
+    return await mcp_probe.probe(server)

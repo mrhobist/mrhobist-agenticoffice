@@ -36,7 +36,8 @@ public sealed record AgentReply(
 /// Ajanin araclari ve calisma dizini (kullanici karari 2026-09-19: developer/testci dosyayi kendisi yazar, testi kendisi kosar).
 /// Hangi adimin hangi araci aldigi <see cref="ForKind"/>'da; runtime yalniz iletir, yazma <see cref="Cwd"/> disina cikamaz.
 /// </summary>
-public sealed record ToolAccess(IReadOnlyList<string> Tools, string Cwd, int MaxTurns)
+/// <see cref="ReadDirs"/>: cwd disinda OKUNABILECEK dizinler (is ekleri, docs/DOMAIN.md → Ekler); yazma yine yalniz cwd'de.
+public sealed record ToolAccess(IReadOnlyList<string> Tools, string Cwd, int MaxTurns, IReadOnlyList<string>? ReadDirs = null)
 {
     public static readonly IReadOnlyList<string> ReadOnly = ["Read", "Glob", "Grep"];
 
@@ -88,7 +89,7 @@ public sealed record TurnWatch(TimeSpan Idle, TimeSpan HardCap, TimeSpan Poll)
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
-public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null, IModelCatalog? catalog = null)
+public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null, IModelCatalog? catalog = null, IMcpStore? mcp = null)
 {
     /// <summary>Kesilen turun kismi yaniti bu anahtarla istisnaya eklenir; RunService maliyeti calismanin toplamina ekler.</summary>
     public const string PartialReplyKey = "aiteam.partialReply";
@@ -134,14 +135,16 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
         var parts = agent.PromptParts(team.Knowledge, knowledge);
         var system = string.Concat(parts.Select(p => p.Text));
+        var mcpServers = await McpForAsync(run, agent, target, tools, stage, task, ct).ConfigureAwait(false);
         // Canli akis: yalniz aracli turda; belirtec tur boyunca yasar. Baglam (sistem parcalari + mesajlar) ekranda gorunsun diye kayda girer.
         var progressToken = tools is not null && progress?.BaseUrl is { } baseUrl
-            ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage), LiveContext(parts, messages))
+            ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage), LiveContext(parts, messages, mcpServers))
             : null;
         var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
         var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
             Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
-            SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace);
+            SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace,
+            McpServers: mcpServers, ReadDirs: tools?.ReadDirs);
 
         var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -219,10 +222,40 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
     private sealed record Attempted(RuntimeTurnResponse Response, TimeSpan Elapsed);
 
-    /// <summary>Canli baglam gorunumu: sistem isteminin parcalari ve mesajlar, boyutlariyla.</summary>
-    private static List<LiveContextPart> LiveContext(IReadOnlyList<(string Name, string Text)> parts, IReadOnlyList<RuntimeMessage> messages)
+    /// <summary>
+    /// Ajana bu turda acilacak MCP sunuculari (docs/DOMAIN.md → MCP sunuculari): yalniz aracli turda ve MCP calistirabilen saglayicida.
+    /// md'de olup kayitli/acik olmayan anahtar sessizce degil, calismanin kaydina not olarak dusulur.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, RuntimeMcpServer>?> McpForAsync(Run run, Agent agent, AgentTarget target, ToolAccess? tools, string? stage, string? task, CancellationToken ct)
+    {
+        if (tools is null || mcp is null || agent.McpServers.Count == 0 || !Domain.Mcp.McpSupport.Supports(target.Provider))
+        {
+            return null;
+        }
+
+        var resolved = Mcp.McpService.Resolve(agent, await mcp.ListAsync(ct).ConfigureAwait(false), out var skipped);
+        if (skipped.Count > 0)
+        {
+            await runs.AppendMessageAsync(
+                run.Id,
+                new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent.Key, agent.Key, $"MCP atlandı (kayıtlı değil ya da kapalı): {string.Join(", ", skipped)}", Stage: stage, Task: task, Subject: "mcp"),
+                ct).ConfigureAwait(false);
+        }
+
+        return resolved.Count > 0 ? resolved : null;
+    }
+
+    /// <summary>Canli baglam gorunumu: sistem isteminin parcalari, acilan MCP sunuculari ve mesajlar, boyutlariyla.</summary>
+    private static List<LiveContextPart> LiveContext(IReadOnlyList<(string Name, string Text)> parts, IReadOnlyList<RuntimeMessage> messages, IReadOnlyDictionary<string, RuntimeMcpServer>? mcpServers = null)
     {
         var list = parts.Select((p, i) => new LiveContextPart(i == 0 ? $"sistem · {p.Name}" : $"bilgi · {p.Name}", "system", p.Text.Length, p.Text)).ToList();
+        if (mcpServers is { Count: > 0 })
+        {
+            // Sir yok: yalniz ad ve baglanti bicimi. Araclarin semasi SDK'dan gelir, boyutu burada bilinmez (0).
+            var text = string.Join(Environment.NewLine, mcpServers.Select(kv => $"- {kv.Key} ({kv.Value.Type}{(kv.Value.Command is null ? "" : ": " + kv.Value.Command)}{(kv.Value.Url is null ? "" : ": " + kv.Value.Url)}) → araçlar mcp__{kv.Key}__*"));
+            list.Add(new LiveContextPart("mcp sunucuları", "system", 0, text));
+        }
+
         list.AddRange(messages.Select((m, i) => new LiveContextPart(i == messages.Count - 1 ? "görev istemi" : $"geçmiş {i + 1}", m.Role, m.Content.Length, m.Content)));
         return list;
     }

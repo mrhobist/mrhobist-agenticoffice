@@ -15,6 +15,21 @@ const MESSAGES: Record<string, string> = {
   'agent.invalid_effort': 'Efor geçersiz: low, medium, high ya da max olmalı.',
   'agent.exists': 'Bu anahtarla bir ajan zaten var.',
   'agent.in_use': 'Ajan bir iş akışında ya da başka bir ajanın "Sorabilir" alanında kullanılıyor; önce oradan çıkarın.',
+  'agent.unknown_mcp': 'Seçilen MCP sunucularından biri kayıtlı değil.',
+  'agent.mcp_unsupported': 'Bu ajanın sağlayıcısı MCP araçlarını çalıştıramıyor; MCP yetkisi yalnız Anthropic (Claude) ajanlarına verilebilir.',
+
+  'mcp.invalid_key': 'MCP anahtarı geçersiz: yalnız küçük harf, rakam, tire ve alt çizgi kullanılabilir.',
+  'mcp.invalid': 'MCP tanımı eksik: stdio için komut, http/sse için http(s) adresi gerekli; değişken/başlık adları boş olamaz.',
+  'mcp.not_found': 'MCP sunucusu bulunamadı.',
+  'mcp.exists': 'Bu anahtarla bir MCP sunucusu zaten var.',
+  'mcp.in_use': 'Bu MCP sunucusu ajanlara yetkili; silmeden önce yetkileri kaldırın.',
+
+  'attachment.empty': 'Dosya boş.',
+  'attachment.too_large': 'Dosya çok büyük (üst sınır 20 MB).',
+  'attachment.type_unsupported': 'Bu dosya türü eklenemez. PDF, resim (png, jpg, gif, webp), Word (docx) ve metin dosyaları desteklenir.',
+  'attachment.too_many': 'Bir işe en fazla 10 dosya eklenebilir.',
+  'attachment.not_found': 'Ek bulunamadı ya da süresi doldu; dosyayı yeniden ekleyin.',
+
   'team.missing_role': 'İş akışının gerektirdiği bir rol ekipte eksik.',
 
   'knowledge.invalid_key': 'Bilgi dosyası anahtarı geçersiz.',

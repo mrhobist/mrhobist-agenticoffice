@@ -35,6 +35,31 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 | `manager` | `ask` hedefi ve son karar kapısı (altı şapka) | prompt |
 | `organizer` | **Dağıtıcı.** Bekleyen iş var mı, boş ajan var mı bakar, işi verir. Bu mantık **koddadır** (`Dispatcher`), sıfır token. LLM'e yalnız **devir notu** için gider | kod + prompt |
 
+### MCP sunucuları (2026-09-23, kullanıcı isteği; ayrıntılar varsayımla ilerlenir)
+
+İstek: "MCP yönetim ekranı olsun, MCP eklenip yönetilebilsin, ekipteki kişilere MCP yetkisi verilsin."
+
+- **Tanım veritabanında** (`mcp_server`, betik 0004), `config/`'da **değil**. Gerekçe: çalıştırılabilir yol, yerel adres ve
+  belirteç (ortam değişkeni, `Authorization` başlığı) makineye özgüdür ve git'e girmemeli. Alternatif — `config/mcp.json` +
+  `${ENV}` genişletme — reddedildi: yönetim ekranından yazılan belirteç ya git'e girer ya da ayrı bir sır deposu ister.
+- **Yetki ajan md'sinde** (`mcp: [anahtar, …]`): yetki ekibin tanımıdır, ekip `config/`'dadır (CLAUDE.md §2). MCP paneli
+  kutu işaretlenince ilgili md'leri yeniden yazar (`PUT /mcp/{key}/access`); ajan panelinde salt okunur görünür.
+  Yeni verilen anahtar kayıtlı olmalı (400 `agent.unknown_mcp`); sonradan silinmiş/kapatılmış anahtar ajanı kaydetmeyi
+  engellemez, çalışma anında **atlanır** ve çalışmanın kaydına `subject: "mcp"` notu düşer (sessiz kabul yok).
+- **Kim, nerede alır.** Yetkili ajan yalnız **araçlı** turlarda (analiz, geliştirme, test, soru) sunucuyu alır; araçlar
+  `mcp__{anahtar}__{araç}` adıyla gelir. Araçsız tur (plan onayı) almaz. `strict_mcp_config` açık kalır: kullanıcının kendi
+  Claude Code MCP'leri değil, yalnız verilenler yüklenir. İzin kararı runtime'ın `_guard`'ında: dosya yazmayan araç serbest.
+- **Yalnız Anthropic.** MCP'yi bugün yalnız Claude Agent SDK çalıştırır; sağlayıcısı `anthropic` ya da boş (varsayılan)
+  olmayan ajana yetki 400 `agent.mcp_unsupported`. Codex (openai) destekler ama bağlanmadı; runtime istenirse 501
+  `runtime.mcp_unsupported` döner — .NET zaten göndermez.
+- **Sırlar.** `env`/`headers` değerleri hiçbir yanıta yazılmaz (`{ name, hasValue }`); güncellemede değeri `null` gelen
+  satır kayıtlı değeri korur, listede olmayan ad silinir. Canlı bağlam görünümü yalnız ad + komut/adres gösterir.
+- **Bağlantıyı dene** (`POST /mcp/{key}/test`): runtime sunucuyu açar, araçlarını listeler, kapatır (durumsuz, 45 s).
+  Bağlanamamak hata değil sonuçtur (`ok: false` + neden). Runtime kapalıysa 503.
+- **Maliyet notu.** Her aracın şeması her iç turda bağlama girer (2026-09-23 ölçümü: 48 araç ≈ 32K token/çağrı). Panel bunu
+  söyler; gereken sunucuyu gereken ajana vermek kullanıcının kararıdır.
+- Silme: bir ajana yetkiliyse 409 `mcp.in_use` (önce yetkiler kaldırılır; bilgi dosyası kuralıyla aynı).
+
 ## Projeler (2026-09-19, kullanıcı kararı)
 
 > Her işin bir projesi vardır; proje bağımsız iş başlatılamaz (`run.project_required`).
@@ -130,6 +155,27 @@ paneli); ayrıca İşler düğmesinde kırmızı rozet, sekme başlığında `(N
 bağımsız, boşken de durur, zille aynı kaynak; tıklanınca çalışma açılır).
 **Varsayımla ilerlenir:** gelen kutusu 5 s'de bir yoklanır (SSE gelince olaya bağlanır); "okundu" kavramı yok,
 madde ancak cevap verilince düşer.
+
+## Ekler (2026-09-23, kullanıcı isteği; ayrıntılar varsayımla ilerlenir)
+
+İstek: "İş verilirken PDF vb. doküman, resim verilebilsin."
+
+- **Akış.** Dosya seçilince (seç / sürükle-bırak / brief'e ekran görüntüsü yapıştır) hemen yüklenir: `POST /attachments`
+  → `data/attachments/_staging/` + kimlik. İş gönderilirken kimlikler `POST /runs` gövdesine (`attachments[]`) girer;
+  `RunService.CreateAsync` dosyaları `data/attachments/{runId}/`'ye taşır, üstveri `run.attachments` (JSON) sütununa yazılır.
+  Bilinmeyen/süresi dolmuş kimlik iş başlamadan 400 `attachment.not_found`. Bir günden eski geçici yüklemeler silinir.
+- **Türler ve sınır** (`AttachmentRules`, tek kaynak): PDF, resim (png/jpg/gif/webp), Word (docx), metin (md, txt, csv,
+  json, xml, yaml, log, html, sql). Dosya başına 20 MB, iş başına 10 ek. Ad sunucuda güvenli hâle getirilir (yol parçası,
+  özel karakter atılır; çakışmada `ad-2.pdf`).
+- **İçerik isteme gömülmez** — her iç turda yeniden ödenirdi. Analiz ve görev istemlerinde `# Ekler` bölümü yalnız ad, tür,
+  boyut ve **mutlak yol** listeler; ajan gerektiğinde Read ile okur (Claude'un Read aracı PDF'i sayfa sayfa, resmi görüntü
+  olarak okur). Word'ü Read okuyamaz: Api taşırken metnini çıkarır, yanına `.docx.txt` yazar, istem onu gösterir.
+- **Okuma izni.** Ekler çalışma dizininin dışındadır: araçlı turda `readDirs` = ek dizini (SDK `add_dirs`). Yazma araçları
+  yine yalnız cwd'de; Bash ek dizinindeki mutlak yolu kullanabilir (ör. logoyu projeye kopyalamak). Ek dizini bir **silme**
+  denetiminden geçmez — risk yalnız o çalışmanın kendi ekleri (varsayımla ilerlenir).
+- **Sağlayıcı.** PDF/resim yalnız Claude (Read aracı) ile okunur; Codex yolu metin eklerini okuyabilir, PDF/resmi okuyamaz.
+- **Silme.** Proje silinince çalışmalarıyla birlikte ek dizinleri de silinir. Revize/devam brief'ine ek eklemek bu turda yok.
+- İndirme: `GET /runs/{id}/attachments/{fileName}` (JWT'li; UI Blob alır, PDF/resmi yeni sekmede açar).
 
 ## Plan onayı (2026-09-19, kullanıcı kararı)
 

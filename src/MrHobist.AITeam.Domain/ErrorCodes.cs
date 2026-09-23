@@ -73,4 +73,22 @@ public static class ErrorCodes
 
     /// <summary>Projenin toplam butcesi asildi; yeni tur baslamaz (docs/DOMAIN.md → Butce ve limit).</summary>
     public const string ProjectBudgetExceeded = "project.budget_exceeded";
+
+    /// <summary>Ajan md'sindeki <c>mcp</c> listesinde kayitli olmayan bir MCP sunucusu var.</summary>
+    public const string AgentUnknownMcp = "agent.unknown_mcp";
+
+    /// <summary>MCP yetkisi verilen ajanin saglayicisi MCP desteklemiyor (bugun yalniz <c>anthropic</c>).</summary>
+    public const string AgentMcpUnsupported = "agent.mcp_unsupported";
+
+    public const string McpInvalidKey = "mcp.invalid_key";
+    public const string McpInvalid = "mcp.invalid";
+    public const string McpNotFound = "mcp.not_found";
+    public const string McpExists = "mcp.exists";
+    public const string McpInUse = "mcp.in_use";
+
+    public const string AttachmentEmpty = "attachment.empty";
+    public const string AttachmentTooLarge = "attachment.too_large";
+    public const string AttachmentTypeUnsupported = "attachment.type_unsupported";
+    public const string AttachmentTooMany = "attachment.too_many";
+    public const string AttachmentNotFound = "attachment.not_found";
 }

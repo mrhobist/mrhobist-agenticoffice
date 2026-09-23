@@ -134,7 +134,9 @@ public sealed record Run(
     /// </summary>
     long InputTokens = 0,
     /// <summary>Bu calismanin turlarinda uretilen cikti token'i toplami. Bkz. <see cref="InputTokens"/>.</summary>
-    long OutputTokens = 0)
+    long OutputTokens = 0,
+    /// <summary>Is verilirken eklenen dosyalar (docs/DOMAIN.md → Ekler). Sona eklendi (CLAUDE.md §5); null = ek yok.</summary>
+    IReadOnlyList<RunAttachment>? Attachments = null)
 {
     /// <summary>Proje butcesi icin tek olcu: girdi + cikti. Onbellek kirilimi rapordadir, tavanda degil.</summary>
     public long TotalTokens => InputTokens + OutputTokens;

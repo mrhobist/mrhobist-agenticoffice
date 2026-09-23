@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Agents;
+using MrHobist.AITeam.Application.Mcp;
 using MrHobist.AITeam.Application.Projects;
 using MrHobist.AITeam.Application.Runs;
 using MrHobist.AITeam.Application.Workflows;
@@ -38,9 +39,12 @@ public static class DependencyInjection
         services.AddSingleton<IProjectStore, SqliteProjectStore>();
         services.AddSingleton<IRunStore, SqliteRunStore>();
         services.AddSingleton<ISettingsStore, SqliteSettingsStore>();
+        services.AddSingleton<IMcpStore, SqliteMcpStore>();
+        services.AddSingleton<IAttachmentStore, FileAttachmentStore>();
 
         services.AddSingleton<IProjectService, ProjectService>();
         services.AddSingleton<IAgentService, AgentService>();
+        services.AddTransient<IMcpService, McpService>();
         // Transient: runtime istemcisi typed HttpClient, singleton'a hapsedilmesin.
         services.AddTransient<IModelListService, ModelListService>();
         services.AddSingleton<IWorkflowService, WorkflowService>();
@@ -86,7 +90,8 @@ public static class DependencyInjection
         await db.Messages.Take(0).ToListAsync(ct).ConfigureAwait(false);
         await db.Phases.Take(0).ToListAsync(ct).ConfigureAwait(false);
         await db.Settings.Take(0).ToListAsync(ct).ConfigureAwait(false);
-        return 6;
+        await db.McpServers.Take(0).ToListAsync(ct).ConfigureAwait(false);
+        return 7;
     }
 
     private static string ConnectionString(StoragePaths paths) => new SqliteConnectionStringBuilder

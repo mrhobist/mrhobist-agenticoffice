@@ -31,7 +31,22 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         string? Cwd,
         int? MaxTurns,
         string? ProgressUrl,
-        string SystemPromptMode);
+        string SystemPromptMode,
+        IReadOnlyDictionary<string, McpServerDto>? McpServers,
+        IReadOnlyList<string>? ReadDirs);
+
+    /// <summary>SDK bicimi (<c>McpStdioServerConfig</c> / <c>McpHttpServerConfig</c> / <c>McpSSEServerConfig</c>); bos alan yazilmaz.</summary>
+    private sealed record McpServerDto(
+        string Type,
+        string? Command,
+        IReadOnlyList<string>? Args,
+        IReadOnlyDictionary<string, string>? Env,
+        string? Url,
+        IReadOnlyDictionary<string, string>? Headers);
+
+    private sealed record McpToolDto(string Name, string? Description);
+
+    private sealed record McpProbeDto(bool Ok, string? Detail, IReadOnlyList<McpToolDto>? Tools, string? ServerName, string? ServerVersion);
 
     private sealed record MessageDto(string Role, string Content);
 
@@ -202,7 +217,9 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             request.Cwd,
             request.MaxTurns,
             request.ProgressUrl,
-            request.SystemPromptMode);
+            request.SystemPromptMode,
+            request.McpServers is { Count: > 0 } mcp ? mcp.ToDictionary(kv => kv.Key, kv => ToDto(kv.Value), StringComparer.Ordinal) : null,
+            request.ReadDirs is { Count: > 0 } dirs ? dirs : null);
 
         HttpResponseMessage response;
         try
@@ -269,6 +286,21 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
 
         return (models ?? []).Select(m => new RuntimeModelInfo(ParseProvider(m.Provider), m.Model, m.Reachable, m.Detail ?? "")).ToList();
     }
+
+    public async Task<RuntimeMcpProbe> ProbeMcpAsync(RuntimeMcpServer server, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        var result = await PostAsync<McpServerDto, McpProbeDto>("/v1/mcp/probe", ToDto(server), ct).ConfigureAwait(false);
+        return new RuntimeMcpProbe(result.Ok, result.Detail ?? "", (result.Tools ?? []).Select(t => new RuntimeMcpTool(t.Name, t.Description)).ToList(), result.ServerName, result.ServerVersion);
+    }
+
+    private static McpServerDto ToDto(RuntimeMcpServer s) => new(
+        s.Type,
+        s.Command,
+        s.Args is { Count: > 0 } ? s.Args : null,
+        s.Env is { Count: > 0 } ? s.Env : null,
+        s.Url,
+        s.Headers is { Count: > 0 } ? s.Headers : null);
 
     /// <summary>Runtime'in dondugu ad; bos donmez, bilinmeyen ad sozlesme hatasidir (500).</summary>
     private static Provider ParseProvider(string s)
