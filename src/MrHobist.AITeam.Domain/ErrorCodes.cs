@@ -86,6 +86,9 @@ public static class ErrorCodes
     public const string McpExists = "mcp.exists";
     public const string McpInUse = "mcp.in_use";
 
+    /// <summary>Katalogda boyle bir hazir sunucu ya da baglanti secenegi yok.</summary>
+    public const string McpCatalogNotFound = "mcp.catalog_not_found";
+
     public const string AttachmentEmpty = "attachment.empty";
     public const string AttachmentTooLarge = "attachment.too_large";
     public const string AttachmentTypeUnsupported = "attachment.type_unsupported";

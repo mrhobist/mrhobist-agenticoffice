@@ -22,6 +22,7 @@ const MESSAGES: Record<string, string> = {
   'mcp.invalid': 'MCP tanımı eksik: stdio için komut, http/sse için http(s) adresi gerekli; değişken/başlık adları boş olamaz.',
   'mcp.not_found': 'MCP sunucusu bulunamadı.',
   'mcp.exists': 'Bu anahtarla bir MCP sunucusu zaten var.',
+  'mcp.catalog_not_found': 'Hazır sunucu ya da bağlantı yöntemi katalogda bulunamadı.',
   'mcp.in_use': 'Bu MCP sunucusu ajanlara yetkili; silmeden önce yetkileri kaldırın.',
 
   'attachment.empty': 'Dosya boş.',

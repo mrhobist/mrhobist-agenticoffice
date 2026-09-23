@@ -1881,6 +1881,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpCatalogEntry"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/catalog/{key}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpInstallRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp/{key}": {
         parameters: {
             query?: never;
@@ -2207,6 +2281,59 @@ export interface components {
         };
         McpAccessRequest: {
             agents: string[];
+        };
+        McpAuthOption: {
+            id: string;
+            label: string;
+            transport: components["schemas"]["McpTransport"];
+            command?: null | string;
+            args?: null | string[];
+            url?: null | string;
+            fields?: null | components["schemas"]["McpCatalogField"][];
+            /** @default true */
+            supported: boolean;
+            description?: null | string;
+            notes?: null | string;
+            requires?: null | string[];
+        };
+        McpCatalogEntry: {
+            key: string;
+            name: string;
+            vendor: string;
+            description: string;
+            options: components["schemas"]["McpAuthOption"][];
+            /** @default false */
+            official: boolean;
+            docsUrl?: null | string;
+            notes?: null | string;
+        };
+        McpCatalogField: {
+            name: string;
+            label: string;
+            target?: components["schemas"]["McpFieldTarget"];
+            /** @default false */
+            secret: boolean;
+            /** @default true */
+            required: boolean;
+            placeholder?: null | string;
+            help?: null | string;
+            format?: null | string;
+            default?: null | string;
+            choices?: null | string[];
+            header?: null | string;
+        };
+        /**
+         * @default env
+         * @enum {unknown}
+         */
+        McpFieldTarget: "input" | "env" | "header";
+        McpInstallRequest: {
+            option: string;
+            values?: null | {
+                [key: string]: string;
+            };
+            key?: null | string;
+            name?: null | string;
         };
         McpSecretEntry: {
             name: string;

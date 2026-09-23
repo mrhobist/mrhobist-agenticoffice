@@ -24,6 +24,7 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `mcp.invalid` | 400 | stdio'da komut yok, http/sse'de mutlak http(s) adres yok, boş ya da yinelenen değişken/başlık adı |
 | `mcp.not_found` | 404 | Böyle bir MCP sunucusu yok |
 | `mcp.exists` | 409 | `POST /mcp`: bu anahtarla sunucu var |
+| `mcp.catalog_not_found` | 404 | Katalogda böyle bir hazır sunucu ya da bağlantı yöntemi yok |
 | `mcp.in_use` | 409 | `DELETE /mcp`: sunucu bir ajana yetkili; önce yetki kaldırılır |
 | `attachment.empty` | 400 | Yüklenen dosya boş ya da istekte dosya yok |
 | `attachment.too_large` | 400 | Dosya 20 MB'tan büyük |

@@ -1,0 +1,333 @@
+{
+  "_": "Hazir MCP sunuculari (docs/DOMAIN.md → MCP sunuculari → Katalog). Sir TASIMAZ: token/parola kurulumda kullanicidan alinir, veritabanina yazilir. Sablon: {value} alanin kendi degeri, {AD} baska alan, {base64:A:B} HTTP Basic. Istege bagli alan bossa ona dayanan arguman/baslik yazilmaz. Kaynaklar 2026-09-23'te resmi README/dokumanlardan dogrulandi (docsUrl).",
+  "servers": [
+    {
+      "key": "figma",
+      "name": "Figma",
+      "vendor": "Figma (resmi) · Framelink (topluluk)",
+      "description": "Figma tasarım dosyalarını okur: frame yapısı, stiller, görseller",
+      "docsUrl": "https://developers.figma.com/docs/figma-mcp-server/",
+      "official": true,
+      "options": [
+        {
+          "id": "pat",
+          "label": "Kişisel erişim belirteci (PAT)",
+          "description": "Figma → Settings → Security → Personal access tokens. File content: read yeterli.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "figma-developer-mcp", "--stdio"],
+          "requires": ["Node.js"],
+          "notes": "Framelink figma-developer-mcp (topluluk, yaygın). İlk açılışta npm'den indirilir.",
+          "fields": [
+            { "name": "FIGMA_API_KEY", "label": "Kişisel erişim belirteci", "target": "Env", "secret": true, "placeholder": "figd_…" }
+          ]
+        },
+        {
+          "id": "oauth-token",
+          "label": "OAuth erişim belirteci",
+          "description": "Elinde hazır bir Figma OAuth belirteci varsa; Authorization: Bearer olarak gönderilir.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "figma-developer-mcp", "--stdio"],
+          "requires": ["Node.js"],
+          "notes": "Framelink figma-developer-mcp. Belirteç süresi dolunca yenilenmez; burada yeniden girilir.",
+          "fields": [
+            { "name": "FIGMA_OAUTH_TOKEN", "label": "OAuth erişim belirteci", "target": "Env", "secret": true }
+          ]
+        },
+        {
+          "id": "desktop",
+          "label": "Figma masaüstü (belirteçsiz)",
+          "description": "Figma masaüstü uygulamasının yerel Dev Mode MCP sunucusu. Uygulama açık, bir tasarım dosyası açık ve Dev Mode'da MCP sunucusu etkin olmalı.",
+          "transport": "Http",
+          "url": "http://127.0.0.1:3845/mcp",
+          "requires": ["Figma masaüstü (Dev Mode)"],
+          "notes": "Resmi. Kimlik gerekmez; yalnız bu makinede çalışan Figma'ya bağlanır."
+        },
+        {
+          "id": "remote-oauth",
+          "label": "Figma uzak sunucusu (OAuth)",
+          "transport": "Http",
+          "url": "https://mcp.figma.com/mcp",
+          "supported": false,
+          "notes": "Resmi uzak sunucu yalnız etkileşimli OAuth kabul ediyor; PAT almıyor. Ofis ajanı etkileşimsiz çalıştığı için bu yol henüz kurulamaz — PAT ya da masaüstü seçeneğini kullan."
+        }
+      ]
+    },
+    {
+      "key": "jira",
+      "name": "Jira",
+      "vendor": "Atlassian (resmi Rovo MCP) · mcp-atlassian (topluluk)",
+      "description": "Jira kayıtlarını arar, okur, oluşturur, günceller (JQL, yorum, geçiş)",
+      "docsUrl": "https://developer.atlassian.com/cloud/rovo-mcp/",
+      "official": true,
+      "options": [
+        {
+          "id": "rovo-api-token",
+          "label": "Jira Cloud · Rovo MCP · e-posta + API token (Basic)",
+          "description": "Atlassian'ın resmi uzak sunucusu. API token: id.atlassian.com → Security → API tokens.",
+          "transport": "Http",
+          "url": "https://mcp.atlassian.com/v2/mcp",
+          "notes": "Kuruluş yöneticisinin Rovo MCP için API token girişini açmış olması gerekir. Kod arama ve Teams araçları yine OAuth ister.",
+          "fields": [
+            { "name": "ATLASSIAN_EMAIL", "label": "Atlassian e-postası", "target": "Input", "placeholder": "ad.soyad@sirket.com" },
+            { "name": "ATLASSIAN_API_TOKEN", "label": "API token", "target": "Header", "header": "Authorization", "secret": true, "format": "Basic {base64:ATLASSIAN_EMAIL:ATLASSIAN_API_TOKEN}" }
+          ]
+        },
+        {
+          "id": "rovo-service-key",
+          "label": "Jira Cloud · Rovo MCP · servis hesabı API anahtarı (Bearer)",
+          "description": "Atlassian servis hesabına verilmiş API anahtarı; kişiye bağlı değildir.",
+          "transport": "Http",
+          "url": "https://mcp.atlassian.com/v2/mcp",
+          "notes": "Kuruluş yöneticisinin API token girişini açmış olması gerekir.",
+          "fields": [
+            { "name": "ATLASSIAN_SERVICE_KEY", "label": "Servis hesabı API anahtarı", "target": "Header", "header": "Authorization", "secret": true, "format": "Bearer {value}" }
+          ]
+        },
+        {
+          "id": "rovo-oauth",
+          "label": "Jira Cloud · Rovo MCP · OAuth",
+          "transport": "Http",
+          "url": "https://mcp.atlassian.com/v2/mcp",
+          "supported": false,
+          "notes": "Etkileşimli OAuth girişi gerekir; ofis ajanı etkileşimsiz çalıştığı için henüz kurulamaz. API token seçeneklerinden birini kullan."
+        },
+        {
+          "id": "cloud-token",
+          "label": "Jira Cloud · e-posta + API token (yerel)",
+          "description": "mcp-atlassian bu makinede çalışır, Jira'ya senin e-posta + API token'ınla bağlanır.",
+          "transport": "Stdio",
+          "command": "uvx",
+          "args": ["mcp-atlassian"],
+          "requires": ["uv (winget install astral-sh.uv)"],
+          "notes": "Topluluk sunucusu (sooperset/mcp-atlassian), Jira ve Confluence'ı destekler.",
+          "fields": [
+            { "name": "JIRA_URL", "label": "Jira adresi", "target": "Env", "placeholder": "https://sirket.atlassian.net" },
+            { "name": "JIRA_USERNAME", "label": "E-posta", "target": "Env", "placeholder": "ad.soyad@sirket.com" },
+            { "name": "JIRA_API_TOKEN", "label": "API token", "target": "Env", "secret": true },
+            { "name": "READ_ONLY_MODE", "label": "Yalnız okuma", "target": "Env", "choices": ["true", "false"], "default": "true", "help": "true: ajan kayıt oluşturamaz/değiştiremez." },
+            { "name": "JIRA_PROJECTS_FILTER", "label": "Proje filtresi", "target": "Env", "required": false, "placeholder": "PROJ,OPS", "help": "Boş: tüm projeler." }
+          ]
+        },
+        {
+          "id": "server-pat",
+          "label": "Jira Server / Data Center · kişisel erişim belirteci (PAT)",
+          "description": "Jira profil → Personal Access Tokens. Kurum içi Jira için önerilen yol.",
+          "transport": "Stdio",
+          "command": "uvx",
+          "args": ["mcp-atlassian"],
+          "requires": ["uv (winget install astral-sh.uv)"],
+          "notes": "Topluluk sunucusu (sooperset/mcp-atlassian).",
+          "fields": [
+            { "name": "JIRA_URL", "label": "Jira adresi", "target": "Env", "placeholder": "https://jira.sirket.local" },
+            { "name": "JIRA_PERSONAL_TOKEN", "label": "Kişisel erişim belirteci", "target": "Env", "secret": true },
+            { "name": "JIRA_SSL_VERIFY", "label": "SSL sertifikasını doğrula", "target": "Env", "choices": ["true", "false"], "default": "true", "help": "Kurum içi sertifika güvenilir değilse false." },
+            { "name": "READ_ONLY_MODE", "label": "Yalnız okuma", "target": "Env", "choices": ["true", "false"], "default": "true" },
+            { "name": "JIRA_PROJECTS_FILTER", "label": "Proje filtresi", "target": "Env", "required": false, "placeholder": "PROJ,OPS" }
+          ]
+        },
+        {
+          "id": "server-basic",
+          "label": "Jira Server / Data Center · kullanıcı adı + parola (Basic)",
+          "description": "PAT kapalıysa. Parola API token alanına yazılır, sunucu Basic kimlikle bağlanır.",
+          "transport": "Stdio",
+          "command": "uvx",
+          "args": ["mcp-atlassian"],
+          "requires": ["uv (winget install astral-sh.uv)"],
+          "notes": "mcp-atlassian belgesinde Server/DC parolası için ayrı değişken yok; kullanıcı adı JIRA_USERNAME, parola JIRA_API_TOKEN olarak verilir (Basic). Bağlantıyı dene ile doğrula.",
+          "fields": [
+            { "name": "JIRA_URL", "label": "Jira adresi", "target": "Env", "placeholder": "https://jira.sirket.local" },
+            { "name": "JIRA_USERNAME", "label": "Kullanıcı adı", "target": "Env" },
+            { "name": "JIRA_API_TOKEN", "label": "Parola", "target": "Env", "secret": true },
+            { "name": "JIRA_SSL_VERIFY", "label": "SSL sertifikasını doğrula", "target": "Env", "choices": ["true", "false"], "default": "true" },
+            { "name": "READ_ONLY_MODE", "label": "Yalnız okuma", "target": "Env", "choices": ["true", "false"], "default": "true" }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "slack",
+      "name": "Slack",
+      "vendor": "Slack (resmi) · korotovsky/slack-mcp-server (topluluk)",
+      "description": "Kanal ve mesaj geçmişini okur, arar; izin verilirse mesaj gönderir",
+      "docsUrl": "https://docs.slack.dev/ai/slack-mcp-server/",
+      "official": true,
+      "options": [
+        {
+          "id": "user-token",
+          "label": "Kullanıcı belirteci (xoxp)",
+          "description": "Kendi Slack uygulamanın User OAuth Token'ı; senin görebildiğin kanalları görür.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "slack-mcp-server@latest", "--transport", "stdio"],
+          "requires": ["Node.js"],
+          "notes": "Topluluk sunucusu. Resmi @modelcontextprotocol/server-slack 2025'te arşivlendi.",
+          "fields": [
+            { "name": "SLACK_MCP_XOXP_TOKEN", "label": "Kullanıcı belirteci", "target": "Env", "secret": true, "placeholder": "xoxp-…" },
+            { "name": "SLACK_MCP_ADD_MESSAGE_TOOL", "label": "Mesaj gönderme", "target": "Env", "required": false, "placeholder": "boş = kapalı · true · C0123,C0456", "help": "Varsayılan kapalı. true: her kanala; kanal kimlikleri: yalnız onlara; !C0123: o kanal hariç." }
+          ]
+        },
+        {
+          "id": "bot-token",
+          "label": "Bot belirteci (xoxb)",
+          "description": "Slack uygulamasının Bot User OAuth Token'ı; yalnız botun davet edildiği kanalları görür.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "slack-mcp-server@latest", "--transport", "stdio"],
+          "requires": ["Node.js"],
+          "notes": "Topluluk sunucusu. Arama gibi bazı araçlar bot belirteciyle çalışmaz.",
+          "fields": [
+            { "name": "SLACK_MCP_XOXB_TOKEN", "label": "Bot belirteci", "target": "Env", "secret": true, "placeholder": "xoxb-…" },
+            { "name": "SLACK_MCP_ADD_MESSAGE_TOOL", "label": "Mesaj gönderme", "target": "Env", "required": false, "placeholder": "boş = kapalı · true · C0123,C0456" }
+          ]
+        },
+        {
+          "id": "browser-token",
+          "label": "Tarayıcı oturumu (xoxc + xoxd)",
+          "description": "Slack uygulaması kuramıyorsan: tarayıcıdaki oturumun belirteci ve d çerezi.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "slack-mcp-server@latest", "--transport", "stdio"],
+          "requires": ["Node.js"],
+          "notes": "Kişisel oturumunla çalışır ve kurum politikasına aykırı olabilir; önce BT'ye danış. Oturum kapanınca geçersizleşir.",
+          "fields": [
+            { "name": "SLACK_MCP_XOXC_TOKEN", "label": "Oturum belirteci", "target": "Env", "secret": true, "placeholder": "xoxc-…" },
+            { "name": "SLACK_MCP_XOXD_TOKEN", "label": "d çerezi", "target": "Env", "secret": true, "placeholder": "xoxd-…" },
+            { "name": "SLACK_MCP_ADD_MESSAGE_TOOL", "label": "Mesaj gönderme", "target": "Env", "required": false, "placeholder": "boş = kapalı" }
+          ]
+        },
+        {
+          "id": "official-oauth",
+          "label": "Slack resmi sunucusu (OAuth)",
+          "transport": "Http",
+          "url": "https://mcp.slack.com/mcp",
+          "supported": false,
+          "notes": "Yalnız OAuth kullanıcı belirteci; kayıtlı bir Slack uygulaması ve yönetici onayı ister. Etkileşimli giriş gerektiği için henüz kurulamaz."
+        }
+      ]
+    },
+    {
+      "key": "github",
+      "name": "GitHub",
+      "vendor": "GitHub (resmi)",
+      "description": "Depo, issue, pull request, Actions: okur, arar, oluşturur",
+      "docsUrl": "https://github.com/github/github-mcp-server",
+      "official": true,
+      "options": [
+        {
+          "id": "remote-pat",
+          "label": "Uzak sunucu · kişisel erişim belirteci (PAT)",
+          "description": "GitHub → Settings → Developer settings → Personal access tokens (fine-grained önerilir). Kurulum gerektirmez.",
+          "transport": "Http",
+          "url": "https://api.githubcopilot.com/mcp/",
+          "notes": "Authorization: Bearer olarak gönderilir.",
+          "fields": [
+            { "name": "GITHUB_PAT", "label": "Kişisel erişim belirteci", "target": "Header", "header": "Authorization", "secret": true, "format": "Bearer {value}", "placeholder": "github_pat_…" },
+            { "name": "GITHUB_READONLY", "label": "Yalnız okuma", "target": "Header", "header": "X-MCP-Readonly", "choices": ["true", "false"], "default": "true" },
+            { "name": "GITHUB_TOOLSETS", "label": "Araç kümeleri", "target": "Header", "header": "X-MCP-Toolsets", "required": false, "placeholder": "repos,issues,pull_requests", "help": "Boş: varsayılan küme (context, issues, pull_requests, repos, users). Az araç = az bağlam." }
+          ]
+        },
+        {
+          "id": "local-docker",
+          "label": "Yerel (Docker) · PAT",
+          "description": "Resmi imaj bu makinede çalışır; belirteç yalnız yerel sürece verilir.",
+          "transport": "Stdio",
+          "command": "docker",
+          "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "-e", "GITHUB_READ_ONLY", "ghcr.io/github/github-mcp-server"],
+          "requires": ["Docker"],
+          "fields": [
+            { "name": "GITHUB_PERSONAL_ACCESS_TOKEN", "label": "Kişisel erişim belirteci", "target": "Env", "secret": true },
+            { "name": "GITHUB_READ_ONLY", "label": "Yalnız okuma", "target": "Env", "choices": ["true", "false"], "default": "true" }
+          ]
+        },
+        {
+          "id": "ghes-docker",
+          "label": "GitHub Enterprise Server (Docker) · PAT",
+          "description": "Kurum içi GitHub Enterprise Server.",
+          "transport": "Stdio",
+          "command": "docker",
+          "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "-e", "GITHUB_HOST", "-e", "GITHUB_READ_ONLY", "ghcr.io/github/github-mcp-server"],
+          "requires": ["Docker"],
+          "fields": [
+            { "name": "GITHUB_HOST", "label": "Sunucu adresi", "target": "Env", "placeholder": "https://github.sirket.local" },
+            { "name": "GITHUB_PERSONAL_ACCESS_TOKEN", "label": "Kişisel erişim belirteci", "target": "Env", "secret": true },
+            { "name": "GITHUB_READ_ONLY", "label": "Yalnız okuma", "target": "Env", "choices": ["true", "false"], "default": "true" }
+          ]
+        },
+        {
+          "id": "remote-oauth",
+          "label": "Uzak sunucu · OAuth",
+          "transport": "Http",
+          "url": "https://api.githubcopilot.com/mcp/",
+          "supported": false,
+          "notes": "Etkileşimli OAuth girişi gerekir; PAT seçeneğini kullan."
+        }
+      ]
+    },
+    {
+      "key": "playwright",
+      "name": "Playwright",
+      "vendor": "Microsoft (resmi)",
+      "description": "Gerçek tarayıcıyı sürer: sayfa aç, tıkla, form doldur, ekran görüntüsü al — ön yüzü uçtan uca test etmek için",
+      "docsUrl": "https://github.com/microsoft/playwright-mcp",
+      "official": true,
+      "options": [
+        {
+          "id": "headless",
+          "label": "Görünmez tarayıcı (kimlik gerekmez)",
+          "description": "Ajan arka planda tarayıcı açar. Profil bellekte tutulur, her oturum temiz başlar.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "@playwright/mcp@latest", "--headless", "--isolated", "--browser={BROWSER}"],
+          "requires": ["Node.js"],
+          "fields": [
+            { "name": "BROWSER", "label": "Tarayıcı", "target": "Input", "choices": ["msedge", "chrome", "firefox", "webkit"], "default": "msedge", "help": "Edge Windows'ta hazır; firefox/webkit için önce npx playwright install." }
+          ]
+        },
+        {
+          "id": "headed",
+          "label": "Görünür tarayıcı (kimlik gerekmez)",
+          "description": "Tarayıcı penceresi ekranda açılır; ajanın ne yaptığını izleyebilirsin.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "@playwright/mcp@latest", "--isolated", "--browser={BROWSER}"],
+          "requires": ["Node.js"],
+          "fields": [
+            { "name": "BROWSER", "label": "Tarayıcı", "target": "Input", "choices": ["msedge", "chrome", "firefox", "webkit"], "default": "msedge" }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "context7",
+      "name": "Context7",
+      "vendor": "Upstash (resmi)",
+      "description": "Kütüphanelerin güncel dokümantasyonunu ve örneklerini getirir (Nuxt, PrimeVue, .NET…) — eski API tahminini azaltır",
+      "docsUrl": "https://context7.com/docs/resources/all-clients",
+      "official": true,
+      "options": [
+        {
+          "id": "remote",
+          "label": "Uzak sunucu · API anahtarı isteğe bağlı",
+          "description": "Anahtarsız da çalışır (düşük istek sınırı). Anahtar: context7.com/dashboard.",
+          "transport": "Http",
+          "url": "https://mcp.context7.com/mcp",
+          "fields": [
+            { "name": "CONTEXT7_KEY", "label": "API anahtarı", "target": "Header", "header": "Authorization", "secret": true, "required": false, "format": "Bearer {value}", "placeholder": "ctx7sk-… (boş = anahtarsız)" }
+          ]
+        },
+        {
+          "id": "local",
+          "label": "Yerel (npx) · anahtarsız",
+          "description": "Sunucu bu makinede çalışır, dokümanları Context7'den çeker (düşük istek sınırı). Anahtarla kullanmak için uzak sunucu seçeneği.",
+          "transport": "Stdio",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "@upstash/context7-mcp"],
+          "requires": ["Node.js"],
+          "notes": "Anahtar yalnız komut argümanıyla verilebildiği için burada sorulmaz: argümanlar ekranda açık görünür, sır oraya yazılmaz."
+        }
+      ]
+    }
+  ]
+}

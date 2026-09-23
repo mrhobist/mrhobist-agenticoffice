@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddSingleton<IRunStore, SqliteRunStore>();
         services.AddSingleton<ISettingsStore, SqliteSettingsStore>();
         services.AddSingleton<IMcpStore, SqliteMcpStore>();
+        services.AddSingleton<IMcpCatalog, JsonMcpCatalog>();
         services.AddSingleton<IAttachmentStore, FileAttachmentStore>();
 
         services.AddSingleton<IProjectService, ProjectService>();

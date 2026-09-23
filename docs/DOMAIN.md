@@ -59,6 +59,20 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 - **Maliyet notu.** Her aracın şeması her iç turda bağlama girer (2026-09-23 ölçümü: 48 araç ≈ 32K token/çağrı). Panel bunu
   söyler; gereken sunucuyu gereken ajana vermek kullanıcının kararıdır.
 - Silme: bir ajana yetkiliyse 409 `mcp.in_use` (önce yetkiler kaldırılır; bilgi dosyası kuralıyla aynı).
+- **Katalog (2026-09-23, kullanıcı isteği: "hazır MCP'ler; token, basic auth… hangisini destekliyorsa hepsi seçenek olsun").**
+  `config/mcp-catalog.json` hazır sunucuları ve her birinin **bağlantı yöntemlerini** tanımlar: taşıma, komut/adres, form
+  alanları (ortam değişkeni, başlık ya da yalnız şablon girdisi), `Bearer {value}` / `Basic {base64:E-POSTA:TOKEN}` biçimleri,
+  seçimli alanlar (salt okuma), önkoşullar (Node.js, uv, Docker). Katalog `config/`'dadır çünkü sır taşımaz ve kaynak koddur;
+  sırlar kurulumda kullanıcıdan alınır, **sunucuda** birleştirilir (`McpCatalogBuilder`), veritabanına yazılır. Yüklenirken
+  denetlenir: bilinmeyen alana başvuran şablon ve **sır alanını argümana/adrese yazan** seçenek reddedilir (argüman yanıtta açık döner).
+- İlk katalog (kaynaklar resmi belgelerden doğrulandı, `docsUrl`): **Figma** (PAT · OAuth belirteci · masaüstü Dev Mode ·
+  uzak OAuth *henüz yok*), **Jira** (Rovo MCP: e-posta+API token Basic · servis anahtarı Bearer · OAuth *henüz yok*;
+  mcp-atlassian: Cloud e-posta+token · Server/DC PAT · Server/DC kullanıcı+parola), **Slack** (xoxp · xoxb · xoxc+xoxd ·
+  resmi OAuth *henüz yok*), önerilen üç resmi sunucu: **GitHub** (uzak PAT · Docker · GHES), **Playwright** (Microsoft; görünmez /
+  görünür tarayıcı), **Context7** (Upstash; güncel kütüphane dokümanı). Seçim gerekçesi: ofis kod yazıp test eden bir ekip —
+  depo/PR, ön yüzü gerçek tarayıcıda denemek ve eski API tahminini azaltmak en çok işe yarayan üç yetenek.
+- **OAuth-yalnız yöntemler** listede "henüz yok" diye durur: ofis ajanı etkileşimsiz çalışır, tarayıcıda giriş yapacak kimse yok.
+  Alternatif (Claude Code'un saklı OAuth belirtecini paylaşmak) reddedildi: kullanıcının kişisel oturumu ajana sızardı.
 
 ## Projeler (2026-09-19, kullanıcı kararı)
 

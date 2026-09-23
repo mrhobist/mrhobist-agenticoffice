@@ -36,4 +36,25 @@ public sealed class LiveConfigTests
         // Model katalogu okunabilir olmali (bozuksa /models ve /providers patlar).
         await new JsonModelCatalog(paths).LoadAsync(CancellationToken.None);
     }
+
+    /// <summary>
+    /// Hazir MCP katalogu (config/mcp-catalog.json) yuklenir ve desteklenen HER secenek sahte degerlerle gecerli bir sunucuya
+    /// donusur: sablon yanlis alana basvurursa ya da zorunlu alan eksik tanimliysa kullanici "Kur"a bastiginda degil burada patlar.
+    /// </summary>
+    [Fact]
+    public async Task Canli_mcp_katalogunun_her_secenegi_kurulabilir()
+    {
+        var catalog = await new JsonMcpCatalog(LivePaths()).LoadAsync(CancellationToken.None);
+        Assert.NotEmpty(catalog);
+        foreach (var entry in catalog)
+        {
+            foreach (var option in entry.Options.Where(o => o.Supported))
+            {
+                var values = (option.Fields ?? []).ToDictionary(f => f.Name, f => (string?)(f.Choices is { Count: > 0 } c ? c[0] : (f.Name.Contains("URL", StringComparison.Ordinal) || f.Name.Contains("HOST", StringComparison.Ordinal) ? "https://ornek.local" : "deger")));
+                var server = Domain.Mcp.McpCatalogBuilder.Build(entry, option, entry.Key, null, values);
+                Assert.Equal(option.Transport, server.Transport);
+                Assert.DoesNotContain(server.Args, a => a.Contains('{', StringComparison.Ordinal));
+            }
+        }
+    }
 }

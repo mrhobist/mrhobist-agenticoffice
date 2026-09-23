@@ -43,6 +43,12 @@ public sealed record McpServerRequest(
     bool Enabled = true,
     string? Description = null);
 
+/// <summary>
+/// <c>POST /mcp/catalog/{key}/install</c> govdesi: secilen baglanti yontemi ve formun degerleri (alan adi → deger). <see cref="Key"/>
+/// bossa katalog anahtari, <see cref="Name"/> bossa katalog adi. Degerler (sirlar dahil) yalniz kurulan sunucuya yazilir.
+/// </summary>
+public sealed record McpInstallRequest(string Option, IReadOnlyDictionary<string, string?>? Values = null, string? Key = null, string? Name = null);
+
 /// <summary><c>PUT /mcp/{key}/access</c> govdesi: bu sunucuyu kullanabilecek ajanlarin TAM listesi.</summary>
 public sealed record McpAccessRequest(IReadOnlyList<string> Agents);
 
@@ -68,14 +74,52 @@ public interface IMcpService
 
     /// <summary>Runtime sunucuyu acip araclarini listeler. Runtime kapaliysa 503; baglanti hatasi <see cref="McpTestResult.Ok"/> = false.</summary>
     Task<McpTestResult> TestAsync(string key, CancellationToken ct);
+
+    /// <summary>Hazir sunucular (<c>config/mcp-catalog.json</c>). Sir tasimaz.</summary>
+    Task<IReadOnlyList<McpCatalogEntry>> CatalogAsync(CancellationToken ct);
+
+    /// <summary>Katalogdan kurar: secenek + degerler → yeni sunucu. Var olan anahtar <c>mcp.exists</c>, bilinmeyen <c>mcp.catalog_not_found</c>.</summary>
+    Task<McpServerView> InstallAsync(string catalogKey, McpInstallRequest request, CancellationToken ct);
 }
 
 /// <summary>
 /// MCP sunucu yonetimi (docs/DOMAIN.md → MCP sunuculari). Tanim veritabaninda (<see cref="IMcpStore"/>), yetki ajan md'sinde
 /// (<see cref="Agent.Mcp"/>). Sirlar (env/baslik degerleri) hicbir yanita yazilmaz.
 /// </summary>
-public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntimeService runtime) : IMcpService
+public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntimeService runtime, IMcpCatalog? catalog = null) : IMcpService
 {
+    /// <summary><c>/mcp/catalog</c> sabit yolu bu anahtarli bir sunucuyu golgelerdi.</summary>
+    private const string ReservedKey = "catalog";
+
+    public async Task<IReadOnlyList<McpCatalogEntry>> CatalogAsync(CancellationToken ct)
+        => catalog is null ? [] : await catalog.LoadAsync(ct).ConfigureAwait(false);
+
+    public async Task<McpServerView> InstallAsync(string catalogKey, McpInstallRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var entry = (await CatalogAsync(ct).ConfigureAwait(false)).FirstOrDefault(e => e.Key == catalogKey)
+            ?? throw new NotFoundException(ErrorCodes.McpCatalogNotFound, $"Katalogda yok: '{catalogKey}'.");
+        var option = entry.Options.FirstOrDefault(o => o.Id == request.Option)
+            ?? throw new NotFoundException(ErrorCodes.McpCatalogNotFound, $"{entry.Name}: '{request.Option}' baglanti secenegi yok.");
+        var key = RequireFreeKey(string.IsNullOrWhiteSpace(request.Key) ? entry.Key : request.Key.Trim());
+        if (await store.GetAsync(key, ct).ConfigureAwait(false) is not null)
+        {
+            throw new DomainException(ErrorCodes.McpExists, $"'{key}' anahtarli MCP sunucusu zaten var; baska bir anahtar ver ya da var olani duzenle.");
+        }
+
+        var server = McpCatalogBuilder.Build(entry, option, key, request.Name, request.Values ?? new Dictionary<string, string?>());
+        await store.SaveAsync(server, ct).ConfigureAwait(false);
+        return await GetAsync(key, ct).ConfigureAwait(false);
+    }
+
+    private static string RequireFreeKey(string key)
+    {
+        Identifiers.Require(key, ErrorCodes.McpInvalidKey, "MCP sunucusu");
+        return key == ReservedKey
+            ? throw new DomainException(ErrorCodes.McpInvalidKey, $"'{ReservedKey}' ayrilmis bir ad; baska bir anahtar ver.")
+            : key;
+    }
+
     public async Task<IReadOnlyList<McpServerView>> ListAsync(CancellationToken ct)
     {
         var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
@@ -92,7 +136,7 @@ public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntim
     public async Task<McpServerView> CreateAsync(McpServerRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var key = Identifiers.Require(request.Key?.Trim(), ErrorCodes.McpInvalidKey, "MCP sunucusu");
+        var key = RequireFreeKey(request.Key?.Trim() ?? "");
         if (await store.GetAsync(key, ct).ConfigureAwait(false) is not null)
         {
             throw new DomainException(ErrorCodes.McpExists, $"'{key}' anahtarli MCP sunucusu zaten var.");

@@ -464,6 +464,12 @@ export type McpServerView = Schemas['McpServerView']
 /** POST/PUT govdesi. env/headers satirinda value null → kayitli deger korunur. */
 export type McpServerRequest = Schemas['McpServerRequest']
 export type McpTestResult = Schemas['McpTestResult']
+/** GET /api/v1/mcp/catalog ogesi (config/mcp-catalog.json): hazir sunucu ve baglanti yontemleri. Sir tasimaz. */
+export type McpCatalogEntry = Schemas['McpCatalogEntry']
+export type McpAuthOption = Schemas['McpAuthOption']
+export type McpCatalogField = Schemas['McpCatalogField']
+/** POST /api/v1/mcp/catalog/{key}/install govdesi. */
+export type McpInstallRequest = Schemas['McpInstallRequest']
 
 /** RFC 9457 govdesi + errorCode. `title`/`detail` EKRANA BASILMAZ; yalniz errorCode eslenir. */
 export interface ProblemDetails {

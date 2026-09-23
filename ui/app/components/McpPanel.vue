@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AgentListItem, McpServerRequest, McpServerView, McpTestResult, McpTransport } from '~/api/types'
+import type { AgentListItem, McpAuthOption, McpCatalogEntry, McpInstallRequest, McpServerRequest, McpServerView, McpTestResult, McpTransport } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { PROVIDER_LABEL } from '~/api/labels'
@@ -33,7 +33,87 @@ async function load() {
     loadError.value = errorText(e)
   }
 }
-onMounted(load)
+onMounted(() => { void load(); void loadCatalog() })
+
+// ------------------------------------------------------------------ hazir sunucular (config/mcp-catalog.json)
+// Katalog yontemleri ve alanlari tanimlar; degerler (sirlar dahil) sunucuda birlestirilir (Basic basligi, Bearer...).
+
+const catalog = ref<McpCatalogEntry[] | null>(null)
+const catalogError = ref<string | null>(null)
+const installing = ref<McpCatalogEntry | null>(null)
+const installOption = ref<string>('')
+const installValues = ref<Record<string, string>>({})
+const installKey = ref('')
+const installName = ref('')
+const installError = ref<string | null>(null)
+
+async function loadCatalog() {
+  try {
+    catalog.value = await api.get<McpCatalogEntry[]>('/api/v1/mcp/catalog')
+    catalogError.value = null
+  } catch (e) {
+    catalogError.value = errorText(e)
+  }
+}
+
+const installedKeys = computed(() => new Set((servers.value ?? []).map(s => s.key)))
+
+function freeKey(base: string): string {
+  if (!installedKeys.value.has(base)) return base
+  for (let i = 2; ; i++) if (!installedKeys.value.has(`${base}-${i}`)) return `${base}-${i}`
+}
+
+function startInstall(entry: McpCatalogEntry) {
+  closeForm()
+  installing.value = entry
+  installKey.value = freeKey(entry.key)
+  installName.value = entry.name
+  installError.value = null
+  const first = entry.options.find(o => o.supported !== false)
+  selectOption(first?.id ?? entry.options[0]?.id ?? '')
+}
+
+function selectOption(id: string) {
+  installOption.value = id
+  const opt = installing.value?.options.find(o => o.id === id)
+  const values: Record<string, string> = {}
+  for (const f of opt?.fields ?? []) values[f.name] = f.default ?? ''
+  installValues.value = values
+  installError.value = null
+}
+
+const selectedOption = computed<McpAuthOption | null>(() => installing.value?.options.find(o => o.id === installOption.value) ?? null)
+
+function cancelInstall() {
+  installing.value = null
+  installValues.value = {}
+}
+
+async function install() {
+  const entry = installing.value
+  const opt = selectedOption.value
+  if (!entry || !opt || busy.value) return
+  const body: McpInstallRequest = {
+    option: opt.id,
+    key: installKey.value.trim() || null,
+    name: installName.value.trim() || null,
+    values: Object.fromEntries(Object.entries(installValues.value).map(([k, v]) => [k, v.trim()])),
+  }
+  busy.value = 'install'
+  installError.value = null
+  try {
+    const created = await api.post<McpServerView>(`/api/v1/mcp/catalog/${encodeURIComponent(entry.key)}/install`, body)
+    cancelInstall()
+    await load()
+    // Kurulan sunucu hemen denenir: token yanlissa kullanici burada gorur, ajan calisirken degil.
+    const fresh = (servers.value ?? []).find(s => s.key === created.key)
+    if (fresh) void test(fresh)
+  } catch (e) {
+    installError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
 
 // ------------------------------------------------------------------ form
 
@@ -60,12 +140,14 @@ function blank(): Draft {
 }
 
 function openNew() {
+  installing.value = null
   editing.value = ''
   draft.value = blank()
   formError.value = null
 }
 
 function openEdit(s: McpServerView) {
+  installing.value = null
   editing.value = s.key
   draft.value = {
     key: s.key,
@@ -177,7 +259,7 @@ function fmtWhen(iso: string | null | undefined): string {
     <section class="panel" role="dialog" aria-labelledby="mcp-title">
       <header>
         <h2 id="mcp-title">MCP sunucuları</h2>
-        <button v-if="editing === null" type="button" class="primary small" @click="openNew">+ Sunucu ekle</button>
+        <button v-if="editing === null && !installing" type="button" class="small" @click="openNew" title="Katalogda olmayan bir sunucuyu elle tanımla">+ Elle ekle</button>
         <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
       </header>
 
@@ -187,6 +269,82 @@ function fmtWhen(iso: string | null | undefined): string {
         ajan bazında verirsin; yetkili ajan araçlı adımlarda (analiz, geliştirme, test) sunucunun araçlarını <code>mcp__anahtar__araç</code>
         adıyla görür. Yalnız Claude (Anthropic) ajanlarında çalışır. Her aracın şeması her çağrıda bağlama girer: yalnız gereken sunucuyu ver.
       </p>
+
+      <!-- ---------------------------------------------------------- hazir sunucular -->
+      <section v-if="!installing && editing === null" class="catalog">
+        <h3>Hazır sunucular</h3>
+        <p v-if="catalogError" class="err" role="alert">{{ catalogError }}</p>
+        <div class="cat-grid">
+          <article v-for="c in catalog ?? []" :key="c.key" class="cat">
+            <div class="cat-head">
+              <strong>{{ c.name }}</strong>
+              <span v-if="c.official" class="badge ok" title="Satıcının resmi MCP sunucusu (bazı yöntemler topluluk paketiyle)">resmi</span>
+              <span v-if="installedKeys.has(c.key)" class="badge">kurulu</span>
+            </div>
+            <p class="sub">{{ c.description }}</p>
+            <p class="sub vendor">{{ c.vendor }} · {{ c.options.filter(o => o.supported !== false).length }} yöntem</p>
+            <div class="cat-actions">
+              <button type="button" class="small primary" @click="startInstall(c)">{{ installedKeys.has(c.key) ? 'Yeniden kur' : 'Kur' }}</button>
+              <a v-if="c.docsUrl" class="doc" :href="c.docsUrl" target="_blank" rel="noopener noreferrer">belge ↗</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------- katalogdan kurulum -->
+      <form v-if="installing" class="card form" @submit.prevent="install">
+        <h3>{{ installing.name }} · kurulum</h3>
+        <p class="sub">{{ installing.description }}</p>
+
+        <div class="field">
+          <span class="lbl">Bağlantı yöntemi</span>
+          <label
+            v-for="o in installing.options" :key="o.id" class="opt"
+            :class="{ on: installOption === o.id, off: o.supported === false }"
+          >
+            <input type="radio" name="mcp-option" :value="o.id" :checked="installOption === o.id" :disabled="o.supported === false" @change="selectOption(o.id)">
+            <span class="opt-body">
+              <span class="opt-title">{{ o.label }}<span v-if="o.supported === false" class="badge offb">henüz yok</span></span>
+              <span v-if="o.description" class="sub">{{ o.description }}</span>
+              <span v-if="o.requires?.length" class="reqs">gerekenler: <code v-for="r in o.requires" :key="r">{{ r }}</code></span>
+              <span v-if="o.notes" class="sub note">{{ o.notes }}</span>
+            </span>
+          </label>
+        </div>
+
+        <template v-if="selectedOption && selectedOption.supported !== false">
+          <p class="target"><code>{{ selectedOption.transport === 'stdio' ? [selectedOption.command, ...(selectedOption.args ?? [])].join(' ') : selectedOption.url }}</code></p>
+          <label v-for="f in selectedOption.fields ?? []" :key="f.name" class="field">
+            <span class="lbl">{{ f.label }} <span v-if="f.required === false" class="sub">(isteğe bağlı)</span></span>
+            <select v-if="f.choices?.length" v-model="installValues[f.name]">
+              <option v-for="c in f.choices" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <input
+              v-else v-model="installValues[f.name]" :type="f.secret ? 'password' : 'text'" autocomplete="off"
+              :placeholder="f.placeholder ?? ''" :required="f.required !== false"
+            >
+            <span v-if="f.help" class="sub">{{ f.help }}</span>
+          </label>
+          <p v-if="!(selectedOption.fields ?? []).length" class="sub">Bu yöntem kimlik bilgisi istemez.</p>
+          <div class="row">
+            <label class="field">
+              <span class="lbl">Anahtar</span>
+              <input v-model="installKey" type="text" required pattern="[a-z0-9][a-z0-9_\-]*" title="küçük harf, rakam, - ve _">
+            </label>
+            <label class="field">
+              <span class="lbl">Ad</span>
+              <input v-model="installName" type="text">
+            </label>
+          </div>
+          <p class="sub">Kimlik bilgileri yalnız bu makinedeki veritabanına yazılır, bir daha gösterilmez. Kurulunca bağlantı hemen denenir.</p>
+        </template>
+
+        <div class="actions">
+          <button type="submit" class="primary" :disabled="busy === 'install' || !selectedOption || selectedOption.supported === false">{{ busy === 'install' ? 'Kuruluyor…' : 'Kur ve dene' }}</button>
+          <button type="button" class="ghost" @click="cancelInstall">Vazgeç</button>
+          <span v-if="installError" class="err" role="alert">{{ installError }}</span>
+        </div>
+      </form>
 
       <!-- ---------------------------------------------------------- form -->
       <form v-if="draft" class="card form" @submit.prevent="save">
@@ -266,7 +424,8 @@ function fmtWhen(iso: string | null | undefined): string {
       <!-- ---------------------------------------------------------- liste -->
       <p v-if="loadError" class="err" role="alert">{{ loadError }}</p>
       <p v-else-if="!servers" class="sub">Yükleniyor…</p>
-      <p v-else-if="!servers.length && !draft" class="empty">Henüz MCP sunucusu yok. "+ Sunucu ekle" ile başla.</p>
+      <h3 v-else-if="servers.length">Kurulu sunucular</h3>
+      <p v-else-if="!draft && !installing" class="empty">Henüz kurulu MCP sunucusu yok. Yukarıdaki hazır sunuculardan birini kur ya da "+ Elle ekle".</p>
       <p v-if="actError" class="err" role="alert">{{ actError }}</p>
 
       <article v-for="s in servers ?? []" :key="s.key" class="card" :class="{ off: !s.enabled }">
@@ -332,6 +491,8 @@ function fmtWhen(iso: string | null | undefined): string {
   background: #ede9dc; color: #23283a; border-left: 6px solid #6b4a2b;
   width: min(680px, 100%); height: 100%; overflow: auto; padding: 16px 18px;
   box-shadow: -20px 0 60px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 12px;
+  /* Kabuk koyu sema; panel acik zeminli: yerel radyo/kutu koyu cizilmesin. */
+  color-scheme: light; accent-color: #23283a;
 }
 .panel > header { display: flex; align-items: center; gap: 10px; }
 h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -386,5 +547,20 @@ button:disabled { opacity: 0.5; cursor: default; }
 .test pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 11px; }
 .tools { margin: 4px 0 0; padding-left: 16px; max-height: 220px; overflow: auto; }
 .tools li { font-size: 12px; }
+.catalog { display: flex; flex-direction: column; gap: 8px; }
+.cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.cat { background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.cat-head { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.cat .vendor { font-size: 10px; }
+.cat-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 4px; }
+.doc { font-size: 11px; color: #4a5068; }
+.opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid #e3ddcc; border-radius: 4px; cursor: pointer; background: #faf8f2; }
+.opt.on { border-color: #4f8ef7; background: #eef4ff; }
+.opt.off { cursor: not-allowed; opacity: 0.65; }
+.opt input { margin-top: 3px; }
+.opt-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.opt-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.reqs { font-size: 11px; color: #6b7285; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.note { font-style: italic; }
 @media (max-width: 560px) { .row { grid-template-columns: 1fr; } .kv { grid-template-columns: 1fr; } }
 </style>

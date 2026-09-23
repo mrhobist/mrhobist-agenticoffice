@@ -170,6 +170,44 @@ public sealed class McpAndAttachmentTests : IDisposable
         Assert.Equal("npx", Assert.Single(_runtime.Probes).Command);
     }
 
+    private sealed class OneEntryCatalog : IMcpCatalog
+    {
+        public Task<IReadOnlyList<McpCatalogEntry>> LoadAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<McpCatalogEntry>>(
+        [
+            new("jira", "Jira", "Atlassian", "Jira kayıtları",
+            [
+                new("server-pat", "Server/DC PAT", McpTransport.Stdio, "uvx", ["mcp-atlassian"], Fields:
+                [
+                    new("JIRA_URL", "Jira adresi"),
+                    new("JIRA_PERSONAL_TOKEN", "PAT", Secret: true),
+                    new("READ_ONLY_MODE", "Yalnız okuma", Choices: ["true", "false"], Default: "true"),
+                ]),
+                new("oauth", "OAuth", McpTransport.Http, Url: "https://ornek/mcp", Supported: false),
+            ]),
+        ]);
+    }
+
+    [Fact]
+    public async Task Katalogdan_kurulum_sirri_veritabanina_yazar_yanita_yazmaz()
+    {
+        var mcp = new McpService(_mcpStore, _agents, _runtime, new OneEntryCatalog());
+        var view = await mcp.InstallAsync("jira", new McpInstallRequest("server-pat", new Dictionary<string, string?> { ["JIRA_URL"] = "https://jira.local", ["JIRA_PERSONAL_TOKEN"] = "pat-gizli" }), Ct);
+
+        Assert.Equal("jira", view.Key);
+        Assert.Contains(new McpSecretEntry("JIRA_PERSONAL_TOKEN", true), view.Env);
+        var stored = (await _mcpStore.GetAsync("jira", Ct))!;
+        Assert.Equal("pat-gizli", stored.Env["JIRA_PERSONAL_TOKEN"]);
+        Assert.Equal("true", stored.Env["READ_ONLY_MODE"]); // varsayilan
+
+        // Ayni anahtar ikinci kez kurulmaz; baska anahtarla kurulur.
+        Assert.Equal(ErrorCodes.McpExists, (await Assert.ThrowsAsync<DomainException>(() => mcp.InstallAsync("jira", new McpInstallRequest("server-pat", new Dictionary<string, string?> { ["JIRA_URL"] = "u", ["JIRA_PERSONAL_TOKEN"] = "p" }), Ct))).ErrorCode);
+        await mcp.InstallAsync("jira", new McpInstallRequest("server-pat", new Dictionary<string, string?> { ["JIRA_URL"] = "https://jira2.local", ["JIRA_PERSONAL_TOKEN"] = "p" }, Key: "jira-test"), Ct);
+
+        Assert.Equal(ErrorCodes.McpInvalid, (await Assert.ThrowsAsync<DomainException>(() => mcp.InstallAsync("jira", new McpInstallRequest("oauth", Key: "jira-oauth"), Ct))).ErrorCode);
+        await Assert.ThrowsAsync<Application.Common.NotFoundException>(() => mcp.InstallAsync("yok", new McpInstallRequest("x"), Ct));
+        Assert.Equal(ErrorCodes.McpInvalidKey, (await Assert.ThrowsAsync<DomainException>(() => mcp.InstallAsync("jira", new McpInstallRequest("server-pat", Key: "catalog"), Ct))).ErrorCode);
+    }
+
     // ------------------------------------------------------------------ ekler
 
     private static byte[] Docx(string text)

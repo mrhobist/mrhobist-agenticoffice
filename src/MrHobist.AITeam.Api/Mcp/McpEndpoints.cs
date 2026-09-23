@@ -18,6 +18,13 @@ public static class McpEndpoints
             var created = await s.CreateAsync(body, ct).ConfigureAwait(false);
             return Results.Created($"/api/v1/mcp/{created.Key}", created);
         });
+        // Hazir sunucular: kurulum formunun kaynagi (config/mcp-catalog.json). Sabit yol {key}'den once eslesir; "catalog" anahtari ayrilmistir.
+        g.MapGet("/catalog", (IMcpService s, CancellationToken ct) => s.CatalogAsync(ct));
+        g.MapPost("/catalog/{key}/install", async (string key, McpInstallRequest body, IMcpService s, CancellationToken ct) =>
+        {
+            var created = await s.InstallAsync(key, body, ct).ConfigureAwait(false);
+            return Results.Created($"/api/v1/mcp/{created.Key}", created);
+        });
         g.MapGet("/{key}", (string key, IMcpService s, CancellationToken ct) => s.GetAsync(key, ct));
         g.MapPut("/{key}", (string key, McpServerRequest body, IMcpService s, CancellationToken ct) => s.UpdateAsync(key, body, ct));
         g.MapDelete("/{key}", async (string key, IMcpService s, CancellationToken ct) =>
