@@ -217,3 +217,17 @@ kural olmaktan çıkıp hataya dönüşür. Kuralın kapsamını kuralın yanın
 Limit beklemesi mesajı `{resumeAt:HH:mm}` basıyordu. Haftalık kota 3 gün sonrasına sıfırlandığında
 kullanıcı "07:00'de sürer" okuyup bir buçuk saat bekledi. Kullanıcıya gelecekteki bir an yazılıyorsa
 **gün bilgisi de** yazılmalı; aynı gün değilse tarih şart.
+
+## Kopan istek sunucuda ölmez (2026-09-23)
+
+.NET tur bekçisi HTTP isteğini kesti, iş "zaman aşımı" diye kapandı; ama Starlette kopan isteğin işleyicisini
+durdurmaz ve SDK üreteci kapatılmadan bırakılırsa `claude.exe` ancak çöp toplayıcıda kapanır. Kesilen t1 18 dk
+daha koştu, ~3 $ harcadı, kayda geçmedi; "Yeniden dene" aynı dizinde ikinci bir ajan başlatabiliyordu. Belirti
+"ajan kesildi ama iş yine de bitmiş"ti — iyi haber gibi göründüğü için sorgulanmadı. **İptali uçtan uca
+test et:** istemci iptali sunucudaki alt süreci durduruyor mu? Runtime artık bağlantıyı yoklar, turu iptal eder
+ve akışı `aclose()` ile hemen kapatır.
+
+**İkinci ders:** "Kim ne harcadı" ölçülemez sanılıyordu (kota yüzdesi kaynağa göre ayrılmaz). Oysa her CLI
+çağrısı kendi oturum kaydına kullanımıyla ve giriş noktasıyla yazılıyordu. İlk ölçüm: haftalık %92'nin ≥~83
+puanı yöneten Claude Code oturumları, ~9 puanı ofis ajanıydı — uzun bağlamlı yönetim oturumu her mesajda
+yüz binlerce token'ı yeniden okur. Tahmin etmeden önce verinin zaten bir yerde yazılı olup olmadığına bak.

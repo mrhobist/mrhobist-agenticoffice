@@ -297,7 +297,10 @@ public sealed class RunService(
     private async Task<IReadOnlyList<RuntimeMessage>> AnalystHistoryAsync(Run run, Workflow wf, IReadOnlyList<Message> notes, string root, CancellationToken ct)
     {
         var analyze = wf.Stages[0];
-        var list = new List<RuntimeMessage> { new("user", Prompts.AnalystBrief(run, wf, root)) };
+        var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
+        var knowledge = team.Agents.Values.SelectMany(x => x.Includes).Distinct(StringComparer.Ordinal)
+            .Where(team.Knowledge.ContainsKey).Select(k => team.Knowledge[k]).ToList();
+        var list = new List<RuntimeMessage> { new("user", Prompts.AnalystBrief(run, wf, root, knowledge)) };
 
         var turns = (await runs.ReadTurnsAsync(run.Id, analyze.Role, ct).ConfigureAwait(false))
             .Where(t => t.Stage == analyze.Id && !string.IsNullOrWhiteSpace(t.Output))
@@ -666,10 +669,12 @@ public sealed class RunService(
     private async Task<Run> ExecuteStepAsync(Run run, Workflow wf, Spec spec, Assignment a, int round, string root, CancellationToken ct)
     {
         var started = DateTimeOffset.UtcNow;
-        var notes = (await runs.ReadMessagesAsync(run.Id, ct).ConfigureAwait(false))
+        var messages = await runs.ReadMessagesAsync(run.Id, ct).ConfigureAwait(false);
+        var notes = messages
             .Where(m => m.Task == a.Task.Id && m.Subject is not "retry")
             .OrderBy(m => m.Ts)
             .ToList();
+        var prior = Prompts.PriorTasks(spec, a.Task, messages);
         var tools = ToolAccess.ForKind(a.Stage.Kind, root);
 
         try
@@ -683,8 +688,8 @@ public sealed class RunService(
                     // Onceki deneme yarida kesildiyse (zaman asimi, yeniden baslatma) dizinde onun isi var: ajan bastan yazmasin, devam etsin.
                     var cutShort = (await runs.ReadPhasesAsync(run.Id, a.Task.Id, ct).ConfigureAwait(false))
                         .LastOrDefault(p => p.Stage == a.Stage.Id && p.Status != PhaseStatus.Started) is { IsCutShort: true };
-                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort, prior), ct).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -730,8 +735,8 @@ public sealed class RunService(
                 {
                     // Kapinin beklettiği uretici adim: hem istemi sekillendirir (kod mu, tasarim mi) hem de redde geri donus hedefi.
                     var producer = wf.ProducerBefore(a.Stage);
-                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, producer, round, wf.MaxReviewRounds), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, producer, round, wf.MaxReviewRounds, prior), ct).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -768,7 +773,7 @@ public sealed class RunService(
                 case StageKind.Design:
                 {
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.DesignTask(spec, a, root, notes), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -861,6 +866,10 @@ public sealed class RunService(
     }
 
     /// <summary>Turun maliyeti ve token'lari calismaya eklenir (proje butcesi bu toplami okur).</summary>
+    /// <summary>Kesilen turun kaydedilmis harcamasi (<see cref="AgentCaller.PartialReplyKey"/>) calismanin toplamina girer: butce onu da gorur.</summary>
+    private static Run AccruePartial(Run run, Exception ex)
+        => ex.Data[AgentCaller.PartialReplyKey] is AgentReply partial ? Accrue(run, partial) : run;
+
     private static Run Accrue(Run run, AgentReply reply) => run with
     {
         TotalCostUsd = run.TotalCostUsd + reply.CostUsd,
@@ -1078,7 +1087,7 @@ public sealed class RunService(
     private async Task<Run> PauseForLimitAsync(Run run, string agent, string where, LimitReachedException ex, CancellationToken ct)
     {
         var resume = ex.ResumeAt ?? DateTimeOffset.UtcNow.AddMinutes(15);
-        run = run with { Status = RunStatus.Paused, ResumeAt = resume, Detail = Ellipsis($"{where} · limit: {ex.Message}", 300), WaitingSince = null };
+        run = AccruePartial(run, ex) with { Status = RunStatus.Paused, ResumeAt = resume, Detail = Ellipsis($"{where} · limit: {ex.Message}", 300), WaitingSince = null };
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent, "user", $"{where}: {ex.Message}", Subject: "limit"), ct).ConfigureAwait(false);
         PublishAgent(run, agent, "waiting", "limit doldu, bekliyor", null);
@@ -1195,7 +1204,7 @@ public sealed class RunService(
             return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
         }
 
-        run = run with { Status = RunStatus.Failed, FinishedAt = DateTimeOffset.UtcNow, Detail = Ellipsis($"{what}: {ex.Message}", 300) };
+        run = AccruePartial(run, ex) with { Status = RunStatus.Failed, FinishedAt = DateTimeOffset.UtcNow, Detail = Ellipsis($"{what}: {ex.Message}", 300) };
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent, "user", ex.Message, task, stage, Subject: "error"), ct).ConfigureAwait(false);
         PublishAgent(run, agent, "blocked", Ellipsis($"{what} başarısız: {ex.Message}", 60), task);

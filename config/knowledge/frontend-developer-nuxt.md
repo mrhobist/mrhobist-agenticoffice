@@ -24,6 +24,10 @@ Mevcut desene birebir uy, yeni desen icat etme; emin değilsen komşu modüle ba
 - **Zod v4**: her API yanıtı şemadan geçer. **Pinia** yalnız oturum (options API, yalnız bellek).
 - **Nitro BFF** (`src/server/`): tarayıcı yalnız kendi origin'ini (`/api`) çağırır.
 - Tailwind yardımcı; asıl stil `<style scoped>`. `srcDir: src/`, alias `@/` → `src/`. Paket yöneticisi npm.
+- **Paketi sürümüyle kur:** `npm install <paket>@<sürüm>` — sürümsüz `npm install <paket>` en son **ana** sürümü
+  getirir ve yığını sessizce değiştirir (ölçüldü: PrimeVue 5 geldi, ticari lisans istedi, ekran "Invalid License" verdi).
+  PrimeVue ailesi **4.x**'te kalır (`primevue`, `@primevue/nuxt-module` 4.x, `@primeuix/themes` 2.x). Kurduktan sonra
+  `package.json`'daki sürümü kontrol et; brief bir sürüm söylüyorsa ona uy.
 - Auto-import: Vue/Nuxt API'leri, `src/components/**` (`pathPrefix: false`), composable'lar
   (`useGlobalToast`, `useGlobalLoader`, `useSession`).
 

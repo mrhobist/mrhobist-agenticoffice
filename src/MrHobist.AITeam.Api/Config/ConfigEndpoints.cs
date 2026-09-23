@@ -74,6 +74,9 @@ public static class ConfigEndpoints
         // Kullanim: bizim kayitlarimizdan (kayitli turlar), saglayici+model bazinda.
         g.MapGet("/usage", (int? runs, IUsageReader usage, CancellationToken ct) => usage.SummarizeAsync(runs ?? 200, ct));
 
+        // Kim ne harcadi: makinedeki CLI kayitlarindan kaynak (ofis ajani / Claude Code oturumlari) basina token, esdeger $, kota payi.
+        g.MapGet("/usage/split", (DateTimeOffset? since, DateTimeOffset? until, ISpendReader spend, CancellationToken ct) => spend.GetAsync(since, until, ct));
+
         // Calisma alani ayarlari (config/settings.json): saglayici basina limit korumasi esigi (docs/DOMAIN.md → Butce ve limit).
         g.MapGet("/settings", async (ISettingsStore s, CancellationToken ct) => SettingsDto.From(await s.LoadAsync(ct).ConfigureAwait(false)));
         g.MapPut("/settings", async (SettingsDto body, ISettingsStore s, CancellationToken ct) =>

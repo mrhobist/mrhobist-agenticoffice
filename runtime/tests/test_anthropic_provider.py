@@ -524,3 +524,111 @@ def test_kota_reddi_ayri_kodla_siniflandirilir():
     assert mod._classify(RuntimeError("bilinmeyen patlama")).detail["errorCode"] == "runtime.provider_error"
     # Giris hatasi limitten ONCE bakilir: ikisi de gecerliyse kok sebep giristir.
     assert mod._classify(RuntimeError("Not logged in")).detail["errorCode"] == "runtime.not_logged_in"
+
+
+# -- canli akis, kesilen tur, kim ne harcadi (2026-09-23) ----------------------------------------------------------
+
+
+@respx.mock
+async def test_canli_akis_metin_dusunce_arac_ve_kullanimi_bildirir(monkeypatch, cli_present):
+    """Tur surerken metin, dusunce, arac ve mesaj basina kullanim .NET'e gider; ayni kullanim ikinci kez gitmez."""
+    from claude_agent_sdk import ThinkingBlock, ToolUseBlock
+
+    sent: list[dict] = []
+    respx.post("http://127.0.0.1:5080/api/v1/progress/tok").mock(
+        side_effect=lambda req: (sent.append(json.loads(req.content)), httpx.Response(204))[1])
+    usage = {"input_tokens": 2, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 900, "output_tokens": 7}
+    monkeypatch.setattr(claude_agent_sdk, "query", _fake_query({}, messages=[
+        AssistantMessage(content=[ThinkingBlock(thinking="once dizine bakayim", signature="x")], model="m", message_id="m1", usage=usage),
+        AssistantMessage(content=[ToolUseBlock(id="u1", name="Read", input={"file_path": "a.cs"})], model="m", message_id="m1", usage=usage),
+        AssistantMessage(content=[TextBlock(text="bitti")], model="m", message_id="m2", usage={**usage, "output_tokens": 3}),
+        _result(result="bitti", usage={}),
+    ]))
+    req = TurnRequest(systemPrompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m",
+                      tools=["Read"], progressUrl="http://127.0.0.1:5080/api/v1/progress/tok")
+    await AnthropicProvider().complete(req)
+
+    assert [e["kind"] for e in sent] == ["thinking", "usage", "tool", "text", "usage"]
+    assert sent[0]["text"] == "once dizine bakayim"
+    assert sent[1] == {"kind": "usage", "messageId": "m1", "usage": {"inputTokens": 1002, "outputTokens": 7, "reasoningChars": 0, "cacheReadTokens": 900, "cacheWriteTokens": 100}}
+    assert sent[2]["tool"] == "Read" and sent[2]["target"] == "a.cs"
+    assert sent[4]["messageId"] == "m2"
+
+
+async def test_iptal_edilen_tur_sdk_akisini_hemen_kapatir(monkeypatch, cli_present):
+    """Tur iptal edilince SDK uretecinin finally'si calisir (alt surec orada durur); cop toplayiciya kalmaz."""
+    import asyncio
+
+    closed = asyncio.Event()
+
+    async def fake(*, prompt, options=None, transport=None):
+        try:
+            yield AssistantMessage(content=[TextBlock(text="basladim")], model="m")
+            await asyncio.sleep(3600)
+        finally:
+            closed.set()
+
+    monkeypatch.setattr(claude_agent_sdk, "query", fake)
+    req = TurnRequest(systemPrompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m")
+    task = asyncio.create_task(AnthropicProvider().complete(req))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert closed.is_set()
+
+
+async def test_istemci_koparsa_tur_durdurulur_499(monkeypatch):
+    """Starlette kopan istegin isleyicisini durdurmaz: runtime kendisi yoklar ve turu iptal eder."""
+    import asyncio
+
+    cancelled = asyncio.Event()
+
+    class Slow:
+        async def complete(self, request):
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    class Gone:
+        async def is_disconnected(self):
+            return True
+
+    monkeypatch.setitem(main.PROVIDERS, "anthropic", Slow())
+    monkeypatch.setattr(main, "DISCONNECT_POLL_S", 0.01)
+    req = TurnRequest(systemPrompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m")
+    with pytest.raises(main.HTTPException) as err:
+        await main.run_turn(req, Gone())
+    assert err.value.status_code == 499
+    assert cancelled.is_set()
+
+
+def test_yerel_kullanim_kaynak_ve_klasore_gore_toplanir_mesaj_tekillenir(tmp_path, monkeypatch):
+    """Ofis ajani (sdk-py) ile etkilesimli oturum ayri toplanir; blok basina tekrar yazilan mesaj bir kez sayilir;
+    aralik disi ve sentetik mesaj sayilmaz."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    proj = tmp_path / "projects"
+    (proj / "C--Hedef").mkdir(parents=True)
+    (proj / "C--Ofis" / "s1" / "subagents").mkdir(parents=True)
+    u = {"input_tokens": 1, "cache_creation_input_tokens": 10, "cache_read_input_tokens": 100, "output_tokens": 5}
+
+    def line(ts, ep, mid, model="claude-opus-5-5"):
+        return json.dumps({"type": "assistant", "timestamp": ts, "entrypoint": ep, "message": {"id": mid, "model": model, "usage": u}}) + "\n"
+
+    (proj / "C--Hedef" / "a.jsonl").write_text(
+        line("2026-09-23T10:00:00Z", "sdk-py", "m1") + line("2026-09-23T10:00:01Z", "sdk-py", "m1")
+        + line("2026-09-23T10:05:00Z", "sdk-py", "m2") + line("2026-09-22T10:00:00Z", "sdk-py", "eski")
+        + line("2026-09-23T10:06:00Z", "sdk-py", "s", model="<synthetic>") + "{bozuk\n", encoding="utf-8")
+    (proj / "C--Ofis" / "s1" / "subagents" / "b.jsonl").write_text(line("2026-09-23T11:00:00Z", "claude-desktop", "m3"), encoding="utf-8")
+
+    from datetime import datetime, timezone
+    out = AnthropicProvider().local_usage(datetime(2026, 9, 23, tzinfo=timezone.utc))
+
+    by = {(g.source, g.project): g for g in out}
+    assert set(by) == {("sdk-py", "C--Hedef"), ("claude-desktop", "C--Ofis")}
+    office = by[("sdk-py", "C--Hedef")]
+    assert office.messages == 2 and office.input_tokens == 222 and office.output_tokens == 10
+    assert office.cache_read_tokens == 200 and office.cache_write_tokens == 20
+    assert by[("claude-desktop", "C--Ofis")].messages == 1

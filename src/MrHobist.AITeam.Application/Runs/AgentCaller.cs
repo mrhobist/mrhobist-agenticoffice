@@ -88,8 +88,11 @@ public sealed record TurnWatch(TimeSpan Idle, TimeSpan HardCap, TimeSpan Poll)
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
-public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null)
+public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null, IModelCatalog? catalog = null)
 {
+    /// <summary>Kesilen turun kismi yaniti bu anahtarla istisnaya eklenir; RunService maliyeti calismanin toplamina ekler.</summary>
+    public const string PartialReplyKey = "aiteam.partialReply";
+
     private readonly TurnWatch _watch = watch ?? TurnWatch.Default;
 
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AgentLocks = new(StringComparer.Ordinal);
@@ -110,7 +113,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         int? round,
         CancellationToken ct,
         ToolAccess? tools = null,
-        ContextStats? context = null)
+        ContextStats? context = null,
+        IReadOnlyCollection<string>? knowledge = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(messages);
@@ -128,9 +132,12 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 $"{agentKey}: hedef '{target.Destination}' calismanin hassasiyetine ({run.Sensitivity}) aykiri.");
         }
 
-        var system = agent.ComposePrompt(team.Knowledge);
-        // Canli arac akisi: yalniz aracli turda; belirtec tur boyunca yasar.
-        var progressToken = tools is not null && progress?.BaseUrl is { } baseUrl ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage)) : null;
+        var parts = agent.PromptParts(team.Knowledge, knowledge);
+        var system = string.Concat(parts.Select(p => p.Text));
+        // Canli akis: yalniz aracli turda; belirtec tur boyunca yasar. Baglam (sistem parcalari + mesajlar) ekranda gorunsun diye kayda girer.
+        var progressToken = tools is not null && progress?.BaseUrl is { } baseUrl
+            ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage), LiveContext(parts, messages))
+            : null;
         var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
         var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
             Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
@@ -146,7 +153,20 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 await limits.CheckAsync(target.Provider, target.Model, ct).ConfigureAwait(false);
             }
 
-            var response = await CallWatchedAsync(run, agentKey, request, progressToken, ct).ConfigureAwait(false);
+            Attempted response;
+            var callStarted = DateTimeOffset.UtcNow;
+            try
+            {
+                response = await CallWatchedAsync(run, agentKey, request, progressToken, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (progressToken is not null && progress!.UsageOf(progressToken) is { } spent)
+            {
+                // Tur yarida kesildi (zaman asimi, iptal, saglayici hatasi) ama token harcandi: kayda gecmeden kaybolmasin
+                // (CLAUDE.md §4). 2026-09-23'te kesilen ilk t1 ~3 $ harcamis, run_turn'e hic yazilmamisti.
+                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, ex, callStarted, tools is not null, context).ConfigureAwait(false);
+                ex.Data[PartialReplyKey] = partial;
+                throw;
+            }
 
             // Runtime'in soyledigi hedef de politikaya uymali: adaptor yanlis yere gittiyse burada yakalanir.
             if (!SensitivityPolicy.Allows(run.Sensitivity, response.Response.Destination))
@@ -199,6 +219,74 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
     private sealed record Attempted(RuntimeTurnResponse Response, TimeSpan Elapsed);
 
+    /// <summary>Canli baglam gorunumu: sistem isteminin parcalari ve mesajlar, boyutlariyla.</summary>
+    private static List<LiveContextPart> LiveContext(IReadOnlyList<(string Name, string Text)> parts, IReadOnlyList<RuntimeMessage> messages)
+    {
+        var list = parts.Select((p, i) => new LiveContextPart(i == 0 ? $"sistem · {p.Name}" : $"bilgi · {p.Name}", "system", p.Text.Length, p.Text)).ToList();
+        list.AddRange(messages.Select((m, i) => new LiveContextPart(i == messages.Count - 1 ? "görev istemi" : $"geçmiş {i + 1}", m.Role, m.Content.Length, m.Content)));
+        return list;
+    }
+
+    /// <summary>
+    /// Kesilen turu kaydeder: kullanim runtime'in mesaj basina bildiriminden, maliyet fiyat tablosundan tahmin (fiyat yoksa null).
+    /// Bu yol hicbir zaman asil hatayi ortmemeli: kayit basarisizsa yutulur. Iptal belirteci kullanilmaz -- iptal edilmis
+    /// calismanin da harcamasi yazilmalidir.
+    /// </summary>
+    private async Task<AgentReply> RecordCutShortAsync(Run run, string agentKey, string? stage, string? task, int? round, AgentTarget target, string system, IReadOnlyList<RuntimeMessage> messages, RuntimeUsage spent, Exception ex, DateTimeOffset started, bool toolsOffered, ContextStats? context)
+    {
+        decimal? cost = null;
+        try
+        {
+            if (catalog is not null && (await catalog.LoadPricesAsync(CancellationToken.None).ConfigureAwait(false)).TryGetValue(target.Model, out var price))
+            {
+                cost = Math.Round(price.Estimate(spent), 6);
+            }
+        }
+        catch (DomainException)
+        {
+            // bozuk fiyat tablosu turu kaydetmeyi engellemez; maliyet olculemedi kalir
+        }
+
+        var reason = ex is OperationCanceledException ? "iptal" : ex.Message;
+        var output = $"[tur yarıda kesildi: {reason}] Kullanım runtime'in canlı bildiriminden; maliyet {(cost is null ? "ölçülemedi (fiyat yok)" : "fiyat tablosundan tahmin")}.";
+        var turn = new Turn(
+            DateTimeOffset.UtcNow,
+            agentKey,
+            stage,
+            task,
+            round,
+            Providers.Wire(target.Provider),
+            target.Model,
+            target.Destination,
+            (DateTimeOffset.UtcNow - started).TotalSeconds,
+            system.Length + messages.Sum(m => m.Content.Length),
+            0,
+            cost,
+            messages.Count == 0 ? "" : messages[^1].Content,
+            output,
+            spent.InputTokens,
+            spent.OutputTokens,
+            null,
+            null,
+            spent.CacheReadTokens,
+            spent.CacheWriteTokens,
+            ToolsOffered: toolsOffered,
+            Context: context,
+            CutShort: true);
+        try
+        {
+            await runs.AppendTurnAsync(run.Id, turn, CancellationToken.None).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // kayit asil hatayi ortmemeli
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return new AgentReply("", null, 0m, []);
+        }
+
+        return new AgentReply("", null, cost ?? 0m, [], spent.InputTokens, spent.OutputTokens);
+    }
+
     /// <summary>
     /// Turu bekci altinda kosar (<see cref="TurnWatch"/>). Bekci keserse <see cref="RuntimeTimeoutException"/>: is kanalinin
     /// "kullanici iptali" yoluna (OperationCanceled) DUSMEZ -- dusseydi calisma sessizce Running'de asili kalirdi.
@@ -227,7 +315,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                         {
                             reason = progressToken is null
                                 ? $"tur {_watch.Idle.TotalMinutes:0} dk içinde bitmedi"
-                                : $"ajan {_watch.Idle.TotalMinutes:0} dk boyunca hiçbir araç çağırmadı (hareketsiz)";
+                                : $"ajan {_watch.Idle.TotalMinutes:0} dk boyunca hiç hareket etmedi (araç, metin, düşünce yok)";
                         }
                     }
 

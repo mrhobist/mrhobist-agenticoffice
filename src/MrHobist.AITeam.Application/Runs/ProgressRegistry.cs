@@ -8,62 +8,176 @@ namespace MrHobist.AITeam.Application.Runs;
 /// <summary>Suren LLM turunun sahibi: hangi calisma, ajan, gorev. Ilerleme bildirimi bu baglama yazilir.</summary>
 public sealed record ProgressContext(string RunId, string Agent, string? Task, string? Stage);
 
-/// <summary>Runtime'in tur sirasinda bildirdigi bir arac cagrisi (<c>POST /progress/{token}</c> govdesi).</summary>
-public sealed record ProgressEvent(string Tool, string? Target);
+/// <summary>
+/// Runtime'in tur sirasinda bildirdigi tek olay (<c>POST /progress/{token}</c> govdesi). <see cref="Kind"/>: <c>tool</c>
+/// (arac cagrisi; eski govdelerde bos) · <c>text</c> (ajanin yazdigi) · <c>thinking</c> (dusunce ozeti) · <c>usage</c> (bir API
+/// mesajinin kullanimi; ayni <see cref="MessageId"/> icin son deger gecerli). Yeni alan SONA eklenir (CLAUDE.md §5).
+/// </summary>
+public sealed record ProgressEvent(string? Tool, string? Target, string? Kind = null, string? Text = null, string? MessageId = null, RuntimeUsage? Usage = null);
+
+/// <summary>Ajanin o anki baglaminin bir parcasi (sistem istemi, bilgi dosyasi, gorev istemi, tasinan gecmis).</summary>
+public sealed record LiveContextPart(string Name, string Role, int Chars, string Text);
+
+/// <summary>Canli akisin tek satiri: arac, metin ya da dusunce.</summary>
+public sealed record LiveEntry(DateTimeOffset Ts, string Kind, string? Tool, string? Target, string? Text);
 
 /// <summary>
-/// Canli arac akisi (kullanici istegi 2026-09-20: developer calisirken ne yaptigi gorunsun). AgentCaller her tur icin tek
-/// kullanimlik bir belirtec uretir ve runtime'a <c>progressUrl</c> ile verir; runtime her arac cagrisinda o adrese POST eder.
-/// Belirtec yetkidir (JWT yok): tahmin edilemez, tur bitince duser. Api olayi <c>agent.tool</c> olarak sahneye yayimlar.
-/// Runtime is kurali bilmez: yalniz "arac X hedef Y" der (CLAUDE.md §1).
+/// Suren bir turun anlik gorunumu (<c>GET /runs/{id}/live</c>): canlilik (son hareket), akis, o ana kadarki kullanim ve
+/// ajanin elindeki baglam. Tur bitince duser; kalici kayit <c>run_turn</c>'dedir.
+/// </summary>
+public sealed record LiveTurnView(
+    string Agent,
+    string? Task,
+    string? Stage,
+    DateTimeOffset StartedAt,
+    DateTimeOffset LastSeenAt,
+    int ToolCount,
+    RuntimeUsage Usage,
+    IReadOnlyList<LiveEntry> Stream,
+    IReadOnlyList<LiveContextPart> Context,
+    int IdleLimitS);
+
+/// <summary>
+/// Canli akis (kullanici istekleri 2026-09-20 ve 2026-09-23: developer calisirken ne yaptigi, ne dusundugu, elindeki
+/// baglam ve gercekten calisip calismadigi gorunsun). AgentCaller her tur icin tek kullanimlik bir belirtec uretir ve
+/// runtime'a <c>progressUrl</c> ile verir; runtime her arac cagrisinda, metinde, dusuncede ve mesaj kullaniminda o adrese
+/// POST eder. Belirtec yetkidir (JWT yok): tahmin edilemez, tur bitince duser. Arac olayi <c>agent.tool</c> olarak sahneye
+/// yayimlanir. Kullanim da burada birikir: tur yarida kesilirse maliyeti buradan kurtarilir (CLAUDE.md §4).
+/// Runtime is kurali bilmez: yalniz "su oldu" der (CLAUDE.md §1).
 /// </summary>
 public sealed class ProgressRegistry(ISceneEventPublisher scene)
 {
-    private readonly ConcurrentDictionary<string, ProgressContext> _live = new(StringComparer.Ordinal);
+    /// <summary>Tur basina akista tutulan en fazla satir (eski satirlar duser; tam metin tur sonunda gunlukte).</summary>
+    public const int StreamCap = 400;
 
-    /// <summary>Belirtec basina son hareket: kayit ani ya da son bildirim. Hareketsizlik bekcisi (AgentCaller) buna bakar.</summary>
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _seen = new(StringComparer.Ordinal);
+    private sealed class Live(ProgressContext ctx, IReadOnlyList<LiveContextPart> context)
+    {
+        public ProgressContext Ctx { get; } = ctx;
+
+        public IReadOnlyList<LiveContextPart> Context { get; } = context;
+
+        public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
+
+        public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
+
+        public int ToolCount { get; set; }
+
+        public Queue<LiveEntry> Stream { get; } = new();
+
+        public Dictionary<string, RuntimeUsage> Usage { get; } = new(StringComparer.Ordinal);
+
+        public object Gate { get; } = new();
+    }
+
+    private readonly ConcurrentDictionary<string, Live> _live = new(StringComparer.Ordinal);
 
     /// <summary>Api'nin runtime'a verecegi geri cagri koku (<c>http://127.0.0.1:5080/api/v1/progress</c>); Api acilista yazar. Bos = akis kapali.</summary>
     public string? BaseUrl { get; set; }
 
-    public string Register(ProgressContext ctx)
+    /// <summary>Hareketsizlik esigi (saniye): UI "son hareket" gostergesini buna gore uyarir.</summary>
+    public int IdleLimitS { get; set; } = (int)TurnWatch.Default.Idle.TotalSeconds;
+
+    public string Register(ProgressContext ctx, IReadOnlyList<LiveContextPart>? context = null)
     {
         var token = RandomNumberGenerator.GetHexString(32, lowercase: true);
-        _live[token] = ctx;
-        _seen[token] = DateTimeOffset.UtcNow;
+        _live[token] = new Live(ctx, context ?? []);
         return token;
     }
 
-    public void Release(string token)
+    public void Release(string token) => _live.TryRemove(token, out _);
+
+    /// <summary>Turun son hareketi (kayit ani ya da son bildirim); belirtec yoksa (tur bitti) null. Hareketsizlik bekcisi buna bakar.</summary>
+    public DateTimeOffset? LastSeen(string token) => _live.TryGetValue(token, out var l) ? l.LastSeenAt : null;
+
+    /// <summary>O ana kadar bildirilen kullanim (mesaj basina son deger, toplanmis); bildirim yoksa null.</summary>
+    public RuntimeUsage? UsageOf(string token)
     {
-        _live.TryRemove(token, out _);
-        _seen.TryRemove(token, out _);
+        if (!_live.TryGetValue(token, out var l))
+        {
+            return null;
+        }
+
+        lock (l.Gate)
+        {
+            return l.Usage.Count == 0 ? null : Sum(l.Usage.Values);
+        }
     }
 
-    /// <summary>Turun son hareketi; belirtec yoksa (tur bitti) null.</summary>
-    public DateTimeOffset? LastSeen(string token) => _seen.TryGetValue(token, out var t) ? t : null;
+    /// <summary>Calismanin suren turlari (ayni anda birden cok ajan olabilir).</summary>
+    public IReadOnlyList<LiveTurnView> Snapshot(string runId)
+        => _live.Values.Where(l => l.Ctx.RunId == runId).Select(l =>
+        {
+            lock (l.Gate)
+            {
+                return new LiveTurnView(l.Ctx.Agent, l.Ctx.Task, l.Ctx.Stage, l.StartedAt, l.LastSeenAt, l.ToolCount,
+                    Sum(l.Usage.Values), l.Stream.ToList(), l.Context, IdleLimitS);
+            }
+        }).OrderBy(v => v.StartedAt).ToList();
 
-    /// <summary>Runtime bildirdi: baglam biliniyorsa sahneye <c>agent.tool</c> gider. Bilinmeyen belirtec sessizce yutulur (tur bitmis).</summary>
+    /// <summary>Runtime bildirdi. Bilinmeyen belirtec sessizce yutulur (tur bitmis). Arac olayi sahneye <c>agent.tool</c> olarak gider.</summary>
     public bool Report(string token, ProgressEvent e)
     {
-        if (!_live.TryGetValue(token, out var ctx))
+        ArgumentNullException.ThrowIfNull(e);
+        if (!_live.TryGetValue(token, out var l))
         {
             return false;
         }
 
-        _seen[token] = DateTimeOffset.UtcNow;
+        var now = DateTimeOffset.UtcNow;
+        var kind = string.IsNullOrEmpty(e.Kind) ? "tool" : e.Kind;
+        lock (l.Gate)
+        {
+            l.LastSeenAt = now;
+            switch (kind)
+            {
+                case "usage" when e.Usage is not null && !string.IsNullOrEmpty(e.MessageId):
+                    l.Usage[e.MessageId] = e.Usage;
+                    return true;
+                case "text" or "thinking" when !string.IsNullOrWhiteSpace(e.Text):
+                    Push(l, new LiveEntry(now, kind, null, null, e.Text));
+                    return true;
+                case "tool" when !string.IsNullOrEmpty(e.Tool):
+                    l.ToolCount++;
+                    Push(l, new LiveEntry(now, "tool", e.Tool, Shorten(e.Target), null));
+                    break;
+                default:
+                    return true;
+            }
+        }
 
         scene.Publish(SceneEventTypes.AgentTool, JsonSerializer.Serialize(new
         {
-            agent = ctx.Agent,
+            agent = l.Ctx.Agent,
             tool = e.Tool,
             target = Shorten(e.Target),
-            run = ctx.RunId,
-            task = ctx.Task,
-            stage = ctx.Stage,
+            run = l.Ctx.RunId,
+            task = l.Ctx.Task,
+            stage = l.Ctx.Stage,
         }));
         return true;
+    }
+
+    private static void Push(Live l, LiveEntry entry)
+    {
+        l.Stream.Enqueue(entry);
+        while (l.Stream.Count > StreamCap)
+        {
+            l.Stream.Dequeue();
+        }
+    }
+
+    private static RuntimeUsage Sum(IEnumerable<RuntimeUsage> all)
+    {
+        int input = 0, output = 0, read = 0, write = 0;
+        foreach (var u in all)
+        {
+            input += u.InputTokens;
+            output += u.OutputTokens;
+            read += u.CacheReadTokens;
+            write += u.CacheWriteTokens;
+        }
+
+        return new RuntimeUsage(input, output, 0, read, write);
     }
 
     /// <summary>

@@ -46,6 +46,7 @@ public static class DependencyInjection
         services.AddSingleton<IWorkflowService, WorkflowService>();
         services.AddSingleton<IRunReader, RunReader>();
         services.AddSingleton<IUsageReader, UsageReader>();
+        services.AddSingleton<ISpendReader, SpendReader>();
         services.AddSingleton<IWorkspaceLocator, WorkspaceLocator>();
         services.AddSingleton<IProjectLauncher, WindowsProjectLauncher>();
         services.AddSingleton<LimitGuard>();

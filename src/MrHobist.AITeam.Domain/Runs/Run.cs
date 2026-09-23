@@ -177,10 +177,19 @@ public sealed record RunTask(
     string Description,
     IReadOnlyList<string> Files,
     IReadOnlyList<string> Acceptance,
-    IReadOnlyList<string> DependsOn);
+    IReadOnlyList<string> DependsOn,
+    /// <summary>
+    /// Bu gorevi baglayan kurallarin <see cref="Spec.Rules"/> icindeki 0 tabanli sirasi. Bos/null = tum kurallar (eski planlar,
+    /// analist emin degilse). 2026-09-23 maliyet kaldiraci: on yuz gorevine arka yuz kurallari her ic turda okunmasin. Sona eklendi.
+    /// </summary>
+    IReadOnlyList<int>? RuleRefs = null);
 
 /// <summary>Analist ciktisi: <c>runs/{id}/spec.json</c>.</summary>
-public sealed record Spec(string Summary, string Architecture, IReadOnlyList<string> Rules, IReadOnlyList<RunTask> Tasks);
+/// <remarks>
+/// <see cref="Knowledge"/>: gorevlerin ihtiyac duydugu bilgi dosyalari (ajan md'sindeki <c>includes</c> anahtarlari). Bos/null = ajanin
+/// tum bilgi dosyalari. 2026-09-23 maliyet kaldiraci: yalniz on yuz isinde arka yuz bilgisi sistem istemine girmesin. Sona eklendi.
+/// </remarks>
+public sealed record Spec(string Summary, string Architecture, IReadOnlyList<string> Rules, IReadOnlyList<RunTask> Tasks, IReadOnlyList<string>? Knowledge = null);
 
 /// <summary>Bir gorevin bir fazi: <c>runs/{id}/tasks/{task}/phases.jsonl</c>.</summary>
 public sealed record Phase(
@@ -239,7 +248,12 @@ public sealed record Turn(
     /// </summary>
     bool? ToolsOffered = null,
     /// <summary>Tasinan gecmisin sikistirma oncesi/sonrasi olcusu; gecmis tasinmadiysa null. Sona eklendi (CLAUDE.md §5).</summary>
-    ContextStats? Context = null);
+    ContextStats? Context = null,
+    /// <summary>
+    /// Tur yarida kesildi (zaman asimi, iptal, saglayici hatasi): kullanim runtime'in canli bildiriminden, maliyet fiyat
+    /// tablosundan tahmin. Eski satirlarda null. Sona eklendi (CLAUDE.md §5).
+    /// </summary>
+    bool? CutShort = null);
 
 /// <summary>
 /// Bir turda tasinan gecmisin olcusu (docs/DOMAIN.md → Baglam butcesi). Sikistirmanin neyi dusurdugunu ve hangi

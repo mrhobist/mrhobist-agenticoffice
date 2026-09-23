@@ -923,3 +923,24 @@ Bekleyen kaldıraçlar (öneri, sıralı): kesilen turun maliyetini de kaydet (�
 kurallar"ı göreve indir (~%3) · işe göre tek bilgi dosyası (~%1, bağlam temizliği). Değişmesi gerekmeyen: maxTurns,
 compactor, build/test çıktı kırpma (israf döngüsü yok).
 
+### Token maliyeti ve koşu notları uygulandı (2026-09-23, kullanıcı: "önce maliyet + notlar") ✅
+
+- **Kesilen tur boşa yanıyordu (en büyük sızıntı):** runtime kopan isteği durdurmuyordu; `claude.exe` kimse
+  beklemeden sürüyordu. Artık runtime bağlantıyı 1 s'de bir yoklar, kopunca turu iptal eder, SDK akışını `aclose()`
+  ile kapatır (alt süreç durur). Test: iptal → üretecin `finally`'si çalışır; kopan istek → 499 + tur iptal.
+- **Kesilen turun maliyeti kayda girer (CLAUDE.md §4 deliği):** runtime mesaj başına kullanımı canlı bildirir;
+  tur kesilirse `run_turn` `cutShort=true`, maliyet fiyat tablosundan (`config/models.json → prices`; Opus 5.5
+  4/0,2/8/20 $/M, CLI kayıtlarıyla birebir) ve çalışmanın toplamına eklenir.
+- **Görev başında bağımlı görevlerin raporu** (dosyalar + özet, ≤1500 kr): tekrar keşfi keser.
+- **Kurallar göreve iner:** plan `tasks[].ruleRefs` (0 tabanlı); boşsa tüm kurallar. **İşe göre bilgi dosyası:**
+  plan `knowledge[]`; bilinmeyen/boş = hepsi (seçim yanlışsa bilgi eksik kalmasın).
+- **Effort düşürülmedi:** kullanıcı Opus 5.5 high istedi; high→medium ~%6–7 kazandırır, kalite ölçülmedi —
+  karar kullanıcıda (ajan md'sinde `effort`).
+- **Talepler:** anlık düşünce/metin akışı + canlılık (son hareket, eşik uyarısı) + ajanın bağlamı (sistem parçaları
+  ve mesajlar, boyutlarıyla) → çalışma panelinde `GET /runs/{id}/live`; kanbanda çalışan kart doğrudan canlı
+  detayı açar (göreve odaklı); **Kim ne harcadı** → Ayarlar (`GET /usage/split`).
+- **İlk "kim ne harcadı" ölçümü (haftalık pencere, %92):** ofis ajanı ≥~$40 (~9 puan), Claude Code oturumları
+  ≥~$359 (~83 puan). Fable 5.1 / Sonnet 5 fiyatı bilinmiyor (hariç). Kotayı asıl yöneten oturum harcıyor.
+- **Bilgi dosyaları:** "paketi sürümüyle kur" (ajan PrimeVue 5 kurmuştu) ön yüz ve arka yüz dosyalarına eklendi.
+- **`.env*` yasağı:** ofis ajanı artık kullanıcının Claude Code ayarlarını devralmıyor (`setting_sources=[]`), o
+  yasak ajana uygulanmıyor. Ofis kuralı olarak eklenmedi; sırlar zaten kurum desenine göre user-secrets'ta.

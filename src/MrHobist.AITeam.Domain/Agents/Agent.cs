@@ -78,20 +78,30 @@ public sealed record Agent(
     }
 
     /// <summary>Govde + alt md'ler. Modele fiilen giden metin budur.</summary>
-    public string ComposePrompt(IReadOnlyDictionary<string, Knowledge> knowledge)
+    public string ComposePrompt(IReadOnlyDictionary<string, Knowledge> knowledge, IReadOnlyCollection<string>? only = null)
+        => string.Concat(PromptParts(knowledge, only).Select(p => p.Text));
+
+    /// <summary>
+    /// Sistem isteminin parcalari (ad, metin): govde, sonra her alt md. <paramref name="only"/> verilirse yalniz o alt md'ler
+    /// girer (2026-09-23 maliyet kaldiraci: is yalniz on yuzse arka yuz bilgisi her ic turda bosuna okunmasin). Bilinmeyen
+    /// ad yok sayilir; <paramref name="only"/> bossa ya da hicbiri eslesmiyorsa hepsi girer -- secim yanlissa bilgi eksik kalmasin.
+    /// </summary>
+    public IReadOnlyList<(string Name, string Text)> PromptParts(IReadOnlyDictionary<string, Knowledge> knowledge, IReadOnlyCollection<string>? only = null)
     {
-        var parts = new List<string> { Prompt.Trim() };
-        foreach (var include in Includes)
+        ArgumentNullException.ThrowIfNull(knowledge);
+        var selected = only is { Count: > 0 } && Includes.Any(only.Contains) ? Includes.Where(only.Contains).ToList() : Includes;
+        var parts = new List<(string Name, string Text)> { (Key, Prompt.Trim()) };
+        foreach (var include in selected)
         {
             if (!knowledge.TryGetValue(include, out var k))
             {
                 throw new DomainException(ErrorCodes.AgentUnknownInclude, $"{Key}: '{include}' bilgi dosyasi yok.");
             }
 
-            parts.Add($"\n\n---\n\n# {k.Title}\n\n{k.Body.Trim()}");
+            parts.Add((include, $"\n\n---\n\n# {k.Title}\n\n{k.Body.Trim()}"));
         }
 
-        return string.Concat(parts);
+        return parts;
     }
 }
 

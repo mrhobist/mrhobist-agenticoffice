@@ -11,7 +11,8 @@ Kullanıcıya dönen metin ve kod yorumu **Türkçe**, identifier **İngilizce**
 ## Yığın ve katmanlar
 
 - **.NET 10**, `Nullable=enable`, `ImplicitUsings=enable`, `.slnx`. Merkezi paket yönetimi **yok** —
-  sürüm her `.csproj`'da. Paket eklemeden önce sor.
+  sürüm her `.csproj`'da. Paket eklemeden önce sor. Paketi **sürümüyle** ekle (`dotnet add package X --version N`),
+  hedef çerçeveyle aynı ana sürüm ailesinden (EF Core 10 ↔ .NET 10); sürümsüz ekleme ön sürüm/uyumsuz ana sürüm getirebilir.
 - Yön: `Api → Application ← Infrastructure`; Domain merkezde, Common paylaşılan çekirdek. Mimari testlerle
   zorlanır (`LayerDependencyTests`, `NamespaceConventionTests`).
 

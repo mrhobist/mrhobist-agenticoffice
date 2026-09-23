@@ -19,7 +19,8 @@ public static class SpecSchema
           "properties": {
             "summary": { "type": "string", "description": "Isin tek paragraf ozeti" },
             "architecture": { "type": "string", "description": "Mimari kararlar ve yapi" },
-            "rules": { "type": "array", "items": { "type": "string" }, "description": "Tum gorevler icin baglayici kurallar" },
+            "rules": { "type": "array", "items": { "type": "string" }, "description": "Baglayici kurallar" },
+            "knowledge": { "type": "array", "items": { "type": "string" }, "description": "Gorevlerin ihtiyac duydugu bilgi dosyasi anahtarlari; bos = hepsi" },
             "tasks": {
               "type": "array",
               "items": {
@@ -32,7 +33,8 @@ public static class SpecSchema
                   "description": { "type": "string" },
                   "files": { "type": "array", "items": { "type": "string" } },
                   "acceptance": { "type": "array", "items": { "type": "string" } },
-                  "dependsOn": { "type": "array", "items": { "type": "string" } }
+                  "dependsOn": { "type": "array", "items": { "type": "string" } },
+                  "ruleRefs": { "type": "array", "items": { "type": "integer" }, "description": "Bu gorevi baglayan kurallarin 0 tabanli sirasi; bos = hepsi" }
                 }
               }
             }

@@ -162,7 +162,7 @@
         />
 
         <!-- Calisma paneli: yeni brief (projeye bagli), plan onayi, devir notlari. Diger panellerle ayni anda acilmaz. -->
-        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" :live-tools="runId ? (liveTools[runId] ?? []) : []" @close="closeRun" @open="openRun" @jobs="toggleJobs" @new-run="openNewRun" />
+        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" :live-tools="runId ? (liveTools[runId] ?? []) : []" :focus-task="runFocus" @close="closeRun" @open="openRun" @jobs="toggleJobs" @new-run="openNewRun" />
 
         <!-- Ekip yonetimi: ajan havuzu (ekle/sil) ve takimlar = is akislari (kullanici karari 2026-09-20). -->
         <TeamPanel v-if="teamPanel" :agents="team" @close="teamPanel = false" @select="k => { teamPanel = false; selectAgent(k) }" @changed="loadTeam(); loadProjects()" />
@@ -392,6 +392,8 @@ const runPanel = ref(false)
 const runId = ref<string | null>(null)
 /** Yeni is formunun projesi; is yalniz bir projenin icinde baslar. */
 const runProject = ref<string | null>(null)
+/** Panodan acilan gorev: calisma paneli canli akisi bu goreve odaklar. */
+const runFocus = ref<string | null>(null)
 const settings = ref(false)
 const jobs = ref(false)
 const bell = ref(false)
@@ -499,10 +501,12 @@ function openBoard(s: BoardSnapshot) {
 }
 
 
-/** Gelen kutusu, pano ya da proje panelinden: id → o calisma; '' → yeni is (acik projenin icinde, yoksa uyari). Proje paneli acik kalir. */
-function openRun(id: string) {
+/** Gelen kutusu, pano ya da proje panelinden: id → o calisma; '' → yeni is (acik projenin icinde, yoksa uyari). Proje paneli acik kalir.
+ *  `task`: panodaki kart — calisma paneli o gorevin canli akisina odaklanir. */
+function openRun(id: string, task?: string) {
   if (selected.value && !leaveAgent()) return
   closeOthers()
+  runFocus.value = task ?? null
   if (id) {
     runId.value = id
     const r = runsList.value.find(x => x.id === id)

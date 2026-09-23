@@ -128,6 +128,50 @@ export interface Turn {
   toolUses?: ToolUse[] | null
   /** Ajan dongusunun tur sayisi. */
   turns?: number | null
+  cacheReadTokens?: number | null
+  cacheWriteTokens?: number | null
+  /** Tur yarida kesildi: kullanim canli bildirimden, maliyet fiyat tablosundan tahmin. */
+  cutShort?: boolean | null
+}
+
+export interface RuntimeUsage { inputTokens: number; outputTokens: number; reasoningChars: number; cacheReadTokens: number; cacheWriteTokens: number }
+
+/** GET /api/v1/runs/{id}/live — suren tur: canlilik, akis (arac/metin/dusunce), o ana kadarki kullanim, ajanin baglami. */
+export interface LiveTurn {
+  agent: string
+  task: string | null
+  stage: string | null
+  startedAt: string
+  lastSeenAt: string
+  toolCount: number
+  usage: RuntimeUsage
+  stream: Array<{ ts: string; kind: 'tool' | 'text' | 'thinking'; tool: string | null; target: string | null; text: string | null }>
+  context: Array<{ name: string; role: string; chars: number; text: string }>
+  /** Hareketsizlik esigi (s): bu kadar hareket olmazsa tur kesilir. */
+  idleLimitS: number
+}
+
+/** GET /api/v1/usage/split — kim ne harcadi (ofis ajani / Claude Code oturumlari). */
+export interface SpendReport {
+  since: string
+  until: string | null
+  weeklyPercent: number | null
+  weeklyResetsAt: string | null
+  officeRecordedUsd: number
+  officeRecordedTurns: number
+  sources: Array<{
+    key: 'office' | 'sessions'
+    label: string
+    messages: number
+    inputTokens: number
+    outputTokens: number
+    costUsd: number | null
+    quotaPoints: number | null
+    lines: Array<{ source: string; project: string; model: string; messages: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd: number | null }>
+    /** Fiyati bilinmeyen modeller: costUsd ve quotaPoints bunlar HARIC (alt sinir). */
+    unpricedModels?: string[] | null
+  }>
+  notes: string[]
 }
 
 export interface ToolUse { tool: string; target: string | null }

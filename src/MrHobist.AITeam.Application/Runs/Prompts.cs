@@ -1,8 +1,12 @@
 using System.Text;
+using MrHobist.AITeam.Domain.Agents;
 using MrHobist.AITeam.Domain.Runs;
 using MrHobist.AITeam.Domain.Workflows;
 
 namespace MrHobist.AITeam.Application.Runs;
+
+/// <summary>Bagimli olunan, bitmis bir gorevin raporu: sonraki gorev ayni dosyalari yeniden kesfetmesin.</summary>
+public sealed record PriorTask(string Id, string Title, string Report);
 
 /// <summary>
 /// Ajanlara giden kullanici mesajlari. Sistem promptu ajan md'sinden gelir; burasi calismaya ozel baglamdir.
@@ -11,7 +15,7 @@ namespace MrHobist.AITeam.Application.Runs;
 public static class Prompts
 {
     /// <summary>Analistin ilk mesaji: brief, proje dizini, akis, beklenen sema.</summary>
-    public static string AnalystBrief(Run run, Workflow wf, string projectRoot)
+    public static string AnalystBrief(Run run, Workflow wf, string projectRoot, IReadOnlyList<Knowledge>? knowledge = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(wf);
@@ -34,6 +38,18 @@ public static class Prompts
                 ? $"Bu planı `{approver}` onaylayacak; onaylanmadan hiçbir iş başlamaz."
                 : "Bu plan onaya sunulmaz: üretilir üretilmez uygulanır. Kimse gözden geçirmeyecek, planı buna göre sağlam kur.");
         sb.AppendLine("Belirsizlikte en makul varsayımı seç ve rules içinde açıkça yaz.");
+        // 2026-09-23 maliyet kaldiraclari: her gorev tum kurallari ve tum bilgi dosyalarini her ic turda yeniden okuyordu.
+        sb.AppendLine("Her görevin ruleRefs alanına o görevi bağlayan kuralların 0 tabanlı sıra numaralarını yaz (tüm görevleri bağlayan kural her görevde yer alır); emin değilsen boş bırak, o zaman tüm kurallar gider.");
+        if (knowledge is { Count: > 1 })
+        {
+            sb.AppendLine().AppendLine("# Bilgi dosyaları");
+            sb.AppendLine("Uygulayıcının sistem istemine eklenebilecek referans belgeler. knowledge alanına bu işin GERÇEKTEN ihtiyaç duyduklarının anahtarlarını yaz (ör. iş yalnız ön yüzse yalnız ön yüz belgesi); emin değilsen boş bırak, hepsi gider.");
+            foreach (var k in knowledge)
+            {
+                sb.Append("- `").Append(k.Key).Append("` — ").AppendLine(k.Title);
+            }
+        }
+
         return sb.ToString();
     }
 
@@ -116,8 +132,46 @@ public static class Prompts
         return sb.ToString().TrimEnd();
     }
 
+    /// <summary>
+    /// <paramref name="task"/>'in (dolayli) bagimliliklarinin son uygulama raporu, plandaki sirayla. Rapor kisaltilir: amac
+    /// "hangi dosyada ne var" bilgisini vermek, tekrar okumayi kesmek (2026-09-23: gorev basina tekrar kesif ~%6 maliyet).
+    /// </summary>
+    public static IReadOnlyList<PriorTask> PriorTasks(Spec spec, RunTask task, IReadOnlyList<Message> messages, int maxChars = 1500)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(messages);
+        var byId = spec.Tasks.ToDictionary(t => t.Id, StringComparer.Ordinal);
+        var ancestors = new HashSet<string>(StringComparer.Ordinal);
+        var stack = new Stack<string>(task.DependsOn);
+        while (stack.Count > 0)
+        {
+            var id = stack.Pop();
+            if (id != task.Id && ancestors.Add(id) && byId.TryGetValue(id, out var t))
+            {
+                foreach (var d in t.DependsOn)
+                {
+                    stack.Push(d);
+                }
+            }
+        }
+
+        var list = new List<PriorTask>();
+        foreach (var t in spec.Tasks.Where(t => ancestors.Contains(t.Id)))
+        {
+            var report = messages.Where(m => m.Task == t.Id && m.Subject == "implement-report").OrderBy(m => m.Ts).LastOrDefault();
+            if (report is not null)
+            {
+                var body = report.Body.Trim();
+                list.Add(new PriorTask(t.Id, t.Title, body.Length <= maxChars ? body : body[..(maxChars - 1)] + "…"));
+            }
+        }
+
+        return list;
+    }
+
     /// <summary>Gorev baglami: plan + gorev + kurallar + dizin. Uc yurutucu de bunu kullanir.</summary>
-    private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes)
+    private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, IReadOnlyList<PriorTask>? prior = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# Görev {a.Task.Id} — {a.Task.Title}").AppendLine(a.Task.Description).AppendLine();
@@ -126,7 +180,25 @@ public static class Prompts
         sb.AppendLine("# Çalışma dizini");
         sb.AppendLine($"`{projectRoot}` — araçların bu dizinde açıldı; yollar buna göre görelidir. Bu dizinin DIŞINA yazma (engellenir).").AppendLine();
         sb.AppendLine("# Plan").AppendLine("## Özet").AppendLine(spec.Summary).AppendLine("## Mimari").AppendLine(spec.Architecture).AppendLine();
-        sb.AppendLine("## Bağlayıcı kurallar").AppendJoin('\n', spec.Rules.Select(x => "- " + x)).AppendLine().AppendLine();
+        var refs = a.Task.RuleRefs?.Where(i => i >= 0 && i < spec.Rules.Count).Distinct().Order().ToList();
+        var rules = refs is { Count: > 0 } ? refs.Select(i => spec.Rules[i]).ToList() : spec.Rules;
+        sb.AppendLine("## Bağlayıcı kurallar").AppendJoin('\n', rules.Select(x => "- " + x)).AppendLine();
+        if (rules.Count < spec.Rules.Count)
+        {
+            sb.AppendLine($"(Plandaki diğer {spec.Rules.Count - rules.Count} kural başka görevlere ait.)");
+        }
+
+        sb.AppendLine();
+        if (prior is { Count: > 0 })
+        {
+            sb.AppendLine("# Bağımlı olduğun biten görevler");
+            sb.AppendLine("Bu dosyalar yazıldı ve doğrulandı. Tamamını yeniden okuma; yalnız ihtiyacın olan imzaya/sözleşmeye bak.");
+            foreach (var p in prior)
+            {
+                sb.AppendLine($"## {p.Id} — {p.Title}").AppendLine(p.Report).AppendLine();
+            }
+        }
+
         if (notes.Count > 0)
         {
             sb.AppendLine("# Bu görevle ilgili notlar (eskiden yeniye)");
@@ -140,11 +212,11 @@ public static class Prompts
     }
 
     /// <summary>Developer: araclarla dosyalari yazar, build'i kosar, sonunda rapor semasini doldurur.</summary>
-    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round, bool resumed = false)
+    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round, bool resumed = false, IReadOnlyList<PriorTask>? prior = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
-        var sb = TaskContext(spec, a, projectRoot, notes);
+        var sb = TaskContext(spec, a, projectRoot, notes, prior);
         sb.AppendLine("# Yapılacak");
         sb.AppendLine(round > 1
             ? $"Bu görevin {round}. turu: yukarıdaki geri bildirimi (red/hata notu) MADDE MADDE gider, sonra kabul ölçütlerini yeniden doğrula."
@@ -177,13 +249,13 @@ public static class Prompts
     /// Supheyle red yonu de kapiya baglidir: ARA kapida red bedava degil, bir tur daha maliyet demek ve
     /// eksigi zaten sonraki test adimi yakalar; SON kapida ise hatali kodu gecirmek daha pahalidir.
     /// </summary>
-    public static string ReviewTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, Stage stage, Stage producer, int round, int maxRounds)
+    public static string ReviewTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, Stage stage, Stage producer, int round, int maxRounds, IReadOnlyList<PriorTask>? prior = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(stage);
         ArgumentNullException.ThrowIfNull(producer);
-        var sb = TaskContext(spec, a, projectRoot, notes);
+        var sb = TaskContext(spec, a, projectRoot, notes, prior);
         sb.AppendLine($"# Yapılacak — {stage.Title} ({round}/{maxRounds}. tur)");
         sb.AppendLine(stage.Description);
 

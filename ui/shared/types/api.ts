@@ -721,6 +721,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usage/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    since?: string;
+                    until?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SpendReport"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -1152,6 +1190,43 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Turn"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{id}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LiveTurnView"][];
                     };
                 };
             };
@@ -1749,6 +1824,37 @@ export interface components {
             title: null | string;
             body: string;
         };
+        LiveContextPart: {
+            name: string;
+            role: string;
+            /** Format: int32 */
+            chars: number | string;
+            text: string;
+        };
+        LiveEntry: {
+            /** Format: date-time */
+            ts: string;
+            kind: string;
+            tool: null | string;
+            target: null | string;
+            text: null | string;
+        };
+        LiveTurnView: {
+            agent: string;
+            task: null | string;
+            stage: null | string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            lastSeenAt: string;
+            /** Format: int32 */
+            toolCount: number | string;
+            usage: components["schemas"]["RuntimeUsage"];
+            stream: components["schemas"]["LiveEntry"][];
+            context: components["schemas"]["LiveContextPart"][];
+            /** Format: int32 */
+            idleLimitS: number | string;
+        };
         LoginRequest: {
             username: string;
             password: string;
@@ -1798,8 +1904,12 @@ export interface components {
         /** @enum {unknown} */
         PhaseStatus: "started" | "done" | "rejected" | "failed" | "skipped";
         ProgressEvent: {
-            tool: string;
+            tool: null | string;
             target: null | string;
+            kind?: null | string;
+            text?: null | string;
+            messageId?: null | string;
+            usage?: null | components["schemas"]["RuntimeUsage"];
         };
         ProjectCard: {
             key: string;
@@ -1998,6 +2108,7 @@ export interface components {
             files: string[];
             acceptance: string[];
             dependsOn: string[];
+            ruleRefs?: null | (number | string)[];
         };
         RunsOverview: {
             /** Format: int32 */
@@ -2048,6 +2159,24 @@ export interface components {
             fetchedAt: null | string;
             limits: components["schemas"]["RuntimeUsageLimit"][];
         };
+        RuntimeUsage: {
+            /** Format: int32 */
+            inputTokens: number | string;
+            /** Format: int32 */
+            outputTokens: number | string;
+            /** Format: int32 */
+            reasoningChars: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            cacheReadTokens: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            cacheWriteTokens: number | string;
+        };
         RuntimeUsageLimit: {
             kind: string;
             group: null | string;
@@ -2071,6 +2200,55 @@ export interface components {
             architecture: string;
             rules: string[];
             tasks: components["schemas"]["RunTask"][];
+            knowledge?: null | string[];
+        };
+        SpendLine: {
+            source: string;
+            project: string;
+            model: string;
+            /** Format: int32 */
+            messages: number | string;
+            /** Format: int64 */
+            inputTokens: number | string;
+            /** Format: int64 */
+            outputTokens: number | string;
+            /** Format: int64 */
+            cacheReadTokens: number | string;
+            /** Format: int64 */
+            cacheWriteTokens: number | string;
+            /** Format: double */
+            costUsd: null | number | string;
+        };
+        SpendReport: {
+            /** Format: date-time */
+            since: string;
+            /** Format: date-time */
+            until: null | string;
+            /** Format: double */
+            weeklyPercent: null | number | string;
+            /** Format: date-time */
+            weeklyResetsAt: null | string;
+            /** Format: double */
+            officeRecordedUsd: number | string;
+            /** Format: int32 */
+            officeRecordedTurns: number | string;
+            sources: components["schemas"]["SpendSource"][];
+            notes: string[];
+        };
+        SpendSource: {
+            key: string;
+            label: string;
+            /** Format: int32 */
+            messages: number | string;
+            /** Format: int64 */
+            inputTokens: number | string;
+            /** Format: int64 */
+            outputTokens: number | string;
+            /** Format: double */
+            costUsd: null | number | string;
+            /** Format: double */
+            quotaPoints: null | number | string;
+            lines: components["schemas"]["SpendLine"][];
         };
         /** @enum {unknown} */
         StageKind: "analyze" | "design" | "implement" | "review" | "handoff";
@@ -2124,6 +2302,7 @@ export interface components {
             cacheWriteTokens?: null | number | string;
             toolsOffered?: null | boolean;
             context?: null | components["schemas"]["ContextStats"];
+            cutShort?: null | boolean;
         };
         UpdateAgentRequest: {
             name: string;

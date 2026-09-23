@@ -607,6 +607,76 @@ public sealed class RunServiceTests : IDisposable
         Assert.DoesNotContain("DEVAM", fresh.Messages[^1].Content, StringComparison.Ordinal);
     }
 
+    private sealed class FixedPrices(string model, ModelPrice price) : IModelCatalog
+    {
+        public Task<IReadOnlyList<CatalogModel>> LoadAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<CatalogModel>>([]);
+
+        public Task<IReadOnlyDictionary<string, ModelPrice>> LoadPricesAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyDictionary<string, ModelPrice>>(new Dictionary<string, ModelPrice> { [model] = price });
+    }
+
+    /// <summary>
+    /// 2026-09-23: kesilen ilk t1 denemesi ~3 $ harcadi, run_turn'e hic yazilmadi (CLAUDE.md §4 deliniyordu). Artik runtime'in
+    /// mesaj basina canli kullanim bildirimi birikir; tur kesilince kullanim + fiyattan tahmin edilen maliyet kayda ve calismanin
+    /// toplamina girer.
+    /// </summary>
+    [Fact]
+    public async Task Kesilen_turun_harcamasi_kaydedilir_ve_calismanin_toplamina_girer()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var progress = new ProgressRegistry(_scene) { BaseUrl = "http://127.0.0.1:5080/api/v1/progress" };
+        var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, progress: progress,
+            watch: new TurnWatch(TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(50)),
+            catalog: new FixedPrices(RunDefaults.Model, new ModelPrice(4m, 20m, 0.2m, 8m)));
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
+
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        var before = (await _reader.GetAsync(run.Id, Ct)).TotalCostUsd;
+        _runtime.HangImplementTimes = 1;
+        _runtime.HangReports = (progress, new RuntimeUsage(1_110_000, 50_000, 0, 1_000_000, 100_000));
+        run = await svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Failed, run.Status);
+        var cut = Assert.Single(await _store.ReadTurnsAsync(run.Id, "developer", Ct), t => t.CutShort == true);
+        Assert.Equal(("t1", 2.04m, 1_110_000, 50_000, 1_000_000, 100_000), (cut.Task, cut.CostUsd, cut.InputTokens, cut.OutputTokens, cut.CacheReadTokens, cut.CacheWriteTokens));
+        Assert.Contains("yarıda kesildi", cut.Output, StringComparison.Ordinal);
+        Assert.Equal(before + 2.04m, run.TotalCostUsd);
+        Assert.Empty(progress.Snapshot(run.Id)); // tur bitti, canli kayit dustu
+    }
+
+    [Fact]
+    public async Task Bagimli_gorev_onceki_gorevin_raporunu_alir_kurallar_goreve_bilgi_dosyalari_ise_daraltilir()
+    {
+        _runtime.SpecJson = """
+            {"summary":"s","architecture":"a","rules":["genel kural","arka yuz kurali","on yuz kurali"],"knowledge":["yok-boyle-dosya"],
+             "tasks":[
+               {"id":"t1","title":"api","description":"...","files":["a.cs"],"acceptance":["build"],"dependsOn":[],"ruleRefs":[0,1]},
+               {"id":"t2","title":"ekran","description":"...","files":["b.vue"],"acceptance":["build"],"dependsOn":["t1"],"ruleRefs":[0,2]}]}
+            """;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Contains("ruleRefs", _runtime.Calls[0].Messages[0].Content, StringComparison.Ordinal);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+
+        var impl = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).Select(c => c.Messages[^1].Content).ToList();
+        var t1 = impl.First(m => m.Contains("# Görev t1", StringComparison.Ordinal));
+        var t2 = impl.First(m => m.Contains("# Görev t2", StringComparison.Ordinal));
+        Assert.Contains("arka yuz kurali", t1, StringComparison.Ordinal);
+        Assert.DoesNotContain("on yuz kurali", t1, StringComparison.Ordinal);
+        Assert.Contains("on yuz kurali", t2, StringComparison.Ordinal);
+        Assert.DoesNotContain("arka yuz kurali", t2, StringComparison.Ordinal);
+        Assert.Contains("diğer 1 kural", t2, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bağımlı olduğun biten görevler", t1, StringComparison.Ordinal);
+        Assert.Contains("Bağımlı olduğun biten görevler", t2, StringComparison.Ordinal);
+        Assert.Contains("## t1 — api", t2, StringComparison.Ordinal);
+        _runtime.SpecJson = null;
+    }
+
     [Fact]
     public async Task Yeniden_baslatmada_running_calismalar_interrupted()
     {
@@ -853,6 +923,9 @@ public sealed class RunServiceTests : IDisposable
         /// <summary>Ilk N gelistirme turu hic donmesin (iptal edilene kadar asili): tur bekcisi testi.</summary>
         public int HangImplementTimes { get; set; }
 
+        /// <summary>Asili tur, asilmadan once bu kullanimi canli akisa bildirsin (kesilen turun maliyeti testi).</summary>
+        public (ProgressRegistry Registry, RuntimeUsage Usage)? HangReports { get; set; }
+
         private static async Task<RuntimeTurnResponse> HangAsync(CancellationToken ct)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, ct);
@@ -865,6 +938,11 @@ public sealed class RunServiceTests : IDisposable
             if (HangImplementTimes > 0 && request.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true)
             {
                 HangImplementTimes--;
+                if (HangReports is { } h && request.ProgressUrl is { } url)
+                {
+                    h.Registry.Report(url[(url.LastIndexOf('/') + 1)..], new ProgressEvent(null, null, "usage", MessageId: "m1", Usage: h.Usage));
+                }
+
                 return HangAsync(ct);
             }
 
@@ -940,6 +1018,9 @@ public sealed class RunServiceTests : IDisposable
 
         public Task<RuntimeAuthStatus> LogoutAsync(Provider provider, CancellationToken ct)
             => Task.FromResult(new RuntimeAuthStatus(provider, false, null, "sahte"));
+
+        public Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<RuntimeLocalUsage>>([]);
 
         public Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<RuntimeProviderLimits>>(LimitPercent is { } p

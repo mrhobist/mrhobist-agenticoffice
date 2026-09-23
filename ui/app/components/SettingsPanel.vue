@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AppSettings, LoginMode, LoginStarted, Provider, ProviderLoginRequest, ProviderStatus, UsageItem } from '~/api/types'
+import type { AppSettings, LoginMode, LoginStarted, Provider, ProviderLoginRequest, ProviderStatus, SpendReport, UsageItem } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { providerLabel, fmtCost as fmtCostLabel, COST_TITLE } from '~/api/labels'
@@ -83,7 +83,23 @@ async function loadUsage() {
     usage.value = null
     usageError.value = errorText(e)
   }
+  void loadSpend()
 }
+
+/** Kim ne harcadi (kullanici istegi 2026-09-23): haftalik pencerede ofis ajani / Claude Code oturumlari, CLI kayitlarindan. */
+const spend = ref<SpendReport | null>(null)
+const spendError = ref<string | null>(null)
+const spendOpen = ref<string | null>(null)
+async function loadSpend() {
+  try {
+    spend.value = await api.get<SpendReport>('/api/v1/usage/split')
+    spendError.value = null
+  } catch (e) {
+    spend.value = null
+    spendError.value = errorText(e)
+  }
+}
+const spendTotal = computed(() => (spend.value?.sources ?? []).reduce((s, x) => s + (x.costUsd ?? 0), 0))
 
 /** Giris basladiktan sonra 5 s'de bir 3 dakika boyunca yeniden kontrol: kullanici tarayicida onaylayinca ekran kendi guncellenir. */
 let watchTimer: ReturnType<typeof setInterval> | undefined
@@ -242,6 +258,46 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
         <p v-else class="sub">Yükleniyor…</p>
       </section>
 
+      <!-- ---------------------------------------------------------- kim ne harcadi -->
+      <section class="block">
+        <div class="block-head">
+          <h3>Kim ne harcadı</h3>
+          <button type="button" class="small" @click="loadSpend">Yenile</button>
+        </div>
+        <p class="sub">Haftalık kota ortak: ofis ajanı ile Claude Code oturumların aynı hesaptan harcar. Makinedeki her çağrının kaydından (<code>~/.claude/projects</code>) okunur; kota payı eşdeğer $ oranıyla bölünür.</p>
+        <p v-if="spendError" class="err">{{ spendError }}</p>
+        <p v-else-if="!spend" class="sub">Yükleniyor…</p>
+        <template v-else>
+          <p class="sub">Pencere: {{ fmtWhen(spend.since) }} →<template v-if="spend.weeklyResetsAt"> sıfırlanma {{ fmtWhen(spend.weeklyResetsAt) }}</template><template v-if="spend.weeklyPercent !== null"> · haftalık <strong>%{{ Math.round(spend.weeklyPercent) }}</strong></template></p>
+          <div class="spendbar" role="img" :aria-label="spend.sources.map(s => `${s.label} ${s.quotaPoints ?? '?'} puan`).join(', ')">
+            <span v-for="s in spend.sources" :key="s.key" :class="s.key" :style="{ flexGrow: s.costUsd ?? 0 }" :title="s.label" />
+          </div>
+          <table class="usage">
+            <thead><tr><th>Kaynak</th><th class="num">Mesaj</th><th class="num">Giriş tk</th><th class="num">Çıkış tk</th><th class="num" :title="COST_TITLE">≈ Maliyet</th><th class="num">Kota payı</th></tr></thead>
+            <tbody>
+              <template v-for="s in spend.sources" :key="s.key">
+                <tr class="src" @click="spendOpen = spendOpen === s.key ? null : s.key">
+                  <td><span class="dot" :class="s.key" /> {{ s.label }} <span class="sub">{{ spendOpen === s.key ? '▾' : '▸' }}</span></td>
+                  <td class="num">{{ fmtNum(s.messages) }}</td><td class="num">{{ fmtNum(s.inputTokens) }}</td><td class="num">{{ fmtNum(s.outputTokens) }}</td>
+                  <td class="num" :title="s.unpricedModels?.length ? `Fiyatsız: ${s.unpricedModels.join(', ')} (hariç)` : undefined">{{ s.costUsd === null ? 'ölçülemedi' : (s.unpricedModels?.length ? '≥ ' : '') + fmtCost(s.costUsd) }}</td>
+                  <td class="num">{{ s.quotaPoints === null ? '—' : `${s.unpricedModels?.length ? '≥' : '~'}${s.quotaPoints} puan` }}</td>
+                </tr>
+                <template v-if="spendOpen === s.key">
+                  <tr v-for="l in s.lines" :key="l.source + l.project + l.model" class="line">
+                    <td :title="l.project"><code>{{ l.project.replace(/^C--/, '').slice(-42) }}</code> <span class="sub">{{ l.source }} · {{ l.model }}</span></td>
+                    <td class="num">{{ fmtNum(l.messages) }}</td><td class="num">{{ fmtNum(l.inputTokens) }}</td><td class="num">{{ fmtNum(l.outputTokens) }}</td>
+                    <td class="num">{{ l.costUsd === null ? '—' : fmtCost(l.costUsd) }}</td><td />
+                  </tr>
+                </template>
+              </template>
+            </tbody>
+            <tfoot><tr><td colspan="4">Toplam</td><td class="num">{{ fmtCost(spendTotal) }}</td><td class="num">{{ spend.weeklyPercent === null ? '' : `%${Math.round(spend.weeklyPercent)}` }}</td></tr></tfoot>
+          </table>
+          <p class="sub">Ofisin kendi tur kaydı aynı pencerede: {{ spend.officeRecordedTurns }} tur · {{ fmtCost(spend.officeRecordedUsd) }} (kesilen turlar dahil).</p>
+          <p v-for="(n, i) in spend.notes" :key="i" class="sub note">{{ n }}</p>
+        </template>
+      </section>
+
       <!-- ---------------------------------------------------------- kullanim -->
       <section class="block">
         <div class="block-head">
@@ -322,4 +378,13 @@ code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-r
 .usage th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7285; }
 .usage .num { text-align: right; font-variant-numeric: tabular-nums; }
 .usage tfoot td { font-weight: 700; border-bottom: none; }
+.usage tr.src { cursor: pointer; }
+.usage tr.src:hover { background: #f6f3ea; }
+.usage tr.line td { font-size: 11px; color: #4a5068; padding-left: 18px; }
+.spendbar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: #e5e7ee; border: 1px solid #c9c3b3; margin: 4px 0 6px; }
+.spendbar span { flex-basis: 0; }
+.spendbar .office, .dot.office { background: #4fa3e0; }
+.spendbar .sessions, .dot.sessions { background: #ef9b4f; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; }
+.note { font-style: italic; }
 </style>

@@ -10,6 +10,7 @@ Burada is mantigi YOKTUR: istek geldigi gibi tek bir cagriya cevrilir.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -32,6 +33,7 @@ from claude_agent_sdk import (
     PermissionResultDeny,
     ResultMessage,
     TextBlock,
+    ThinkingBlock,
     ToolPermissionContext,
     ToolUseBlock,
 )
@@ -44,6 +46,8 @@ from ..contracts import (
     LoginRequest,
     LoginStarted,
     ModelInfo,
+    LocalUsage,
+    ProgressEvent,
     ProviderLimits,
     ToolUse,
     UsageLimit,
@@ -201,6 +205,16 @@ def _limit_reached(text: str) -> bool:
     return any(k in t for k in ("usage limit reached", "rate_limit", "rate limit", "429", "quota exceeded", "limit exceeded"))
 
 
+def _parse_ts(v: Any) -> float | None:
+    """Oturum kaydindaki ISO zaman (`...Z`) -> epoch saniye; okunamazsa None."""
+    if not isinstance(v, str) or not v:
+        return None
+    try:
+        return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"errorCode": code, "message": message})
 
@@ -216,26 +230,31 @@ def _classify(exc: Exception) -> HTTPException:
     return _error(502, "runtime.provider_error", text)
 
 
-async def _report_progress(url: str | None, use: ToolUse) -> None:
-    """Canli arac akisi: .NET'e tek POST, 2 s zaman asimi, hata yutulur (akis gorunurluk icindir, turu bozmaz)."""
-    if not url:
+#: Canli akista tek metin/dusunce parcasinin ust siniri (karakter). Tam metin tur sonunda gunluge zaten yazilir.
+PROGRESS_TEXT_MAX = 4000
+
+
+async def _report_progress(client: httpx.AsyncClient | None, url: str | None, event: ProgressEvent) -> None:
+    """Canli akis: .NET'e tek POST, 2 s zaman asimi, hata yutulur (akis gorunurluk icindir, turu bozmaz)."""
+    if not url or client is None:
         return
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            await client.post(url, json=use.model_dump())
+        await client.post(url, json=event.model_dump(by_alias=True, exclude_none=True))
     except Exception:  # noqa: BLE001 — bildirim basarisizligi turu etkilemez
         pass
 
 
-async def _report_progress(url: str | None, use: ToolUse) -> None:
-    """Canli arac akisi: .NET'e tek POST, 2 s zaman asimi, hata yutulur (akis gorunurluk icindir, turu bozmaz)."""
-    if not url:
-        return
-    try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            await client.post(url, json=use.model_dump())
-    except Exception:  # noqa: BLE001 — bildirim basarisizligi turu etkilemez
-        pass
+def _usage_of(raw: dict[str, Any] | None) -> Usage:
+    """SDK kullanim sozlugu -> sozlesme. Girdi = dogrudan + onbellege yazilan + onbellekten okunan."""
+    raw = raw or {}
+    read = int(raw.get("cache_read_input_tokens") or 0)
+    write = int(raw.get("cache_creation_input_tokens") or 0)
+    return Usage(
+        input_tokens=int(raw.get("input_tokens") or 0) + read + write,
+        output_tokens=int(raw.get("output_tokens") or 0),
+        cache_read_tokens=read,
+        cache_write_tokens=write,
+    )
 
 
 class AnthropicProvider:
@@ -390,10 +409,16 @@ class AnthropicProvider:
         started = time.monotonic()
 
         prompt_file = _write_prompt_file(request.system_prompt)
+        # Tur basina tek istemci (bildirim sik: her arac, metin, kullanim). Akis yoksa acilmaz.
+        client = httpx.AsyncClient(timeout=2.0) if request.progress_url else None
+        # Ayni API mesaji blok basina tekrar gelir (ayni message_id, ayni kullanim): degismeyen kullanim yeniden bildirilmez.
+        sent_usage: dict[str, Usage] = {}
+        stream: Any = None
         try:
             prompt_text = self._prompt(request)
             prompt: Any = self._stream(prompt_text) if request.tools else prompt_text
-            async for msg in sdk.query(prompt=prompt, options=self._options(request, prompt_file)):
+            stream = sdk.query(prompt=prompt, options=self._options(request, prompt_file))
+            async for msg in stream:
                 if isinstance(msg, AssistantMessage):
                     if msg.error:
                         err_text = f"Claude hatası: {msg.error}"
@@ -405,10 +430,20 @@ class AnthropicProvider:
                     for block in msg.content:
                         if isinstance(block, TextBlock):
                             parts.append(block.text)
+                            if block.text.strip():
+                                await _report_progress(client, request.progress_url, ProgressEvent(kind="text", text=block.text[:PROGRESS_TEXT_MAX]))
+                        elif isinstance(block, ThinkingBlock):
+                            if (block.thinking or "").strip():
+                                await _report_progress(client, request.progress_url, ProgressEvent(kind="thinking", text=block.thinking[:PROGRESS_TEXT_MAX]))
                         elif isinstance(block, ToolUseBlock):
                             use = ToolUse(tool=block.name, target=self._tool_target(block))
                             tool_uses.append(use)
-                            await _report_progress(request.progress_url, use)
+                            await _report_progress(client, request.progress_url, ProgressEvent(kind="tool", tool=use.tool, target=use.target))
+                    if msg.usage and msg.message_id:
+                        u = _usage_of(msg.usage)
+                        if sent_usage.get(msg.message_id) != u:
+                            sent_usage[msg.message_id] = u
+                            await _report_progress(client, request.progress_url, ProgressEvent(kind="usage", message_id=msg.message_id, usage=u))
                 elif isinstance(msg, ResultMessage):
                     if msg.is_error:
                         detail = "; ".join(msg.errors or []) or msg.result or "bilinmiyor"
@@ -428,8 +463,15 @@ class AnthropicProvider:
         except ClaudeSDKError as exc:
             raise _classify(exc) from exc
         finally:
+            if stream is not None:
+                # Tur iptal edildiyse (istemci koptu) akis HEMEN kapatilir: SDK alt sureci (claude.exe) bununla durur.
+                # Kapatilmazsa uretec yalniz cop toplayicida kapanir ve ajan kimse beklemeden calismaya devam eder.
+                with contextlib.suppress(Exception):
+                    await stream.aclose()
             if prompt_file:
                 Path(prompt_file).unlink(missing_ok=True)
+            if client is not None:
+                await client.aclose()
 
         return TurnResponse(
             text="\n".join(parts).strip(),
@@ -437,17 +479,9 @@ class AnthropicProvider:
             provider=PROVIDER_NAME,
             model=request.model,
             destination=DESTINATION_OF[PROVIDER_NAME],
-            usage=Usage(
-                # Girdi = dogrudan + onbellege yazilan + onbellekten okunan: kullanici "kac token gitti" diye bakar.
-                input_tokens=int(usage_raw.get("input_tokens") or 0)
-                + int(usage_raw.get("cache_creation_input_tokens") or 0)
-                + int(usage_raw.get("cache_read_input_tokens") or 0),
-                output_tokens=int(usage_raw.get("output_tokens") or 0),
-                # Kirilim ayrica tasinir: toplam tek basina "baglam bosa mi gitti" sorusunu cevaplamaz.
-                # Ajan araci dongusunde toplam her turda buyur ama buyuyen kismin cogu onbellekten okunur.
-                cache_read_tokens=int(usage_raw.get("cache_read_input_tokens") or 0),
-                cache_write_tokens=int(usage_raw.get("cache_creation_input_tokens") or 0),
-            ),
+            # Girdi = dogrudan + onbellege yazilan + onbellekten okunan: kullanici "kac token gitti" diye bakar.
+            # Kirilim ayrica tasinir: toplam tek basina "baglam bosa mi gitti" sorusunu cevaplamaz.
+            usage=_usage_of(usage_raw),
             cost_usd=cost,
             duration_s=round(time.monotonic() - started, 3),
             attempts=1,
@@ -682,6 +716,54 @@ class AnthropicProvider:
             fetched_at=datetime.now(timezone.utc).isoformat(),
             limits=items,
         )
+
+    def local_usage(self, since: datetime, until: datetime | None = None) -> list[LocalUsage]:
+        """Kim ne harcadi: CLI'nin makinedeki oturum kayitlari (`~/.claude/projects/**/*.jsonl`) taranir, `[since, until)`
+        araligindaki asistan mesajlarinin kullanimi (kaynak, klasor, model) basina toplanir. Her cagri (ofis ajani da,
+        etkilesimli oturum da) buraya yazilir; `entrypoint` kaynagi soyler. Ayni mesaj blok basina tekrar yazilir: mesaj
+        kimligiyle tekillenir. Durum tutulmaz, dosya yazilmaz; kayit okunamazsa o satir atlanir."""
+        base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")) / "projects"
+        if not base.is_dir():
+            return []
+        lo = since.timestamp()
+        hi = until.timestamp() if until else None
+        seen: dict[str, tuple[str, str, str, dict[str, Any]]] = {}
+        for f in base.rglob("*.jsonl"):
+            try:
+                if f.stat().st_mtime < lo:
+                    continue
+                project = f.relative_to(base).parts[0]
+                with f.open(encoding="utf-8", errors="replace") as fh:
+                    for line in fh:
+                        if '"assistant"' not in line or '"usage"' not in line:
+                            continue
+                        try:
+                            o = json.loads(line)
+                        except ValueError:
+                            continue
+                        msg = o.get("message") if o.get("type") == "assistant" else None
+                        if not isinstance(msg, dict) or not isinstance(msg.get("usage"), dict):
+                            continue
+                        ts = _parse_ts(o.get("timestamp"))
+                        if ts is None or ts < lo or (hi is not None and ts >= hi):
+                            continue
+                        key = str(msg.get("id") or o.get("requestId") or o.get("uuid"))
+                        seen[key] = (str(o.get("entrypoint") or "bilinmiyor"), project, str(msg.get("model") or "?"), msg["usage"])
+            except OSError:
+                continue
+
+        groups: dict[tuple[str, str, str], LocalUsage] = {}
+        for source, project, model, raw in seen.values():
+            if model.startswith("<"):  # "<synthetic>": CLI'nin kendi urettigi, API'ye gitmeyen mesaj
+                continue
+            g = groups.setdefault((source, project, model), LocalUsage(source=source, project=project, model=model))
+            u = _usage_of(raw)
+            g.messages += 1
+            g.input_tokens += u.input_tokens
+            g.output_tokens += u.output_tokens
+            g.cache_read_tokens += u.cache_read_tokens
+            g.cache_write_tokens += u.cache_write_tokens
+        return sorted(groups.values(), key=lambda g: (g.source, g.project, g.model))
 
     def models(self) -> list[ModelInfo]:
         status = self.auth()

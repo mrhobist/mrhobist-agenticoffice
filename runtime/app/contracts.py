@@ -53,8 +53,9 @@ class TurnRequest(BaseModel):
     cwd: str | None = None
     #: Ajan dongusunun en fazla tur sayisi. None = araclara gore varsayilan.
     max_turns: int | None = Field(default=None, alias="maxTurns")
-    #: Canli arac akisi: her arac cagrisinda buraya `{tool, target}` POST edilir (loopback, tek kullanimlik belirtecli adres).
-    #: .NET verir; runtime yalniz bildirir, cevabi beklemez, hata yutulur. None = akis yok.
+    #: Canli akis: tur surerken buraya `ProgressEvent` POST edilir (loopback, tek kullanimlik belirtecli adres) --
+    #: arac cagrisi, ajanin metni/dusuncesi, mesaj basina kullanim. .NET verir; runtime yalniz bildirir, cevabi
+    #: beklemez, hata yutulur. None = akis yok.
     progress_url: str | None = Field(default=None, alias="progressUrl")
 
     model_config = {"populate_by_name": True}
@@ -74,6 +75,37 @@ class Usage(BaseModel):
     reasoning_chars: int = Field(default=0, alias="reasoningChars")
     #: Kirilim: `input_tokens` icindeki onbellekten OKUNAN pay (ucuz) ve onbellege YAZILAN pay (pahali).
     #: Ikisi de 0 ise ya saglayici onbellek kullanmiyor ya da bildirmiyordur -- "olculemedi" demektir.
+    cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
+    cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
+
+    model_config = {"populate_by_name": True}
+
+
+class ProgressEvent(BaseModel):
+    """Tur sirasindaki tek bildirim. `kind`: tool (arac cagrisi) · text (ajanin yazdigi) · thinking (dusunce ozeti) ·
+    usage (bir API mesajinin kullanimi; ayni `message_id` icin son deger gecerlidir -- tur kesilirse maliyet bundan
+    kurtarilir). Yeni bir tur maliyet dogurmaz: akista zaten uretilen icerik iletilir."""
+
+    kind: Literal["tool", "text", "thinking", "usage"] = "tool"
+    tool: str | None = None
+    target: str | None = None
+    text: str | None = None
+    message_id: str | None = Field(default=None, alias="messageId")
+    usage: Usage | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class LocalUsage(BaseModel):
+    """Makinedeki CLI oturum kayitlarindan toplanan kullanim (kim ne harcadi). `source` CLI'nin giris noktasidir
+    (ofis ajani `sdk-py`; etkilesimli oturum `cli`, `claude-desktop`...), `project` kaydin klasoru."""
+
+    source: str
+    project: str
+    model: str
+    messages: int = 0
+    input_tokens: int = Field(default=0, alias="inputTokens")
+    output_tokens: int = Field(default=0, alias="outputTokens")
     cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
     cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
 

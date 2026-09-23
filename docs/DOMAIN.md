@@ -301,6 +301,13 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   tur sonunda `BudgetExceeded` olur ve `Detail` hangi ölçünün dolduğunu yazar. Harcama `run.input_tokens` /
   `run.output_tokens` sütunlarında birikir (tur başına kırılım `run_turn`'de kalır); 2026-09-22 öncesi işlerde
   bu sütunlar 0'dır: **ölçülmedi** demektir, sıfır harcandı demek değil.
+- **Kesilen tur da harcamadır (2026-09-23):** runtime tur sürerken mesaj başına kullanımı bildirir (`progress`,
+  `kind=usage`). Tur kesilirse (tur bekçisi, iptal, sağlayıcı hatası, çağrı sırasında limit) biriken kullanım
+  `run_turn`'e `cutShort=true` ile yazılır, maliyet `config/models.json → prices` tablosundan tahmin edilir (fiyat
+  yoksa null: token yazılır, `$` ölçülemedi) ve çalışmanın toplamına (bütçe) eklenir. İstemci bağlantıyı keserse
+  runtime turu **durdurur**: önceden `claude.exe` kimse beklemeden işi bitiriyordu (kayıtsız ~3 $, aynı dizinde iki ajan).
+- **Kim ne harcadı:** kota kaynağa göre ayrılmaz; `GET /usage/split` makinedeki CLI kayıtlarından ofis ajanı ile
+  Claude Code oturumlarını ayırır ve haftalık yüzdeyi eşdeğer `$` oranıyla böler (docs/API.md).
 - **Limit koruması** (asıl koruma): ayarlarda `limitGuards { provider: yüzde }`, varsayılan
   **%99**, Ayarlar ekranında platform bazında değiştirilir. Her LLM çağrısından önce (`LimitGuard`) sağlayıcının
   aktif kota pencereleri (saatlik, haftalık, modele özel) okunur (runtime 90 s önbellek); biri eşiğe ulaştıysa çağrı

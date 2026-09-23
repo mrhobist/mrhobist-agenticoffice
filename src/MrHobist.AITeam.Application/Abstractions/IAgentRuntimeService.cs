@@ -108,7 +108,15 @@ public interface IAgentRuntimeService
 
     /// <summary>Kalan kullanim (kota pencereleri). Runtime 30 s onbellekler; <paramref name="refresh"/> atlar.</summary>
     Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct);
+
+    /// <summary>
+    /// Makinedeki CLI oturum kayitlarindan kaynak/klasor/model basina token (kim ne harcadi). Kaynak CLI'nin giris noktasidir:
+    /// ofis ajani <c>sdk-py</c>, etkilesimli oturumlar <c>cli</c> / <c>claude-desktop</c>... Fiyat ve pay burada degil, .NET'te.
+    /// </summary>
+    Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct);
 }
+
+public sealed record RuntimeLocalUsage(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens);
 
 /// <summary>Runtime'a ulasilamiyor: Api 503 <c>runtime.unavailable</c> doner.</summary>
 public sealed class RuntimeUnavailableException(string message) : Exception(message);

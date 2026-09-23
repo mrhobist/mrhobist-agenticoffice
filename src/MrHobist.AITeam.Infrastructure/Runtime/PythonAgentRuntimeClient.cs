@@ -100,6 +100,29 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             (l.Limits ?? []).Select(x => new RuntimeUsageLimit(x.Kind, x.Group, x.Percent, x.Severity, x.ResetsAt, x.Scope, x.IsActive)).ToList())).ToList();
     }
 
+    private sealed record LocalUsageDto(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens);
+
+    public async Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
+    {
+        var url = $"/v1/usage/local?since={Uri.EscapeDataString(since.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}"
+            + (until is { } u ? $"&until={Uri.EscapeDataString(u.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}" : "");
+        IReadOnlyList<LocalUsageDto>? items;
+        try
+        {
+            items = await http.GetFromJsonAsync<IReadOnlyList<LocalUsageDto>>(url, Json, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is not null)
+        {
+            throw new RuntimeErrorException($"runtime /v1/usage/local HTTP {(int)ex.StatusCode}");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new RuntimeUnavailableException($"runtime'a ulasilamadi: {ex.Message}");
+        }
+
+        return (items ?? []).Select(x => new RuntimeLocalUsage(x.Source, x.Project, x.Model, x.Messages, x.InputTokens, x.OutputTokens, x.CacheReadTokens, x.CacheWriteTokens)).ToList();
+    }
+
     public async Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, string? apiKey, CancellationToken ct)
     {
         var result = await PostAsync<LoginDto, LoginStartedDto>("/v1/auth/login", new LoginDto(Providers.Wire(provider), mode, email, apiKey), ct).ConfigureAwait(false);

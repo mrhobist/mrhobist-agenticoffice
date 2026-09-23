@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AgentListItem, LaunchResult, ProjectCard, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
+import type { AgentListItem, LaunchResult, LiveTurn, ProjectCard, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { COST_TITLE, RUN_CANCELLABLE, RUN_RETRYABLE, RUN_STATUS_LABEL, fmtCost, subjectLabel } from '~/api/labels'
@@ -18,6 +18,8 @@ const props = defineProps<{
   project: string | null
   /** Canli arac akisi (SSE agent.tool → kabuk): suren turda ajanin yaptigi son cagrilar. */
   liveTools?: Array<{ ts: number; agent: string; tool: string; target: string | null; task: string | null }>
+  /** Panodan acildiysa kartin gorevi: canli akis bu goreve odaklanir. */
+  focusTask?: string | null
 }>()
 const emit = defineEmits<{ close: []; open: [id: string]; jobs: []; newRun: [project: string] }>()
 
@@ -96,10 +98,49 @@ async function poll() {
     if (!LIVE.has(run.value.status)) stopPolling()
     else if (timer && pollInterval(run.value.status) !== currentInterval) startPolling()
     if (showLog.value) void loadTurns()
+    if (run.value.status === 'running') void loadLive()
+    else live.value = []
   } catch (e) {
     loadError.value = errorText(e)
   }
 }
+
+// ------------------------------------------------------------------ canli tur (kullanici istekleri 2026-09-23)
+// Ajanin dusuncesi/metni anlik, elindeki baglam ve gercekten calisip calismadigi (son hareket). Ek maliyet yok: runtime
+// akista zaten uretilen icerigi bildirir; burasi 2 s'de bir GET /runs/{id}/live okur.
+
+const live = ref<LiveTurn[]>([])
+const openContext = ref<string | null>(null)
+/** Akis kutulari (tur basina); yeni satir gelince kullanici en alttaysa asagi kayar. */
+const streamBox = new Map<string, HTMLElement>()
+function liveKey(t: LiveTurn): string { return t.agent + (t.task ?? '') + t.startedAt }
+async function loadLive() {
+  if (!props.runId) return
+  try {
+    const next = await api.get<LiveTurn[]>(`/api/v1/runs/${encodeURIComponent(props.runId)}/live`)
+    const grew = next.some((t, i) => t.stream.length !== (live.value[i]?.stream.length ?? -1))
+    live.value = next
+    if (grew) {
+      await nextTick()
+      for (const el of streamBox.values()) if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight
+    }
+  } catch { /* canli gorunum yardimcidir; hata calisma panelini bozmaz */ }
+}
+/** Odak: panodan gelen gorev once; yoksa hepsi. */
+const liveShown = computed(() => {
+  const f = props.focusTask
+  return f && live.value.some(t => t.task === f) ? [...live.value].sort((a, b) => Number(b.task === f) - Number(a.task === f)) : live.value
+})
+function ago(ts: string): number { return Math.max(0, Math.floor((nowTick.value - new Date(ts).getTime()) / 1000)) }
+function fmtAgo(s: number): string { return s < 60 ? `${s} sn` : `${Math.floor(s / 60)} dk ${s % 60} sn` }
+/** Canlilik: yesil (yakin zamanda hareket), sari (esigin yarisini gecti), kirmizi (esige yaklasti — bekci keser). */
+function pulse(t: LiveTurn): 'ok' | 'slow' | 'stale' {
+  const s = ago(t.lastSeenAt)
+  return s < 90 ? 'ok' : s < t.idleLimitS * 0.6 ? 'slow' : 'stale'
+}
+function fmtTokens(n: number): string { return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n) }
+/** Kaba token tahmini (karakter / 3,5); kesin sayi tur sonunda turda. */
+function estTokens(chars: number): string { return fmtTokens(Math.round(chars / 3.5)) }
 
 // ------------------------------------------------------------------ gunluk (turlar + mesajlar + fazlar)
 
@@ -428,6 +469,33 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <span v-for="t in props.liveTools.slice(-6)" :key="t.ts" class="tool" :class="t.tool.toLowerCase()" :title="`${agentName(t.agent)} · ${t.tool} · ${t.target ?? ''}`"><b>{{ TOOL_SHORT[t.tool] ?? t.tool }}</b> {{ t.target ?? '' }}</span>
             <span class="sub">{{ props.liveTools.length }} çağrı</span>
           </div>
+          <!-- Canli tur: dusunce/metin akisi, canlilik, anlik kullanim ve ajanin baglami (GET /runs/{id}/live). -->
+          <section v-for="t in liveShown" :key="liveKey(t)" class="live" :class="{ focus: t.task && t.task === props.focusTask }" aria-live="polite">
+            <div class="live-head">
+              <span class="pulse" :class="pulse(t)" :title="`Hareketsizlik eşiği ${Math.round(t.idleLimitS / 60)} dk: aşılırsa tur kesilir, Yeniden dene kaldığı yerden sürdürür.`" />
+              <strong>{{ agentName(t.agent) }}</strong>
+              <span v-if="t.task"><code>{{ t.task }}</code> · {{ stageTitle(t.stage ?? '') }}</span>
+              <span class="sub">son hareket <b>{{ fmtAgo(ago(t.lastSeenAt)) }}</b> önce · tur {{ fmtAgo(ago(t.startedAt)) }} · {{ t.toolCount }} araç</span>
+              <span class="sub right" title="Şu ana kadar: toplam girdi (önbellekten okunan) / çıktı">{{ fmtTokens(t.usage.inputTokens) }} ({{ fmtTokens(t.usage.cacheReadTokens) }} önb.) / {{ fmtTokens(t.usage.outputTokens) }} tk</span>
+            </div>
+            <p v-if="pulse(t) === 'stale'" class="warn">Ajan {{ fmtAgo(ago(t.lastSeenAt)) }} boyunca hareket etmedi. Uzun bir build/test sürüyor olabilir; {{ Math.round(t.idleLimitS / 60) }} dk dolunca tur kesilir ve "Yeniden dene" kaldığı yerden devam eder.</p>
+            <div :ref="(el) => { if (el) streamBox.set(liveKey(t), el as HTMLElement); else streamBox.delete(liveKey(t)) }" class="stream">
+              <p v-if="!t.stream.length" class="sub">Henüz akış yok — ajan bağlamı okuyor.</p>
+              <div v-for="(e, i) in t.stream.slice(-80)" :key="i" class="entry" :class="e.kind">
+                <span class="ts">{{ fmtClock(e.ts) }}</span>
+                <template v-if="e.kind === 'tool'"><b class="tool" :class="(e.tool ?? '').toLowerCase()">{{ TOOL_SHORT[e.tool ?? ''] ?? e.tool }}</b> <code>{{ e.target }}</code></template>
+                <span v-else class="txt">{{ e.kind === 'thinking' ? '💭 ' : '' }}{{ e.text }}</span>
+              </div>
+            </div>
+            <details class="ctx" :open="openContext === t.agent + t.startedAt" @toggle="(ev) => { if ((ev.target as HTMLDetailsElement).open) openContext = t.agent + t.startedAt }">
+              <summary>Ajanın bağlamı · {{ t.context.length }} parça · ~{{ estTokens(t.context.reduce((s, c) => s + c.chars, 0)) }} tk</summary>
+              <details v-for="(c, i) in t.context" :key="i" class="part">
+                <summary><span class="role" :class="c.role">{{ c.role }}</span> {{ c.name }} <span class="sub">{{ c.chars.toLocaleString('tr-TR') }} kr · ~{{ estTokens(c.chars) }} tk</span></summary>
+                <pre>{{ c.text }}</pre>
+              </details>
+              <p class="sub">Claude Code'un kendi kılavuzu ve araç tanımları bu listeye dahil değil; ajan turda okuduğu dosyaları da bağlamına ekler (kullanım satırında görünür).</p>
+            </details>
+          </section>
           <!-- Akis/maliyet + eylemler her durumda gorunur: once canli araç şeridinin icinde kaliyordu, dusmus iste
                "Yeniden dene" hic cikmiyordu (2026-09-23). -->
           <div class="runactions">
@@ -660,6 +728,31 @@ button:disabled { opacity: 0.5; cursor: default; }
 .livetools .tool b { color: #4a5068; margin-right: 3px; }
 .livetools .tool.write, .livetools .tool.edit, .livetools .tool.multiedit { background: #dcf1d3; }
 .livetools .tool.bash { background: #d8ebfa; }
+.live { margin-top: 6px; padding: 8px 10px; background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
+.live.focus { border-color: #4fa3e0; box-shadow: 0 0 0 2px rgba(79, 163, 224, 0.25); }
+.live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; }
+.live-head .right { margin-left: auto; font-variant-numeric: tabular-nums; }
+.pulse { width: 10px; height: 10px; border-radius: 50%; background: #7cc46b; box-shadow: 0 0 0 0 rgba(124, 196, 107, 0.6); animation: pulse 1.6s infinite; }
+.pulse.slow { background: #f3c34a; animation-duration: 3s; }
+.pulse.stale { background: #e0605e; animation: none; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(124, 196, 107, 0); } 100% { box-shadow: 0 0 0 0 rgba(124, 196, 107, 0); } }
+.live .warn { margin: 0; font-size: 12px; color: #8a4b12; background: #fdf1dc; border: 1px solid #efcf97; border-radius: 4px; padding: 4px 8px; }
+.stream { max-height: 260px; overflow: auto; font-size: 12px; line-height: 1.45; display: flex; flex-direction: column; gap: 2px; background: #faf8f2; border: 1px solid #e3ddcc; border-radius: 4px; padding: 6px 8px; }
+.stream .entry { display: flex; gap: 6px; align-items: baseline; }
+.stream .ts { flex: none; font-size: 10px; color: #8a90a2; font-variant-numeric: tabular-nums; }
+.stream .txt { white-space: pre-wrap; word-break: break-word; }
+.stream .thinking .txt { color: #6b7285; font-style: italic; }
+.stream .tool { font-size: 11px; padding: 0 6px; border-radius: 999px; background: #e5e7ee; color: #4a5068; }
+.stream .tool.write, .stream .tool.edit, .stream .tool.multiedit { background: #dcf1d3; }
+.stream .tool.bash { background: #d8ebfa; }
+.stream code { font-size: 11px; word-break: break-all; }
+.ctx > summary, .part > summary { cursor: pointer; font-size: 12px; }
+.ctx .part { margin: 3px 0 0 10px; }
+.ctx pre { max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: 11px; background: #faf8f2; border: 1px solid #e3ddcc; border-radius: 4px; padding: 6px; }
+.role { font-size: 10px; text-transform: uppercase; padding: 0 5px; border-radius: 3px; background: #e5e7ee; color: #4a5068; }
+.role.system { background: #efe3f7; }
+.role.user { background: #d8ebfa; }
+.role.assistant { background: #dcf1d3; }
 .elapsed { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-variant-numeric: tabular-nums; color: #4a5068; background: #fff; border: 1px solid #c9c3b3; border-radius: 999px; padding: 1px 8px; }
 .done-box { background: #e3f4dc; border: 2px solid #7cc46b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .done-box h3 { display: flex; align-items: center; gap: 8px; color: #2d5a22; font-size: 14px; text-transform: none; letter-spacing: 0; margin: 0; }

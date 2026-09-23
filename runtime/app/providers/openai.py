@@ -426,6 +426,10 @@ class OpenAiProvider:
         return ProviderLimits(provider=PROVIDER_NAME, available=False,
                               detail="Codex CLI kalan kullanımı dışa vermiyor; ChatGPT ayarlarından bakılır.")
 
+    def local_usage(self, since: Any, until: Any = None) -> list[Any]:
+        """Codex CLI oturum kayitlarindan kullanim okunmuyor: bos (kim ne harcadi raporunda yalniz ofis kaydi)."""
+        return []
+
     def models(self) -> list[ModelInfo]:
         status = self.auth()
         return [ModelInfo(provider=PROVIDER_NAME, model=m, reachable=status.logged_in, detail=status.detail) for m in catalog()]

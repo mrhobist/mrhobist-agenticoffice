@@ -20,6 +20,8 @@ public static class RunEndpoints
         g.MapGet("/overview", (IRunReader reader, CancellationToken ct) => reader.GetOverviewAsync(ct));
         g.MapGet("/{id}", (string id, IRunReader reader, CancellationToken ct) => reader.GetDetailAsync(id, ct));
         g.MapGet("/{id}/turns", (string id, string? agent, IRunReader reader, CancellationToken ct) => reader.GetTurnsAsync(id, agent, ct));
+        // Suren turlar: canlilik (son hareket), ajanin metni/dusuncesi, o ana kadarki kullanim ve elindeki baglam. Tur bitince bos.
+        g.MapGet("/{id}/live", (string id, ProgressRegistry progress) => progress.Snapshot(id));
 
         // Yazma uclari: durum hemen yazilir, is Run.Step'e gore kuyruga girer (Approval → is yok). Kural RunScheduler'da, tek yerde.
         g.MapPost("", async (RunRequest body, IRunService runs, IRunScheduler scheduler, CancellationToken ct) =>
