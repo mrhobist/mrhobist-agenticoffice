@@ -651,6 +651,20 @@
     "bun-auburn",
     "shirt-tie-blond"
   ],
+  "lounge": {
+    "_comment": "Kanepe koltuklari (seats'ten ayri: kimsenin evi olmaz). Sol minder kedinin yatagi (cat.bed 1088), koltuklar sagda. y = ayak ucu, minderin on kenari.",
+    "seats": [
+      { "x": 1135, "y": 598, "facing": "down" },
+      { "x": 1182, "y": 598, "facing": "down" }
+    ]
+  },
+  "guests": {
+    "_comment": "Ekipte olmayan misafirler: kapidan girer, 2-3 durak (kahve, su, kanepe, pencere, pano, birine ugrama) gezip cikar. Ayni anda en fazla max kisi; gece (21-07) seyrek.",
+    "max": 2,
+    "firstMs": 15000,
+    "everyMs": [35000, 90000],
+    "sprites": []
+  },
   "agents": [
     {
       "key": "tek-kisilik-dev-kadro",

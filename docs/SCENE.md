@@ -60,7 +60,7 @@ karelerini taşıyor. 2026-09-24'te aynı sorun `hipster`de (`sim8`) görüldü 
 
 | Eksik | Bugünkü telafi |
 |---|---|
-| Kanepede oturma (yandan otur karesi var ama kanepe arka planda) | ajan kanepe önünde ayakta durur |
+| ~~Kanepede oturma~~ (2026-09-24: `lounge` koltukları, öne bakan kareler) | — |
 | Boşta nefes / el hareketi | yürüyüşün ilk karesi |
 | Kedinin yan oturuşu, esneme | ön oturuş + uzanma |
 | Kapı arka planda yok | V1 kapı sprite'ı sağ üstteki zemin girintisine (pencere yanındaki bitkiden sağ duvara, y 90–250) `door.w`/`door.h` ile oturtulur |
@@ -100,6 +100,8 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB deskC deskD`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing`. `capacity` (varsayılan 1): dolu durağa gelen `queue` noktasında durağa dönük bekler, boşalınca girer; ambient turlar dolu durağı seçmez |
 | `blocked[]` | yürünemez dikdörtgenler; yol bulma bunlardan ızgara kurar |
 | `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Bugün altı ajan: `analyst · designer · developer · tester · manager · organizer` (`intern`/`devops` Faz 2b'de çıkarıldı). Ekipte olup burada yeri olmayan ajan UI'da boş masaya ve kullanılmayan sprite'a otomatik yerleşir; olay almayan ajan ambient davranır |
+| `lounge` | dinlenme koltukları (kanepe): `seats: [{x, y, facing}]`. `seats`'ten **ayrı** tutulur: Api ajana ev koltuğunu `seats`'ten atar, kanepe kimsenin evi olmasın. Boştaki ajanlar ve misafirler burada oturur (öne bakan yazma kareleri: sandalye gövdenin arkasında kalır). Koltuk sırası gelince tutulur, kalkınca bırakılır; sol minder kedinin yatağı olduğu için koltuklar sağda |
+| `guests` | misafirler (2026-09-24, kullanıcı: "çalışmayanlar da gelsin gitsin, kahve/su alsın, kanepede otursun, kapıdan gitsin"): `max` (aynı anda, varsayılan 2), `firstMs`, `everyMs: [min,max]`, `sprites` (boş = ekibin ve sahnedeki misafirlerin kullanmadığı karakterler). Misafir kapıdan girer, 2–3 durak gezer (kahve/su önce alınır; kanepe, pencere, pano, masada oturan birine uğrama), kapıdan çıkar ve sahneden silinir. Durak sırası ve kapasiteleri ajanlarla ortaktır; tıklanmaz, iş almaz, sunucu olayı üretmez (yalnız UI). Gece (21–07) üç kat seyrek |
 | `cat` | yatak ve gezinti noktaları. Yatak **açık alandadır** (koltuğun minderi): kedi oraya yürüyerek çıkar |
 | `lights[]` | tıklanınca açılıp kapanan ışık: `hit` (tıklama dikdörtgeni), `on` (varsayılan açık) ve iki kullanımdan biri — **oda ışığı**: `room` sönünce karartılır, `glow` açıkken hale düşer (müdür odasının sarkıtı); **abajur**: yalnız `bulb`, sönünce sadece başlık koyulaşır (`multiply`), çevresi etkilenmez (kanepenin yanındaki abajur) |
 

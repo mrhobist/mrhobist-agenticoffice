@@ -93,6 +93,16 @@ export interface SceneConfig {
   blocked: [number, number, number, number][]
   agents: AgentDef[]
   cat: { bed: Pt; spots: Pt[] }
+  /**
+   * Dinlenme koltuklari (kanepe). `seats`'ten AYRI: Api ajanlara ev koltugunu `seats`'ten atar, kanepe kimsenin evi olmasin.
+   * Bosta olan ajanlar ve misafirler ara sira burada oturur (on kareler: yuzu kameraya donuk).
+   */
+  lounge?: { seats: SeatDef[] }
+  /**
+   * Misafirler (kullanici istegi 2026-09-24): ekipte olmayan karakterler ara sira kapidan girer, kahve/su alir, kanepede
+   * oturur, pencereden bakar, birine ugrar ve kapidan cikar. Tiklanmaz, is almaz. `sprites` bos = ekibin kullanmadigi karakterler.
+   */
+  guests?: { max?: number; firstMs?: number; everyMs?: [number, number]; sprites?: string[] }
 }
 
 export type StageKind = 'analyze' | 'design' | 'implement' | 'review' | 'handoff'

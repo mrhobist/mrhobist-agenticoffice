@@ -1,4 +1,4 @@
-import { STATE_LABEL, type AgentState, type Facing, type LightDef, type MeetKind, type Pt, type PropDef, type SceneConfig, type SceneEvent, type SeatDef, type WorkflowConfig } from './contract'
+import { STATE_LABEL, type AgentDef, type AgentState, type Facing, type LightDef, type MeetKind, type Pt, type PropDef, type SceneConfig, type SceneEvent, type SeatDef, type WorkflowConfig } from './contract'
 import { Sprites } from './atlas'
 import { NavGrid } from './nav'
 import { Agent, Cat, Door, drawDrink, type Action, type Drink } from './entities'
@@ -27,6 +27,8 @@ export class World {
   readonly nav: NavGrid
   readonly props: PlacedProp[]
   readonly agents = new Map<string, Agent>()
+  /** Misafirler: ekipte olmayan, gelip giden karakterler (`cfg.guests`). Tiklanmaz, olay almaz; duraklari ajanlarla paylasir. */
+  readonly guests: Agent[] = []
   readonly cat: Cat
   readonly door = new Door()
   readonly board: Board
@@ -46,6 +48,11 @@ export class World {
   /** Sunucudan pano esitlemesi: son istek zamani ve bitmis calismalarin detay onbellegi. */
   private boardSyncAt = 0
   private readonly runDetails = new Map<string, RunDetail>()
+
+  private guestSeq = 0
+  private nextGuestAt = 0
+  /** Dinlenme koltugu -> tutan kisi (yuruyerek gelirken de tutulur; iki kisi ayni mindere oturmasin). */
+  private readonly loungeClaims = new Map<SeatDef, Agent>()
 
   private bg: HTMLCanvasElement | null = null
   private bgKey = ''
@@ -87,6 +94,12 @@ export class World {
       }
       this.agents.set(def.key, a)
     }
+    this.nextGuestAt = performance.now() + (cfg.guests?.firstMs ?? 15_000)
+  }
+
+  /** Sahnedeki herkes (ajanlar + misafirler): durak kapasitesi ve bos nokta aramasi herkesi sayar. */
+  private people(): Agent[] {
+    return [...this.agents.values(), ...this.guests]
   }
 
   static async create(apiBase: string): Promise<World> {
@@ -238,7 +251,7 @@ export class World {
 
   /** Duragi tutan ajanlar (kapasite sayimi). */
   private occupants(key: string, except?: Agent): Agent[] {
-    return [...this.agents.values()].filter(a => a !== except && !a.offstage && a.spot === key)
+    return this.people().filter(a => a !== except && !a.offstage && a.spot === key)
   }
 
   spotFree(key: string, except?: Agent): boolean {
@@ -281,7 +294,7 @@ export class World {
    * Iki kisi ayni durakta ust uste binmez; konusmaya gelen yanina durur.
    */
   freeNear(p: Pt, self: Agent): Pt {
-    const others = [...this.agents.values()].filter(o => o !== self && !o.offstage)
+    const others = this.people().filter(o => o !== self && !o.offstage)
     const taken = (q: Pt) => others.some(o =>
       Math.hypot(o.pos.x - q.x, o.pos.y - q.y) < 26
       || (o.target !== null && Math.hypot(o.target.x - q.x, o.target.y - q.y) < 26))
@@ -352,7 +365,9 @@ export class World {
 
   update(dt: number, now: number): void {
     for (const a of this.agents.values()) a.update(dt, now, this.nav)
+    for (const g of this.guests) g.update(dt, now, this.nav)
     this.cat.update(dt, now, this.nav)
+    this.guestLife(now)
     this.door.update(now)
     this.board.update(dt)
     this.ambient(now)
@@ -420,9 +435,13 @@ export class World {
       ]
     } else if (r < 0.4) actions = this.drinkTrip(a, 'coffee')
     else if (r < 0.5) actions = this.drinkTrip(a, 'water')
-    else if (r < 0.65) actions = trip('board', 4000 + Math.random() * 3000)
-    else if (r < 0.75) actions = trip('window', 5000 + Math.random() * 3000)
-    else {
+    else if (r < 0.62) actions = trip('board', 4000 + Math.random() * 3000)
+    else if (r < 0.7) actions = trip('window', 5000 + Math.random() * 3000)
+    else if (r < 0.84) {
+      // Kanepede soluklan (kullanici istegi 2026-09-24): bos koltuk yoksa bu tur atlanir.
+      const rest = this.loungeTrip(a, 12_000 + Math.random() * 12_000)
+      actions = rest.length ? [...rest, ...this.goHome(a)] : []
+    } else {
       // Bir arkadasa ugra: yerinde oturan birini sec.
       const others = [...this.agents.values()].filter(o => o !== a && o.seated && !o.busy && !o.offstage)
       const o = others[Math.floor(Math.random() * others.length)]
@@ -470,6 +489,126 @@ export class World {
         if (seat?.mug) { a.mugSeat = seat; a.carrying = null }
       } },
     ]
+  }
+
+  // ------------------------------------------------------------------ dinlenme ve misafirler
+
+  /**
+   * Kanepede oturma: bos bir dinlenme koltugu tutulur (yuruyerek gelirken de), yakinina yurunur, oturulur (on kareler), beklenir,
+   * kalkilir ve koltuk birakilir. Elde icecek varsa oturunca icilmis sayilir. Bos koltuk yoksa bos liste (cagiran turu atlar).
+   */
+  private loungeTrip(a: Agent, dwellMs: number): Action[] {
+    const free = () => (this.cfg.lounge?.seats ?? []).find(s => !this.loungeClaims.has(s))
+    if (!free()) return []
+    // Koltuk SIRASI GELINCE secilir ve tutulur (tur basinda degil): misafir kahve alirken kanepeyi bosuna kilitlemesin.
+    return [{ t: 'call', fn: () => {
+      const seat = free()
+      if (!seat) return
+      this.loungeClaims.set(seat, a)
+      a.queue.unshift(
+        { t: 'walk', to: this.nav.nearestOpen(seat) },
+        { t: 'sit', seat },
+        { t: 'call', fn: () => { a.carrying = null } },
+        { t: 'wait', ms: dwellMs },
+        { t: 'stand' },
+        { t: 'call', fn: () => { if (this.loungeClaims.get(seat) === a) this.loungeClaims.delete(seat) } },
+      )
+    } }]
+  }
+
+  /** Kanepe koltugunu tutan ama artik orada olmayan (komutu kesilen) kisinin talebi dusurulur. */
+  private sweepLounge(): void {
+    for (const [seat, who] of this.loungeClaims) {
+      const still = who.seated === seat || who.queue.some(x => x.t === 'sit' && x.seat === seat)
+      if (who.offstage || !still) this.loungeClaims.delete(seat)
+    }
+  }
+
+  /**
+   * Misafir yasami (kullanici istegi 2026-09-24: "calismayanlar da gelsin gitsin, kahve alsin, su alsin, kanepede otursun, kapidan
+   * gitsin"). Zamani gelince ve sinir dolmadiysa kapidan bir misafir girer; turu bitip cikan misafir sahneden silinir. Gece seyrek.
+   */
+  private guestLife(now: number): void {
+    this.sweepLounge()
+    for (let i = this.guests.length - 1; i >= 0; i--) {
+      const g = this.guests[i]!
+      if (g.offstage && !g.busy) this.guests.splice(i, 1)
+      // Kuyrugu bosalip ofiste kalan misafir (turu kesildiyse) oyalanmaz: kapidan cikar.
+      else if (!g.offstage && !g.busy && !g.frozen) g.command(this.leaveActions(g, null), now, { ambient: true })
+    }
+
+    const cfg = this.cfg.guests
+    const door = this.cfg.spots['door']
+    if (!cfg || !door || now < this.nextGuestAt) return
+    const [lo, hi] = cfg.everyMs ?? [35_000, 90_000]
+    const hour = this.hourNow()
+    const night = hour < 7 || hour >= 21
+    this.nextGuestAt = now + (lo + Math.random() * (hi - lo)) * (night ? 3 : 1)
+    if (this.guests.length >= (cfg.max ?? 2)) return
+    if (night && Math.random() < 0.6) return
+
+    const sprite = this.pickGuestSprite(cfg.sprites ?? [])
+    if (!sprite) return
+    const def: AgentDef = { key: `guest-${++this.guestSeq}`, name: 'Misafir', sprite, home: {} }
+    const g = new Agent(def, this.sprites.atlas.characters[sprite]!, { x: door.x, y: door.y })
+    g.visitor = true
+    this.guests.push(g)
+    this.enter(g, now, this.guestTour(g), { ambient: true })
+  }
+
+  /** Misafirin karakteri: once ne ekibin ne sahnedeki misafirlerin kullandigi, yoksa herhangi biri. */
+  private pickGuestSprite(allowed: string[]): string | null {
+    const all = (allowed.length ? allowed : Object.keys(this.sprites.atlas.characters)).filter(s => this.sprites.atlas.characters[s])
+    const used = new Set(this.people().map(p => p.def.sprite))
+    const free = all.filter(s => !used.has(s))
+    const pool = free.length ? free : all
+    return pool.length ? pool[Math.floor(Math.random() * pool.length)]! : null
+  }
+
+  /**
+   * Misafir turu: 2-3 durak karisik sirayla -- kahve ya da su (bardagi alir), kanepede oturma, pencere, pano, oturan birine ugrama --
+   * sonra kapidan cikis. Dolu durak/koltuk o an atlanir. Durak rezervasyonu her duraktan sonra elle birakilir (visitTour notu).
+   */
+  private guestTour(g: Agent): Action[] {
+    const kinds = ['coffee', 'water', 'lounge', 'window', 'board', 'visit']
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 2 + Math.floor(Math.random() * 2))
+    // Icecek once alinsin: kanepede oturup icmek, bardakla pano onunde durmaktan daha dogal.
+    kinds.sort((x, y) => Number(y === 'coffee' || y === 'water') - Number(x === 'coffee' || x === 'water'))
+
+    const actions: Action[] = []
+    for (const k of kinds) {
+      if (k === 'coffee' || k === 'water') {
+        if (!this.cfg.spots[k] || !this.spotFree(k, g)) continue
+        const kind: Drink = k
+        actions.push(
+          ...this.tripTo(g, k),
+          { t: 'wait', ms: kind === 'coffee' ? 2500 + Math.random() * 1500 : 1500 + Math.random() * 1000 },
+          { t: 'call', fn: () => { g.carrying = kind; g.bubble = { kind: 'talk', until: performance.now() + 1600 } } },
+          { t: 'wait', ms: 700 },
+          { t: 'call', fn: () => { g.spot = null } },
+        )
+      } else if (k === 'lounge') {
+        actions.push(...this.loungeTrip(g, 15_000 + Math.random() * 20_000))
+      } else if (k === 'visit') {
+        const seated = [...this.agents.values()].filter(o => o.seated && !o.offstage && !o.frozen)
+        const o = seated[Math.floor(Math.random() * seated.length)]
+        if (!o) continue
+        const ms = 3000 + Math.random() * 2500
+        actions.push(
+          { t: 'walk', to: () => this.freeNear(this.nav.nearestOpen(o.seated ?? o.pos), g) },
+          { t: 'call', fn: () => { g.faceTo(o.pos) } },
+          { t: 'say', kind: 'talk', ms: ms / 2 },
+          { t: 'call', fn: () => { o.bubble = { kind: 'talk', until: performance.now() + ms / 2 } } },
+          { t: 'wait', ms: ms / 2 },
+        )
+      } else if (this.cfg.spots[k]) {
+        actions.push(...this.tripTo(g, k), { t: 'wait', ms: 4000 + Math.random() * 4000 }, { t: 'call', fn: () => { g.spot = null } })
+      }
+    }
+    if (!actions.length) actions.push({ t: 'walk', to: this.freeNear(this.cfg.spots['board'] ?? this.cfg.spots['door']!, g) }, { t: 'wait', ms: 5000 })
+    actions.push({ t: 'call', fn: () => { g.carrying = null } })
+    return [...actions, ...this.leaveActions(g, null)]
   }
 
   /** Kapidan girer: kapi acilir, ajan sahneye konur ve verilen plani isler. */
@@ -639,6 +778,7 @@ export class World {
     for (const [ox, oy, ow, oh] of this.cfg.overlays ?? []) {
       items.push({ y: oy + oh, draw: () => ctx.drawImage(bgImg, ox * sx, oy * sy, ow * sx, oh * sy, ox, oy, ow, oh) })
     }
+    for (const g of this.guests) items.push({ y: g.pos.y, draw: () => g.draw(ctx, this.sprites, now) })
     for (const a of this.agents.values()) {
       items.push({ y: a.pos.y, draw: () => a.draw(ctx, this.sprites, now) })
       // Masaya birakilan kupa: masanin ustunde, oturan ajanin arkasinda.
@@ -655,7 +795,7 @@ export class World {
     for (const it of items) it.draw()
 
     this.drawLights(ctx, now)
-    for (const a of this.agents.values()) a.drawBubble(ctx, this.sprites, now)
+    for (const a of this.people()) a.drawBubble(ctx, this.sprites, now)
     this.drawLabels(ctx)
   }
 
