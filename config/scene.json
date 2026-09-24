@@ -660,9 +660,9 @@
   },
   "guests": {
     "_comment": "Ekipte olmayan misafirler: kapidan girer, 2-3 durak (kahve, su, kanepe, pencere, pano, birine ugrama) gezip cikar. Ayni anda en fazla max kisi; gece (21-07) seyrek.",
-    "max": 2,
-    "firstMs": 15000,
-    "everyMs": [35000, 90000],
+    "max": 3,
+    "firstMs": 10000,
+    "everyMs": [20000, 55000],
     "sprites": []
   },
   "agents": [
