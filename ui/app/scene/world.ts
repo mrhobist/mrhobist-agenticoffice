@@ -97,6 +97,53 @@ export class World {
     this.nextGuestAt = performance.now() + (cfg.guests?.firstMs ?? 15_000)
   }
 
+  /**
+   * Sahne yeniden kuruldu (`scene.reload`: ajan eklendi/silindi/duzenlendi): eski dunyadaki herkes OLDUGU YERDEN devam eder
+   * (onceden herkes evine siciyordu). Yeni ajan kapidan girer; silinen ajan kapidan cikar; misafirler turlarina devam eder.
+   */
+  adopt(old: World): void {
+    const now = performance.now()
+    const seatAt = (p: { x: number; y: number } | null) => p
+      ? [...Object.values(this.cfg.seats), ...(this.cfg.lounge?.seats ?? [])].find(s => s.x === p.x && s.y === p.y) ?? null
+      : null
+    for (const [key, a] of this.agents) {
+      const o = old.agents.get(key)
+      if (!o) {
+        if (!a.visitor) { a.offstage = true; this.enter(a, now, this.goHome(a)) }
+        continue
+      }
+      a.pos = { ...o.pos }
+      a.facing = o.facing
+      a.offstage = o.offstage
+      a.returnAt = o.returnAt
+      a.carrying = o.carrying
+      a.state = o.state
+      a.note = o.note
+      a.job = o.job
+      a.ambientReadyAt = o.ambientReadyAt
+      a.seated = seatAt(o.seated)
+      // Oturmuyorsa ya da yeni evi baska bir koltuksa evine YURUR (sicramaz).
+      if (!a.offstage && a.seated !== (this.homeOf(key).seat ?? null)) a.command(this.goHome(a), now, { ambient: true })
+    }
+    for (const [key, o] of old.agents) {
+      if (this.agents.has(key) || o.offstage) continue
+      o.seated = seatAt(o.seated)
+      o.command(this.leaveActions(o, null), now, { ambient: true })
+      this.guests.push(o)
+    }
+    for (const g of old.guests) {
+      if (g.offstage) continue
+      g.seated = seatAt(g.seated)
+      g.command(this.guestTour(g), now, { ambient: true })
+      this.guests.push(g)
+    }
+    this.guestSeq = old.guestSeq
+    this.nextGuestAt = old.nextGuestAt
+    this.cat.pos = { ...old.cat.pos }
+    this.cat.mode = old.cat.mode === 'walk' ? 'sit' : old.cat.mode
+    this.door.state = old.door.state
+  }
+
   /** Sahnedeki herkes (ajanlar + misafirler): durak kapasitesi ve bos nokta aramasi herkesi sayar. */
   private people(): Agent[] {
     return [...this.agents.values(), ...this.guests]
@@ -421,26 +468,18 @@ export class World {
     const someoneOut = [...this.agents.values()].some(o => o.offstage)
     if (r < 0.12 && !someoneOut && this.cfg.spots['door']) {
       // Disari cik: kapiya yuru, cik, 20-50 s sonra kapidan don.
-      const d = this.cfg.spots['door']
-      actions = [
-        { t: 'walk', to: this.freeNear(d, a) },
-        { t: 'face', dir: 'up' },
-        { t: 'call', fn: () => this.door.set('open', performance.now()) },
-        { t: 'wait', ms: 450 },
-        { t: 'call', fn: () => {
-          a.offstage = true
-          a.returnAt = performance.now() + 20_000 + Math.random() * 30_000
-          this.door.set('closed', performance.now())
-        } },
-      ]
+      actions = this.leaveActions(a, 20_000 + Math.random() * 30_000)
     } else if (r < 0.4) actions = this.drinkTrip(a, 'coffee')
     else if (r < 0.5) actions = this.drinkTrip(a, 'water')
     else if (r < 0.62) actions = trip('board', 4000 + Math.random() * 3000)
     else if (r < 0.7) actions = trip('window', 5000 + Math.random() * 3000)
-    else if (r < 0.84) {
+    else if (r < 0.8) {
       // Kanepede soluklan (kullanici istegi 2026-09-24): bos koltuk yoksa bu tur atlanir.
       const rest = this.loungeTrip(a, 12_000 + Math.random() * 12_000)
       actions = rest.length ? [...rest, ...this.goHome(a)] : []
+    } else if (r < 0.9) {
+      const pet = this.catVisit(a)
+      actions = pet.length ? [...pet, ...this.goHome(a)] : []
     } else {
       // Bir arkadasa ugra: yerinde oturan birini sec.
       const others = [...this.agents.values()].filter(o => o !== a && o.seated && !o.busy && !o.offstage)
@@ -475,6 +514,7 @@ export class World {
     const fill = kind === 'coffee' ? 2500 + Math.random() * 1500 : 1500 + Math.random() * 1000
     return [
       ...this.tripTo(a, spot),
+      { t: 'call', fn: () => this.catBegs(spot) },
       { t: 'wait', ms: fill },
       { t: 'call', fn: () => {
         a.carrying = kind
@@ -508,12 +548,86 @@ export class World {
       a.queue.unshift(
         { t: 'walk', to: this.nav.nearestOpen(seat) },
         { t: 'sit', seat },
-        { t: 'call', fn: () => { a.carrying = null } },
+        { t: 'call', fn: () => { a.carrying = null; this.catJoinsSofa() } },
         { t: 'wait', ms: dwellMs },
         { t: 'stand' },
         { t: 'call', fn: () => { if (this.loungeClaims.get(seat) === a) this.loungeClaims.delete(seat) } },
       )
     } }]
+  }
+
+  // ------------------------------------------------------------------ kedi etkilesimleri (kullanici istegi 2026-09-24)
+
+  /** Kediyle su an biri ilgileniyor (sevme yuruyusu): ikinci kisi gitmesin. */
+  private catVisitor: Agent | null = null
+
+  /**
+   * Kediyi sev: kedi yerinde tutulur, yanina yurunur, yuzu kediye donulur; kedi kalp + "mirr" yapar (ucuncude uzanir), kisi
+   * kisa bir kalp balonu soyler. Kediyle baska biri ilgileniyorsa bos liste.
+   */
+  private catVisit(a: Agent): Action[] {
+    if (this.catVisitor && this.catVisitor !== a && this.catVisitor.busy) return []
+    const cat = this.cat
+    return [
+      { t: 'call', fn: () => { this.catVisitor = a; cat.hold(performance.now() + 25_000) } },
+      { t: 'walk', to: () => this.besideCat(a) },
+      { t: 'call', fn: () => {
+        const now = performance.now()
+        a.faceTo(cat.pos)
+        cat.pettedBy(now)
+        a.bubble = { kind: 'talk', until: now + 2200, text: '♥' }
+      } },
+      { t: 'wait', ms: 3000 + Math.random() * 2000 },
+      { t: 'call', fn: () => { cat.hold(0); if (this.catVisitor === a) this.catVisitor = null } },
+    ]
+  }
+
+  /**
+   * Kedinin YANINDA acik bir nokta (sag, sol, alt, capraz alt, ust). `freeNear` kediyi kisi saymadigi icin yatak kanepeye
+   * yasliyken en yakin acik hucre kedinin ustune dusuyordu: kisi kedinin icinde duruyordu (2026-09-24).
+   */
+  private besideCat(a: Agent): Pt {
+    const c = this.cat.pos
+    const others = this.people().filter(o => o !== a && !o.offstage)
+    // Once onu (asagi/capraz asagi): kedinin yataginin arkasi cogunlukla kanepe, yanina durulunca kisi koltuga biniyordu.
+    const offsets: Array<[number, number]> = [[30, 28], [-30, 28], [0, 34], [36, 4], [-36, 4], [48, 20], [-48, 20], [0, 48], [0, -28]]
+    for (const [dx, dy] of offsets) {
+      const q = { x: c.x + dx, y: c.y + dy }
+      if (this.nav.isOpenAt(q) && !others.some(o => Math.hypot(o.pos.x - q.x, o.pos.y - q.y) < 26)) return q
+    }
+    return this.freeNear({ x: c.x, y: c.y + 44 }, a)
+  }
+
+  /** Kedi uyanik ve bossa (kimse sevmiyor, tutulmuyor). */
+  private catFree(): boolean {
+    return this.cat.awake && this.cat.mode !== 'walk' && performance.now() > this.cat.holdUntil && !(this.catVisitor?.busy)
+  }
+
+  /** Kapi acilinca ara sira kedi karsilamaya gelir: kapi onune yurur, "miyav". */
+  private catGreets(now: number): void {
+    const d = this.cfg.spots['door']
+    if (!d || !this.catFree() || Math.random() > 0.3) return
+    this.cat.visit(this.nav.nearestOpen({ x: d.x - 40, y: d.y + 40 }), this.nav, () => {
+      this.cat.mode = 'sit'
+      this.cat.meow(performance.now())
+    })
+    void now
+  }
+
+  /** Kahve/su yapilirken kedi tezgahin yanina gelip ister. */
+  private catBegs(spot: string): void {
+    const s = this.cfg.spots[spot]
+    if (!s || !this.catFree() || Math.random() > 0.3) return
+    this.cat.visit(this.nav.nearestOpen({ x: s.x + 38, y: s.y + 22 }), this.nav, () => {
+      this.cat.mode = 'sit'
+      this.cat.meow(performance.now(), spot === 'coffee' ? 'miyav?' : 'miyav')
+    })
+  }
+
+  /** Biri kanepeye oturunca kedi (uyaniksa, ara sira) yanindaki minderine yurur ve kivrilip uyur. */
+  private catJoinsSofa(): void {
+    if (!this.catFree() || Math.random() > 0.45) return
+    this.cat.command('sleep', undefined, performance.now(), this.nav)
   }
 
   /** Kanepe koltugunu tutan ama artik orada olmayan (komutu kesilen) kisinin talebi dusurulur. */
@@ -570,7 +684,7 @@ export class World {
    * sonra kapidan cikis. Dolu durak/koltuk o an atlanir. Durak rezervasyonu her duraktan sonra elle birakilir (visitTour notu).
    */
   private guestTour(g: Agent): Action[] {
-    const kinds = ['coffee', 'water', 'lounge', 'window', 'board', 'visit']
+    const kinds = ['coffee', 'water', 'lounge', 'window', 'board', 'visit', 'cat']
       .sort(() => Math.random() - 0.5)
       .slice(0, 2 + Math.floor(Math.random() * 2))
     // Icecek once alinsin: kanepede oturup icmek, bardakla pano onunde durmaktan daha dogal.
@@ -583,6 +697,7 @@ export class World {
         const kind: Drink = k
         actions.push(
           ...this.tripTo(g, k),
+          { t: 'call', fn: () => this.catBegs(k) },
           { t: 'wait', ms: kind === 'coffee' ? 2500 + Math.random() * 1500 : 1500 + Math.random() * 1000 },
           { t: 'call', fn: () => { g.carrying = kind; g.bubble = { kind: 'talk', until: performance.now() + 1600 } } },
           { t: 'wait', ms: 700 },
@@ -590,6 +705,8 @@ export class World {
         )
       } else if (k === 'lounge') {
         actions.push(...this.loungeTrip(g, 15_000 + Math.random() * 20_000))
+      } else if (k === 'cat') {
+        actions.push(...this.catVisit(g))
       } else if (k === 'visit') {
         const seated = [...this.agents.values()].filter(o => o.seated && !o.offstage && !o.frozen)
         const o = seated[Math.floor(Math.random() * seated.length)]
@@ -611,28 +728,44 @@ export class World {
     return [...actions, ...this.leaveActions(g, null)]
   }
 
-  /** Kapidan girer: kapi acilir, ajan sahneye konur ve verilen plani isler. */
+  /**
+   * Kapi boslugu: kapi cercevesinin alt kenarinin hemen ustu. Giren buradan cikip kapi onundeki duraga YURUR, cikan buraya
+   * yuruyup kaybolur (kullanici istegi 2026-09-24: "kapi disindan girilmesin, isinlanma olmasin"). Kapi tanimi yoksa durak.
+   */
+  private doorway(): Pt | null {
+    const d = this.cfg.spots['door']
+    if (!d) return null
+    const frame = this.cfg.door
+    return frame ? { x: d.x, y: frame.y + frame.h - 8 } : { x: d.x, y: d.y }
+  }
+
+  /** Kapidan girer: kapi acilir, kisi kapi boslugunda belirir ve duraga yuruyerek iner, sonra verilen plani isler. */
   private enter(a: Agent, now: number, then: Action[], opts: { ambient?: boolean } = {}): void {
     const d = this.cfg.spots['door']
-    if (!d) return
+    const gap = this.doorway()
+    if (!d || !gap) return
     a.offstage = false
     a.returnAt = null
     a.seated = null
-    a.pos = { x: d.x, y: d.y }
+    a.pos = { ...gap }
     a.facing = 'down'
     this.door.set('open', now)
-    a.command([{ t: 'wait', ms: 400 }, ...then], now, opts)
+    a.command([{ t: 'wait', ms: 350 }, { t: 'step', to: { x: d.x, y: d.y } }, ...then], now, opts)
+    this.catGreets(now)
   }
 
   /** Kapidan cikar. `returnMs` verilirse o kadar sonra kendi doner; null ise donmez. */
   private leaveActions(a: Agent, returnMs: number | null): Action[] {
     const d = this.cfg.spots['door']
-    if (!d) return []
+    const gap = this.doorway()
+    if (!d || !gap) return []
     return [
-      { t: 'walk', to: () => this.freeNear(d, a) },
-      { t: 'call', fn: () => this.door.set('open', performance.now()) },
+      { t: 'walk', to: { x: d.x, y: d.y } },
       { t: 'face', dir: 'up' },
-      { t: 'wait', ms: 500 },
+      { t: 'call', fn: () => this.door.set('open', performance.now()) },
+      { t: 'wait', ms: 350 },
+      // Kapi boslugundan cikar: kaybolmadan once icinden yurunur.
+      { t: 'step', to: gap },
       { t: 'call', fn: () => {
         a.offstage = true
         a.returnAt = returnMs === null ? null : performance.now() + returnMs

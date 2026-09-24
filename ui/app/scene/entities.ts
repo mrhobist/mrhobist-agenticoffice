@@ -7,6 +7,11 @@ import type { NavGrid } from './nav'
 export type Action =
   /** Hedef, eylem basladiginda cozulur (durak dolu mu bosta mi o anda belli olur). */
   | { t: 'walk'; to: Pt | (() => Pt) }
+  /**
+   * Yol bulmadan DUZ yuru (kisa mesafe): kapi boslugundan iceri/disari, engelli alandaki koltuga son adim.
+   * Isinlanma yok (kullanici istegi 2026-09-24): sahnede konum hicbir zaman bir karede sicramaz.
+   */
+  | { t: 'step'; to: Pt }
   | { t: 'wait'; ms: number }
   | { t: 'face'; dir: Facing }
   | { t: 'say'; kind: BubbleKind; ms: number; text?: string }
@@ -129,7 +134,8 @@ export class Agent {
   get key() { return this.def.key }
   get hex() { return ROLE_HEX[this.def.key] ?? '#8a93a8' }
   get busy() { return this.current !== null || this.queue.length > 0 }
-  get walking() { return this.current?.t === 'walk' }
+  /** Yolda mi (yuruyus, duz adim, koltuga yuruyus, kalkis): yuruyus kareleri bunu okur. */
+  get walking() { return this.path.length > 0 }
 
   /**
    * Kuyrugu sifirla ve yeni eylemleri koy. Arka uc komutu (varsayilan) balonu da siler ve
@@ -161,25 +167,15 @@ export class Agent {
     }
     const a = this.current
     switch (a.t) {
-      case 'walk': {
-        const next = this.path[0]
-        if (!next) { this.finish(); break }
-        const dx = next.x - this.pos.x
-        const dy = next.y - this.pos.y
-        const dist = Math.hypot(dx, dy)
-        const step = WALK_SPEED * dt
-        if (dist <= step) {
-          this.pos = { ...next }
-          this.path.shift()
-          if (!this.path.length) this.finish()
-        } else {
-          this.pos.x += (dx / dist) * step
-          this.pos.y += (dy / dist) * step
-          this.facing = faceTowards({ x: 0, y: 0 }, { x: dx, y: dy })
-        }
-        this.walkT += dt
+      case 'walk':
+      case 'step':
+      case 'stand':
+        if (this.advance(dt)) this.finish()
         break
-      }
+      case 'sit':
+        // Koltuga once yurunur (engelli alandaki koltuk dahil), varinca oturulur: konum sicramaz.
+        if (this.advance(dt)) { this.seatNow(a.seat); this.finish() }
+        break
       case 'wait':
       case 'say':
         if (now >= this.waitUntil) this.finish()
@@ -192,20 +188,48 @@ export class Agent {
     }
   }
 
+  /** Yol boyunca bir kare ilerler; yol bittiyse (ya da hic yoksa) true. Yuzu gidis yonune doner. */
+  private advance(dt: number): boolean {
+    const next = this.path[0]
+    if (!next) return true
+    const dx = next.x - this.pos.x
+    const dy = next.y - this.pos.y
+    const dist = Math.hypot(dx, dy)
+    const step = WALK_SPEED * dt
+    this.walkT += dt
+    if (dist <= step) {
+      this.pos = { x: next.x, y: next.y }
+      this.path.shift()
+      return this.path.length === 0
+    }
+    this.pos.x += (dx / dist) * step
+    this.pos.y += (dy / dist) * step
+    this.facing = faceTowards({ x: 0, y: 0 }, { x: dx, y: dy })
+    return false
+  }
+
+  private seatNow(seat: SeatDef): void {
+    this.seated = seat
+    this.pos = { x: seat.x, y: seat.y }
+    this.facing = seat.facing
+  }
+
   private begin(a: Action, now: number, nav: NavGrid): void {
     switch (a.t) {
-      case 'walk':
-        if (this.seated) {
-          // Kalk: koltuktan en yakin acik hucreye kay, sonra yuru.
-          this.pos = nav.nearestOpen(this.seated)
-          this.seated = null
-        }
-        {
-          const to = typeof a.to === 'function' ? a.to() : a.to
-          this.path = nav.path(this.pos, to)
-          this.target = to
-          this.walkT = 0
-        }
+      case 'walk': {
+        // Oturuyorsa once koltuktan en yakin acik hucreye YURUR (onceden oraya isinlaniyordu), sonra yola devam.
+        const to = typeof a.to === 'function' ? a.to() : a.to
+        const start = this.seated ? nav.nearestOpen(this.seated) : this.pos
+        this.path = [...(this.seated ? [start] : []), ...nav.path(start, to)]
+        this.seated = null
+        this.target = to
+        this.walkT = 0
+        break
+      }
+      case 'step':
+        this.path = [{ x: a.to.x, y: a.to.y }]
+        this.target = a.to
+        this.walkT = 0
         break
       case 'wait':
         this.waitUntil = now + a.ms
@@ -221,15 +245,17 @@ export class Agent {
         this.facing = a.dir
         break
       case 'sit':
-        this.seated = a.seat
-        this.pos = { x: a.seat.x, y: a.seat.y }
-        this.facing = a.seat.facing
+        this.path = Math.hypot(a.seat.x - this.pos.x, a.seat.y - this.pos.y) > 1.5 ? [{ x: a.seat.x, y: a.seat.y }] : []
+        this.walkT = 0
         break
       case 'stand':
         if (this.seated) {
-          this.pos = nav.nearestOpen(this.seated)
-          this.facing = 'down'
+          const to = nav.nearestOpen(this.seated)
           this.seated = null
+          this.facing = 'down'
+          this.path = [to]
+        } else {
+          this.path = []
         }
         break
       case 'call':
@@ -239,7 +265,7 @@ export class Agent {
   }
 
   private finish(): void {
-    if (this.current?.t === 'walk') this.target = null
+    if (this.current?.t === 'walk' || this.current?.t === 'step') this.target = null
     this.current = null
     if (!this.queue.length) this.ambient = false
   }
@@ -375,6 +401,17 @@ export class Agent {
 
 type CatMode = 'sleep' | 'walk' | 'sit' | 'lie'
 
+/**
+ * Kedinin yuruyus sayfasi 4 yonlu (asagi/sol/sag/yukari). 8 yonlu bakis dogrudan kullanilinca capraz yuruyuste satir
+ * bulunamiyor ve "asagi" (kameraya donuk) kare ciziliyordu: kedi sol-yukari giderken bize bakarak kayiyordu (2026-09-24).
+ * Caprazda yan gorunus secilir: yan profil gidis yonunu en iyi anlatir.
+ */
+function catDir(f: Facing): 'down' | 'left' | 'right' | 'up' {
+  if (f === 'left' || f === 'upleft' || f === 'downleft') return 'left'
+  if (f === 'right' || f === 'upright' || f === 'downright') return 'right'
+  return f === 'up' ? 'up' : 'down'
+}
+
 export class Cat {
   pos: Pt
   facing: Facing = 'down'
@@ -388,6 +425,11 @@ export class Cat {
   heartUntil = 0
   /** Kac kez oksandi: ucuncude uzanip keyif yapar. */
   pets = 0
+  /** Birisi seviyor / yanina geliyor: bu zamana kadar yeni gezinti baslatmaz. */
+  holdUntil = 0
+  /** Kisa soz balonu ("miyav"). */
+  private sayText = ''
+  private sayUntil = 0
 
   constructor(readonly bed: Pt, readonly spots: Pt[]) {
     this.pos = { ...bed }
@@ -401,7 +443,6 @@ export class Cat {
   pet(now: number): void {
     this.plan = []
     this.path = []
-    this.snapTo = null
     this.pets += 1
     this.facing = 'down'
     this.mode = this.pets % 3 === 0 ? 'lie' : 'sit'
@@ -420,19 +461,41 @@ export class Cat {
     }
   }
 
-  /** Hedef engelli alandaysa (koltuk) yol en yakin acik hucrede biter; varinca hedefe kayilir. */
-  private snapTo: Pt | null = null
+  get awake(): boolean { return this.mode !== 'sleep' }
+
+  /** Birisi yanina geliyor: yuruyorsa durur, `until`'e kadar yerinden kalkmaz. 0 = serbest birak. */
+  hold(until: number): void {
+    this.holdUntil = until
+    if (until && this.mode === 'walk') { this.path = []; this.plan = []; this.mode = 'sit' }
+  }
+
+  /** Bir ajan/misafir sevdi: uyaniksa oturur (uyuyorsa uyanir), kalp + "mirr"; ara sira uzanir. */
+  pettedBy(now: number): void {
+    this.pet(now)
+  }
+
+  /** Kisa soz balonu. */
+  meow(now: number, text = 'miyav'): void {
+    this.sayText = text
+    this.sayUntil = now + 1800
+  }
+
+  /** Bir noktaya git; varinca `then` (yoksa oturur). Hedef engelliyse son parca DUZ yurunur, isinlanmaz. */
+  visit(to: Pt, nav: NavGrid, then?: () => void): void {
+    this.holdUntil = 0
+    this.goto(to, nav, then ?? (() => { this.mode = 'sit'; this.nextAt = performance.now() + 8000 + Math.random() * 6000 }))
+  }
 
   private goto(to: Pt, nav: NavGrid, then: () => void): void {
     this.mode = 'walk'
     this.path = nav.path(this.pos, to)
-    this.snapTo = nav.isOpenAt(to) ? null : to
+    // Hedef engelli alandaysa yol en yakin acik hucrede biter: kalan kisa mesafe duz yurunur (onceden oraya zipliyordu).
+    if (!nav.isOpenAt(to)) this.path.push({ x: to.x, y: to.y })
     this.walkT = 0
     this.plan = [then]
   }
 
   private arrived(now: number, fallbackMs: number): void {
-    if (this.snapTo) { this.pos = { ...this.snapTo }; this.snapTo = null }
     this.mode = 'sit'
     this.nextAt = now + fallbackMs
     const next = this.plan.shift()
@@ -454,12 +517,12 @@ export class Cat {
       } else {
         this.pos.x += (dx / dist) * step
         this.pos.y += (dy / dist) * step
-        this.facing = faceTowards({ x: 0, y: 0 }, { x: dx, y: dy })
+        this.facing = catDir(faceTowards({ x: 0, y: 0 }, { x: dx, y: dy }))
       }
       this.walkT += dt
       return
     }
-    if (now < this.nextAt) return
+    if (now < this.nextAt || now < this.holdUntil) return
     // Kendi ritmi: uyu -> gez -> otur -> (bazen uzan) -> yataga don.
     if (this.mode === 'sleep') {
       const s = this.spots[Math.floor(Math.random() * this.spots.length)] ?? this.bed
@@ -497,13 +560,41 @@ export class Cat {
     ctx.fill()
     if (this.mode === 'sit') { sprites.drawSingle(ctx, cat.sit, this.pos.x, this.pos.y); return }
     if (this.mode === 'lie') { sprites.drawSingle(ctx, cat.lie, this.pos.x, this.pos.y); return }
-    const row = cat.walk.dirRows?.[this.facing] ?? 0
+    const row = cat.walk.dirRows?.[catDir(this.facing)] ?? 0
     const frame = Math.floor(this.walkT * 6) % cat.walk.cols
     sprites.drawFrame(ctx, cat.walk, frame, row, this.pos.x, this.pos.y)
   }
 
+  /** Kisa soz balonu: kedinin basinin ustunde kucuk beyaz kutu. */
+  private drawSay(ctx: CanvasRenderingContext2D, now: number): void {
+    if (now > this.sayUntil || !this.sayText) return
+    const left = (this.sayUntil - now) / 1800
+    ctx.save()
+    ctx.globalAlpha = Math.min(1, left * 3)
+    ctx.font = '600 10px "Segoe UI", system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const w = ctx.measureText(this.sayText).width + 10
+    const x = this.pos.x
+    const y = this.pos.y - 44
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'
+    ctx.strokeStyle = 'rgba(40,44,60,0.55)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(x - w / 2, y - 8, w, 16, 5)
+    ctx.fill()
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(x - 3, y + 8); ctx.lineTo(x, y + 12); ctx.lineTo(x + 3, y + 8)
+    ctx.fill()
+    ctx.fillStyle = '#2a2f3d'
+    ctx.fillText(this.sayText, x, y + 0.5)
+    ctx.restore()
+  }
+
   /** Oksandiktan sonra yukari suzulen kalpler + "mirr". */
   private drawHearts(ctx: CanvasRenderingContext2D, now: number): void {
+    this.drawSay(ctx, now)
     if (now > this.heartUntil) return
     const left = (this.heartUntil - now) / 2600
     ctx.save()

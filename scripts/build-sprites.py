@@ -475,6 +475,11 @@ def panel_frames(img: Image.Image, box: tuple[int, int, int, int], expected: int
 _CATALOG_CACHE: dict[str, tuple[dict[str, list[Image.Image]], float]] = {}
 
 
+# Bu kataloglarda "SW" paneli neredeyse onden cizilmis (yuz kameraya, ayaklar asagi): sol-asagi yuruyen karakter
+# bize dogru kayiyor gibi gorunuyordu, "SE" ise duzgun yan profil. SW, SE'nin aynasindan uretilir (olcum 2026-09-24).
+MIRROR_SW_FROM_SE = {"sim1.png", "sim5.png", "sim6.png"}
+
+
 def catalog_frames(key: str) -> tuple[dict[str, list[Image.Image]], float]:
     """Bir katalogun 10 panelinden kareler + o karakterin dunya olcegi. Bagisci de buradan gelir."""
     if key in _CATALOG_CACHE:
@@ -489,6 +494,8 @@ def catalog_frames(key: str) -> tuple[dict[str, list[Image.Image]], float]:
     frames: dict[str, list[Image.Image]] = {}
     for name, box in zip(PANEL_ORDER, panels):
         frames[name] = panel_frames(img, box, PANEL_FRAMES.get(name, 6))
+    if file in MIRROR_SW_FROM_SE:
+        frames["SW"] = [f.transpose(Image.Transpose.FLIP_LEFT_RIGHT) for f in frames["SE"]]
     # One scale for the whole character: standing height from the walk-south frames.
     stand_h = max(f.height for f in frames["S"])
     scale = (CHAR_V2_HEIGHT_WORLD * WORLD_SCALE) / stand_h

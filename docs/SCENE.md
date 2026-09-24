@@ -171,6 +171,30 @@ sorgulamak için açıktır.
 engellendi; arada kalan minder şeridi yürünebilir. Yatak orada olduğu için kedi artık ışınlanmaz
 (`snapTo` gerekmez), yürüyerek mindere çıkar; koltuğa gelen ajan da minderin önünde durur.
 
+**Işınlanma yok** (kullanıcı isteği 2026-09-24: "kapı dışından girilmesin, ışınlanma olmasın"). Sahnede
+bir kişinin konumu hiçbir karede sıçramaz:
+
+- **Kapı:** giren kapı boşluğunda (`door.y + door.h − 8`) belirir ve kapı önündeki durağa **yürür**
+  (`step`: yol bulmadan düz yürüyüş); çıkan durağa yürür, kapıyı açar, boşluğa yürür, sonra kaybolur.
+  Ambient "dışarı çık" da aynı çıkışı kullanır.
+- **Oturma/kalkma:** koltuk engelli alanda olsa da son parça yürünür (`sit`), kalkınca en yakın açık
+  hücreye yürünür (`stand`, oturandan `walk`). Kedinin engelli hedefe son parçası da yürünür.
+- **Sahne yeniden kurulumu** (`scene.reload`): yeni dünya eskisini devralır (`World.adopt`): herkes
+  olduğu yerden devam eder, evi değişen yürür; yeni ajan kapıdan girer, silinen ajan kapıdan çıkar.
+
+**Yönler:** kedinin yürüyüş sayfası 4 yönlü; çapraz gidişte yan profil seçilir (önceden kameraya dönük
+"aşağı" kare çiziliyordu). `sim1/sim5/sim6` kataloglarında "SW" paneli neredeyse önden çizilmiş;
+sprite hattı SW'yi SE'nin aynasından üretir (`MIRROR_SW_FROM_SE`).
+
+**Kediyle etkileşim** (2026-09-24, yalnız UI, olay yayımlanmaz):
+
+| Ne | Ne zaman |
+|---|---|
+| **Sevme** (`catVisit`) | boştaki ajanın ambient turunda (~%10) ve misafir durağı olarak: kedi yerinde tutulur, kişi kedinin önüne/yanına yürür (`besideCat`, koltuğa binmesin), kediye döner, ♥ balonu; kedi kalp + "mırr" (her üçüncüde uzanır). Aynı anda tek kişi |
+| **Karşılama** | kapıdan biri girince (~%30, kedi uyanık ve boşsa) kapı önüne yürür, "miyav" |
+| **Dilenme** | kahve/su dolarken (~%30) tezgâhın yanına gelir, "miyav?" |
+| **Kanepe** | biri kanepeye oturunca (~%45) minderine yürüyüp kıvrılır |
+
 **Küçük pano iki kaynaktan beslenir.** SSE (`board.set`/`board.move`) yalnız bu oturumda olan biteni
 taşır; sahne ayrıca 6 saniyede bir `GET /runs` + `GET /runs/{id}` ile panoyu **sunucudan eşitler**
 (`World.syncBoard` → `Board.sync`). Kart kuralı tek yerdedir: `ui/app/api/board.ts` → `deriveCards`,

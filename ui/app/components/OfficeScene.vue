@@ -149,6 +149,8 @@ function publishAgents() {
 async function reboot() {
   try {
     const next = await World.create(apiBase)
+    // Herkes oldugu yerden devam etsin: yeni dunya eskisinin konumlarini devralir (isinlanma yok).
+    if (world) next.adopt(world)
     next.onHud = h => emit('hud', h)
     if (import.meta.dev) (window as unknown as { __world?: World }).__world = next
     world = next
