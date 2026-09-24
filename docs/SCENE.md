@@ -193,9 +193,11 @@ dışarıdaysa hemen kapıdan girer, evinde değilse masasına yürür, elindeki
 kanepe/balkon yeri de düşer. Ambient davranış yalnız `idle`/`done` ajanlarda başlar.
 
 **Balkon ve vapur** (2026-09-26, yalnız UI). `balcony`: alt duvardaki cam sürgülü kapı (`door`), balkon zemini
-(`floor`), korkuluk (`rail`), sohbet noktaları (`spots`). Kapı yanından biri geçerken kendiliğinden açılır
-(kanatlar arka plandan kesilip iki yana kayar, boşlukta balkon zemini görünür), boş kalınca kapanır; tıklanınca
-açık tutulur ("Balkon kapısı · açık tutuluyor"). Korkuluk balkondakilerin önüne çizilir. Boştaki ajan (~%14)
+(`floor`), korkuluk (`rail`), sohbet noktaları (`spots`). Kapı **her durumda** prosedürel çizilir (iki cam
+kanat, sabit kenar dikmeleri; arka plandaki cam yalnız zemin): kapalıdan açığa geçişte hiçbir parça bir anda
+değişmez. Ona doğru **yürüyen** biri 80 px kala açılmaya başlar (0,4 s'de tam açık, kişi cama varmadan);
+duran kişi yalnız kapı boşluğundaysa tutar. Boş kalınca 1,2 s sonra kapanır; tıklanınca açık tutulur
+("Balkon kapısı · açık tutuluyor"). Hedefe varınca değer sabit kalır (önceden tam açıkken 1↔0,93 titriyordu). Korkuluk balkondakilerin önüne çizilir. Boştaki ajan (~%14)
 ve misafirler elinde kahve/su ile balkona çıkar (eli boşsa önce alır); bir arkadaşı da gelebilir. İki ya da
 daha çok kişi olunca sırayla konuşurlar (konuşan diğerine döner). Kedi de balkona gezmeye çıkabilir.
 Pencerede **vapur** (`sky.ts → drawFerry`) ufkun altında 80 s'de karşıya geçer, 20 s bekler, geri döner; konum

@@ -456,8 +456,8 @@ export class World {
     this.guestLife(now)
     this.door.update(now)
     if (this.balcony) {
-      const movers = this.people().filter(o => !o.offstage).map(o => o.pos)
-      movers.push(this.cat.pos)
+      const movers = this.people().filter(o => !o.offstage).map(o => ({ pos: o.pos, walking: o.walking }))
+      movers.push({ pos: this.cat.pos, walking: this.cat.mode === 'walk' })
       this.balcony.update(dt, now, movers)
       this.balconyLife(now)
     }
@@ -761,8 +761,9 @@ export class World {
   /** Kanepe koltugunu tutan ama artik orada olmayan (komutu kesilen) kisinin talebi dusurulur. */
   private sweepLounge(): void {
     for (const [seat, who] of this.loungeClaims) {
-      const still = who.seated === seat || who.queue.some(x => x.t === 'sit' && x.seat === seat)
-      if (who.offstage || !still) this.loungeClaims.delete(seat)
+      // Oturma artik son adimi YURUR (isinlanma yok): o sirada 'sit' kuyrukta degil islenmekte; `headingTo` ikisini de sayar.
+      // Onceden bu anda tutma dusuyordu, ikinci kisi ayni mindere yonelebiliyordu (2026-09-26).
+      if (who.offstage || !who.headingTo(seat)) this.loungeClaims.delete(seat)
     }
   }
 

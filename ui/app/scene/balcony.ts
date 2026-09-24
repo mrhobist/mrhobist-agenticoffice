@@ -16,43 +16,90 @@ export class Balcony {
 
   constructor(readonly def: BalconyDef) {}
 
-  update(dt: number, now: number, movers: Pt[]): void {
+  /**
+   * `movers`: sahnedeki herkes (+ kedi) ve yuruyor mu. Kapi, ona dogru YURUYEN biri kapiya ~80 px kala acilmaya baslar
+   * (0.4 s'de tam acik: kisi cama varmadan). Duran kisi yalniz kapi boslugunun icindeyse tutar: balkonda sohbet eden ya da
+   * iceride kapi onunde bekleyen kapiyi acik tutmaz.
+   */
+  update(dt: number, now: number, movers: Array<{ pos: Pt; walking: boolean }>): void {
     const d = this.def.door
-    const near = movers.some(p => p.x > d.x - 16 && p.x < d.x + d.w + 16 && p.y > d.y - 56 && p.y < d.y + d.h + 26)
+    const near = movers.some(({ pos: p, walking }) => p.x > d.x - 16 && p.x < d.x + d.w + 16 && (walking
+      ? p.y > d.y - 80 && p.y < d.y + d.h + 48
+      : p.y > d.y - 8 && p.y < d.y + d.h + 10))
     if (near) this.lastNear = now
     const target = this.held || now - this.lastNear < 1200 ? 1 : 0
-    const step = dt / 0.45
+    // Hedefe varinca sabit kalir (onceden tam acikken her adimda "kapat" dalina dusup 1 <-> 0.93 titriyordu).
+    if (this.open === target) return
+    const step = dt / 0.4
     this.open = target > this.open ? Math.min(1, this.open + step) : Math.max(0, this.open - step)
   }
 
-  /** Kapi kanatlari: arka planin ALTINA degil USTUNE, varliklardan once cizilir. */
+  /**
+   * Kapi HER ZAMAN buradan cizilir (kapaliyken de): arka plandaki cam yalniz zemin gibi kullanilir. Onceden kanatlar arka plan
+   * gorselinden kesiliyordu ve kapi kapaliyken arka plan, aciliyorken kesit gorunuyordu: acilmaya baslar baslamaz kenar
+   * dikmeleri bir anda kayboluyor, kapi "sicriyordu" (kullanici 2026-09-26: "cikis animasyonu stabil degil"). Simdi iki cam
+   * kanat (cerceve, tutamak, parilti) sabit kenar dikmelerinin arasinda ortadan iki yana kayar, kenarda ust uste biner.
+   */
   drawDoor(ctx: CanvasRenderingContext2D, bg: CanvasImageSource, sx: number, sy: number): void {
-    const f = this.open
-    if (f <= 0) return
     const d = this.def.door
     const fl = this.def.floor
     // Ust kasa (lento) arka planda kalir; kanatlar ve bosluk onun altinda.
-    const lintel = 6
-    const top = d.y + lintel
-    const h = d.h - lintel
+    const top = d.y + 6
+    const h = d.h - 6
+    const post = 4
+    const inner = { x: d.x + post, w: d.w - post * 2 }
+    const half = inner.w / 2
     ctx.save()
     ctx.beginPath()
     ctx.rect(d.x, top, d.w, h)
     ctx.clip()
-    // Acik bosluk: balkonun zemini kapi yuksekligine yayilir (zemin kapidan disari devam eder).
+    // Kapinin ardinda balkon zemini: camdan da, acik bosluktan da o gorunur.
     ctx.drawImage(bg, d.x * sx, (fl.y + 18) * sy, d.w * sx, (fl.h - 22) * sy, d.x, top, d.w, h)
     ctx.fillStyle = 'rgba(20,22,34,0.35)'
     ctx.fillRect(d.x, top, d.w, 3)
-    // Kanatlar: sol yarim sola, sag yarim saga kayar; kenarlarda direklerin arkasina girer (kirpma).
-    const half = d.w / 2
-    // Kanatlar tam kaybolmaz: kenarlarda ust uste binmis cam okunur, kapi oldugu anlasilir.
-    const shift = f * (half - 30)
-    ctx.drawImage(bg, d.x * sx, top * sy, half * sx, h * sy, d.x - shift, top, half, h)
-    ctx.drawImage(bg, (d.x + half) * sx, top * sy, half * sx, h * sy, d.x + half + shift, top, half, h)
-    // Ray: kapinin altinda ince metal serit.
-    ctx.fillStyle = 'rgba(150,158,178,0.55)'
-    ctx.fillRect(d.x, top + h - 2, d.w, 2)
+    // Kanatlar: kenarda 22 px'lik yigin kalir (kapi oldugu okunur).
+    ctx.beginPath()
+    ctx.rect(inner.x, top, inner.w, h)
+    ctx.clip()
+    const shift = Math.round(this.open * (half - 22))
+    this.leaf(ctx, Math.round(inner.x - shift), top, Math.round(half), h, 1)
+    this.leaf(ctx, Math.round(inner.x + half + shift), top, Math.round(half), h, -1)
     ctx.restore()
+    // Sabit kenar dikmeleri ve alt ray: kanatlarin USTUNDE (kanat onlarin arkasina girer).
+    ctx.fillStyle = '#3d4356'
+    ctx.fillRect(d.x, top, post, h)
+    ctx.fillRect(d.x + d.w - post, top, post, h)
+    ctx.fillStyle = 'rgba(200,208,224,0.5)'
+    ctx.fillRect(d.x + post - 1, top, 1, h)
+    ctx.fillRect(d.x + d.w - post, top, 1, h)
+    ctx.fillStyle = '#4a5064'
+    ctx.fillRect(d.x, top + h - 2, d.w, 2)
+  }
+
+  /** Tek cam kanat. `inward`: tutamagin oldugu (ortaya bakan) kenar; +1 = sag kenar. */
+  private leaf(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, inward: 1 | -1): void {
+    ctx.fillStyle = 'rgba(150,188,222,0.38)'
+    ctx.fillRect(x, y, w, h)
+    // Parilti: iki egik serit.
+    ctx.fillStyle = 'rgba(255,255,255,0.16)'
+    for (const [ox, bw] of [[10, 8], [24, 3]] as const) {
+      ctx.beginPath()
+      ctx.moveTo(x + ox, y + h)
+      ctx.lineTo(x + ox + bw, y + h)
+      ctx.lineTo(x + ox + bw + 22, y)
+      ctx.lineTo(x + ox + 22, y)
+      ctx.closePath()
+      ctx.fill()
+    }
+    // Cerceve.
+    ctx.fillStyle = '#4f566b'
+    ctx.fillRect(x, y, 3, h)
+    ctx.fillRect(x + w - 3, y, 3, h)
+    ctx.fillRect(x, y, w, 2)
+    ctx.fillRect(x, y + h - 3, w, 3)
+    // Tutamak: ortaya bakan kenarda.
+    ctx.fillStyle = '#c9d0de'
+    ctx.fillRect(inward > 0 ? x + w - 8 : x + 6, y + h / 2 - 7, 2, 14)
   }
 
   /** Korkuluk: balkonda duranlarin ONUNDE (alt kenara gore siralanir). Cam panel + ust tirabzan + dikmeler. */

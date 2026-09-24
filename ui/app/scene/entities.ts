@@ -123,6 +123,13 @@ export class Agent {
   private waitUntil = 0
   private current: Action | null = null
 
+  /** Bu koltuga oturmakta mi ya da oturmak uzere mi (yolda, son adimda ya da sirada). Koltuk tutmalari bunu okur. */
+  headingTo(seat: SeatDef): boolean {
+    if (this.seated === seat) return true
+    if (this.current?.t === 'sit' && this.current.seat === seat) return true
+    return this.queue.some(x => x.t === 'sit' && x.seat === seat)
+  }
+
   constructor(
     readonly def: AgentDef,
     readonly sheets: CharacterSheets,
