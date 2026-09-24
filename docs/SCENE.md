@@ -186,6 +186,21 @@ bir kişinin konumu hiçbir karede sıçramaz:
 "aşağı" kare çiziliyordu). `sim1/sim5/sim6` kataloglarında "SW" paneli neredeyse önden çizilmiş;
 sprite hattı SW'yi SE'nin aynasından üretir (`MIRROR_SW_FROM_SE`).
 
+**İş önce gelir** (kullanıcı isteği 2026-09-26: "ajan gerçek işleri kesinlikle aksatmamalı"). Sahne yalnız
+görseldir: gerçek iş sunucuda animasyonu beklemeden koşar. Sahnede de ajan `idle`/`done` dışı bir durum ya da
+bir `agent.tool` olayı alınca `World.backToWork` her süslemeyi (kahve, balkon, kanepe, kedi) **anında** keser:
+dışarıdaysa hemen kapıdan girer, evinde değilse masasına yürür, elindeki içeceği masaya bırakır. Tuttuğu
+kanepe/balkon yeri de düşer. Ambient davranış yalnız `idle`/`done` ajanlarda başlar.
+
+**Balkon ve vapur** (2026-09-26, yalnız UI). `balcony`: alt duvardaki cam sürgülü kapı (`door`), balkon zemini
+(`floor`), korkuluk (`rail`), sohbet noktaları (`spots`). Kapı yanından biri geçerken kendiliğinden açılır
+(kanatlar arka plandan kesilip iki yana kayar, boşlukta balkon zemini görünür), boş kalınca kapanır; tıklanınca
+açık tutulur ("Balkon kapısı · açık tutuluyor"). Korkuluk balkondakilerin önüne çizilir. Boştaki ajan (~%14)
+ve misafirler elinde kahve/su ile balkona çıkar (eli boşsa önce alır); bir arkadaşı da gelebilir. İki ya da
+daha çok kişi olunca sırayla konuşurlar (konuşan diğerine döner). Kedi de balkona gezmeye çıkabilir.
+Pencerede **vapur** (`sky.ts → drawFerry`) ufkun altında 80 s'de karşıya geçer, 20 s bekler, geri döner; konum
+duvar saatinden hesaplanır, gece pencereleri ve feneri yanar.
+
 **Kediyle etkileşim** (2026-09-24, yalnız UI, olay yayımlanmaz):
 
 | Ne | Ne zaman |

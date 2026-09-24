@@ -103,6 +103,21 @@ export interface SceneConfig {
    * oturur, pencereden bakar, birine ugrar ve kapidan cikar. Tiklanmaz, is almaz. `sprites` bos = ekibin kullanmadigi karakterler.
    */
   guests?: { max?: number; firstMs?: number; everyMs?: [number, number]; sprites?: string[] }
+  /** Balkon (kullanici istegi 2026-09-26): alt duvardaki cam surgulu kapi, balkon zemini, korkuluk, sohbet noktalari. */
+  balcony?: BalconyDef
+}
+
+export interface Rect { x: number; y: number; w: number; h: number }
+
+export interface BalconyDef {
+  /** Cam kapi (arka planda cizili): kanatlar buradan kesilip kayar. */
+  door: Rect
+  /** Balkon zemini: acik kapi boslugu bunun dokusunu gosterir; sohbet sayimi bunu okur. */
+  floor: Rect
+  /** Korkuluk: balkonda duranlarin onune cizilir. */
+  rail: Rect
+  /** Durulacak noktalar (ayak ucu); `facing` tek basina durana bakis. */
+  spots: Array<Pt & { facing?: Facing }>
 }
 
 export type StageKind = 'analyze' | 'design' | 'implement' | 'review' | 'handoff'

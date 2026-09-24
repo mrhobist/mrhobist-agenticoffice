@@ -65,8 +65,9 @@
     28,
     62,
     1236,
-    1000
+    1098
   ],
+  "_walkableComment": "Alt sinir balkon zeminine kadar (y 1154): alt duvar blocked'ta, gecit yalniz balkon kapisi (x 538-762).",
   "overlays": [
     [
       352,
@@ -515,6 +516,18 @@
   },
   "blocked": [
     [
+      28,
+      1036,
+      420,
+      190
+    ],
+    [
+      860,
+      1036,
+      410,
+      190
+    ],
+    [
       24,
       92,
       308,
@@ -658,6 +671,17 @@
       { "x": 1182, "y": 598, "facing": "down" }
     ]
   },
+  "balcony": {
+    "_comment": "Alt duvardaki cam surgulu kapi (arka planda cizili; kanatlar kesilip kayar), balkon zemini, korkuluk ve sohbet noktalari. Kapi yaklasani gorunce acilir, tiklaninca acik tutulur.",
+    "door": { "x": 537, "y": 1036, "w": 220, "h": 64 },
+    "floor": { "x": 537, "y": 1100, "w": 220, "h": 60 },
+    "rail": { "x": 505, "y": 1130, "w": 284, "h": 30 },
+    "spots": [
+      { "x": 588, "y": 1140, "facing": "right" },
+      { "x": 650, "y": 1146, "facing": "down" },
+      { "x": 712, "y": 1140, "facing": "left" }
+    ]
+  },
   "guests": {
     "_comment": "Ekipte olmayan misafirler: kapidan girer, 2-3 durak (kahve, su, kanepe, pencere, pano, birine ugrama) gezip cikar. Ayni anda en fazla max kisi; gece (21-07) seyrek.",
     "max": 3,
@@ -705,6 +729,10 @@
       {
         "x": 560,
         "y": 570
+      },
+      {
+        "x": 676,
+        "y": 1136
       }
     ]
   },

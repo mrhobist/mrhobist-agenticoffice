@@ -68,7 +68,9 @@ function onMove(ev: MouseEvent) {
   world.hovered = a?.key ?? null
   world.hoveredLight = a ? null : world.hitLight(p)
   world.hoveredCat = !a && world.hitCat(p)
-  cv.value!.style.cursor = a || world.hitBoard(p) || world.hoveredLight || world.hoveredCat ? 'pointer' : 'default'
+  const balcony = !a && !world.hoveredCat && world.hitBalcony(p)
+  if (world.balcony) world.balcony.hovered = balcony
+  cv.value!.style.cursor = a || world.hitBoard(p) || world.hoveredLight || world.hoveredCat || balcony ? 'pointer' : 'default'
 }
 
 function onLeave() {
@@ -76,9 +78,10 @@ function onLeave() {
   world.hovered = null
   world.hoveredLight = null
   world.hoveredCat = false
+  if (world.balcony) world.balcony.hovered = false
 }
 
-/** Tiklama sirasi: ajan > kedi > isik > pano (kucuk hedefler once). */
+/** Tiklama sirasi: ajan > kedi > isik > balkon kapisi > pano (kucuk hedefler once). */
 function onClick(ev: MouseEvent) {
   if (!world) return
   const p = toWorld(ev)
@@ -87,6 +90,7 @@ function onClick(ev: MouseEvent) {
   if (world.hitCat(p)) { world.petCat(); return }
   const light = world.hitLight(p)
   if (light) { world.toggleLight(light); return }
+  if (world.hitBalcony(p)) { world.toggleBalcony(); return }
   if (world.hitBoard(p)) { emit('board', world.board.snapshot()); return }
   emit('select', null)
 }

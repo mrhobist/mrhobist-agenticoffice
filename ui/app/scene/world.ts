@@ -3,7 +3,8 @@ import { Sprites } from './atlas'
 import { NavGrid } from './nav'
 import { Agent, Cat, Door, drawDrink, type Action, type Drink } from './entities'
 import { Board } from './board'
-import { drawSky } from './sky'
+import { drawFerry, drawSky } from './sky'
+import { Balcony } from './balcony'
 import { authHeaders } from '~/composables/useAuth'
 import { deriveCards, HIDDEN_RUN_STATUS } from '~/api/board'
 import type { RunDetail, RunSummary } from '~/api/types'
@@ -31,6 +32,8 @@ export class World {
   readonly guests: Agent[] = []
   readonly cat: Cat
   readonly door = new Door()
+  /** Alt duvardaki cam surgulu kapi + korkuluk (`cfg.balcony` yoksa null). */
+  readonly balcony: Balcony | null
   readonly board: Board
   /** Tiklanabilir isiklar (mudur odasinin sarkiti): id -> tanim + durum. */
   readonly lights = new Map<string, { def: LightDef; on: boolean }>()
@@ -53,6 +56,10 @@ export class World {
   private nextGuestAt = 0
   /** Dinlenme koltugu -> tutan kisi (yuruyerek gelirken de tutulur; iki kisi ayni mindere oturmasin). */
   private readonly loungeClaims = new Map<SeatDef, Agent>()
+  /** Balkon noktasi (indeks) -> tutan kisi. Isi kesilen (ambient biten) kisinin tutmasi `balconyLife`'ta duser. */
+  private readonly balconyClaims = new Map<number, Agent>()
+  private balconyTalkAt = 0
+  private balconyLastSpeaker: Agent | null = null
 
   private bg: HTMLCanvasElement | null = null
   private bgKey = ''
@@ -73,6 +80,7 @@ export class World {
     this.board = new Board(cfg.board)
     this.board.setWorkflow(wf)
     this.cat = new Cat(cfg.cat.bed, cfg.cat.spots)
+    this.balcony = cfg.balcony ? new Balcony(cfg.balcony) : null
 
     for (const def of cfg.agents) {
       const sheets = sprites.atlas.characters[def.sprite]
@@ -142,6 +150,7 @@ export class World {
     this.cat.pos = { ...old.cat.pos }
     this.cat.mode = old.cat.mode === 'walk' ? 'sit' : old.cat.mode
     this.door.state = old.door.state
+    if (this.balcony && old.balcony) { this.balcony.open = old.balcony.open; this.balcony.held = old.balcony.held }
   }
 
   /** Sahnedeki herkes (ajanlar + misafirler): durak kapasitesi ve bos nokta aramasi herkesi sayar. */
@@ -175,8 +184,11 @@ export class World {
         a.job = e.data.runLabel ? `${e.data.runLabel}${e.data.task ? ` · ${e.data.task}` : ''}` : null
         if (a.frozen) { this.refreshFocusBubble(a); break }
         a.lastCommandAt = now
-        if (a.ambient) a.command(this.goHome(a), now)
-        if ((e.data.state === 'working' || e.data.state === 'thinking') && !a.seated && !a.busy) a.command(this.goHome(a), now)
+        // Is geldi: sahnedeki her suslemeyi (kahve, balkon, kanepe, kedi, disari cikma) ANINDA birakir, masasina doner.
+        // Sahne yalniz gorseldir; gercek is sunucuda bu animasyonu beklemeden zaten koşar (docs/SCENE.md - Is once gelir).
+        const onDuty = e.data.state !== 'idle' && e.data.state !== 'done'
+        if (onDuty) this.backToWork(a, now)
+        else if (a.ambient) a.command(this.goHome(a), now)
         if (e.data.state === 'blocked') a.bubble = { kind: 'alert', until: now + 2500 }
         if (e.data.state === 'waiting' && !a.busy) a.bubble = { kind: 'ask', until: now + 4000 }
         if (a.visitor) this.visitorState(a, e.data.state, now)
@@ -246,6 +258,8 @@ export class World {
         // Canli arac akisi: ajanin basinda kisa balon ("Write Program.cs"); odaklanmis (frozen) ajanin karti korunur.
         const a = this.agents.get(e.data.agent)
         if (!a || a.frozen) break
+        // Arac cagrisi = calisiyor: durum olayi kacmis olsa bile ajan susleme turundaysa masasina doner.
+        this.backToWork(a, now)
         a.bubble = { kind: 'talk', until: now + 2500, text: `${TOOL_GLYPH[e.data.tool] ?? '⚙'} ${e.data.target ?? e.data.tool}` }
         break
       }
@@ -378,6 +392,31 @@ export class World {
     return { pos: { x: this.cfg.world.w / 2, y: this.cfg.world.h / 2 } }
   }
 
+  /**
+   * Is geldi (durum `idle`/`done` disi ya da arac cagrisi): ambient turdaysa kesilir, disaridaysa hemen kapidan girer, evinde
+   * degilse evine yurur. Eldeki icecek masaya birakilir. Zaten masasinda oturuyorsa ya da is komutu isliyorsa dokunulmaz.
+   */
+  private backToWork(a: Agent, now: number): void {
+    if (a.visitor || a.frozen) return
+    if (a.offstage) {
+      if (a.returnAt !== null) this.enter(a, now, [...this.goHome(a), this.settleDrink(a)])
+      return
+    }
+    const home = this.homeOf(a.key).seat ?? null
+    if (a.ambient || (!a.busy && a.seated !== home)) a.command([...this.goHome(a), this.settleDrink(a)], now)
+  }
+
+  /** Eldeki icecek masaya birakilir (yarim kalan kahve/balkon turu); masasi yoksa elde kalir, sure dolunca biter. */
+  private settleDrink(a: Agent): Action {
+    return { t: 'call', fn: () => {
+      if (!a.carrying) return
+      const seat = a.seated ?? this.homeOf(a.key).seat ?? null
+      a.mugKind = a.carrying
+      a.mugUntil = performance.now() + 60_000
+      if (seat?.mug) { a.mugSeat = seat; a.carrying = null }
+    } }
+  }
+
   private goHome(a: Agent): Action[] {
     const home = this.homeOf(a.key)
     if (home.seat) {
@@ -416,6 +455,12 @@ export class World {
     this.cat.update(dt, now, this.nav)
     this.guestLife(now)
     this.door.update(now)
+    if (this.balcony) {
+      const movers = this.people().filter(o => !o.offstage).map(o => o.pos)
+      movers.push(this.cat.pos)
+      this.balcony.update(dt, now, movers)
+      this.balconyLife(now)
+    }
     this.board.update(dt)
     this.ambient(now)
     this.returns(now)
@@ -466,11 +511,21 @@ export class World {
     }
     let actions: Action[]
     const someoneOut = [...this.agents.values()].some(o => o.offstage)
-    if (r < 0.12 && !someoneOut && this.cfg.spots['door']) {
+    if (r < 0.1 && !someoneOut && this.cfg.spots['door']) {
       // Disari cik: kapiya yuru, cik, 20-50 s sonra kapidan don.
       actions = this.leaveActions(a, 20_000 + Math.random() * 30_000)
-    } else if (r < 0.4) actions = this.drinkTrip(a, 'coffee')
-    else if (r < 0.5) actions = this.drinkTrip(a, 'water')
+    } else if (r < 0.32) actions = this.drinkTrip(a, 'coffee')
+    else if (r < 0.4) actions = this.drinkTrip(a, 'water')
+    else if (r < 0.54) {
+      // Balkon (kullanici istegi 2026-09-26): icecegini alip cikar, oradakilerle sohbet eder. Bosta bir arkadasi da gelebilir.
+      const out = this.balconyTrip(a, 15_000 + Math.random() * 15_000)
+      actions = out.length ? [...out, ...this.goHome(a), this.settleDrink(a)] : []
+      const friend = idle.find(o => o !== a)
+      if (out.length && friend && Math.random() < 0.6) {
+        const with2 = this.balconyTrip(friend, 15_000 + Math.random() * 15_000)
+        if (with2.length) friend.command([...with2, ...this.goHome(friend), this.settleDrink(friend)], now, { ambient: true })
+      }
+    }
     else if (r < 0.62) actions = trip('board', 4000 + Math.random() * 3000)
     else if (r < 0.7) actions = trip('window', 5000 + Math.random() * 3000)
     else if (r < 0.8) {
@@ -529,6 +584,79 @@ export class World {
         if (seat?.mug) { a.mugSeat = seat; a.carrying = null }
       } },
     ]
+  }
+
+  /** Kahve/su al (masaya donmeden): durak sirasi, doldurma, bardak ele. Durak bossa bosaltilir. */
+  private fetchDrink(a: Agent, kind: Drink): Action[] {
+    const spot = kind === 'coffee' ? 'coffee' : 'water'
+    if (!this.cfg.spots[spot]) return []
+    return [
+      ...this.tripTo(a, spot),
+      { t: 'call', fn: () => this.catBegs(spot) },
+      { t: 'wait', ms: kind === 'coffee' ? 2500 + Math.random() * 1500 : 1500 + Math.random() * 1000 },
+      { t: 'call', fn: () => { a.carrying = kind; a.bubble = { kind: 'talk', until: performance.now() + 1600 } } },
+      { t: 'wait', ms: 700 },
+      { t: 'call', fn: () => { a.spot = null } },
+    ]
+  }
+
+  /**
+   * Balkon turu (kullanici istegi 2026-09-26: "simler oraya elinde kahve ya da su ile cikip sohbet etsin"): elinde icecek
+   * yoksa once alir; balkon noktasi SIRASI GELINCE tutulur (kahve kuyrugunda beklerken balkonu kilitlemesin), cam kapidan
+   * yurunur (kapi yaklasinca kendiliginden acilir), beklenir, nokta birakilir. Sohbet `balconyLife`'ta. Balkon doluysa bos liste.
+   */
+  private balconyTrip(a: Agent, dwellMs: number): Action[] {
+    const b = this.cfg.balcony
+    if (!b?.spots.length) return []
+    const free = () => b.spots.findIndex((_, i) => !this.balconyClaims.has(i))
+    if (free() < 0) return []
+    let drink: Action[] = []
+    if (!a.carrying) {
+      let kind: Drink = Math.random() < 0.65 ? 'coffee' : 'water'
+      const other: Drink = kind === 'coffee' ? 'water' : 'coffee'
+      if (!this.spotFree(kind, a) && this.spotFree(other, a)) kind = other
+      drink = this.fetchDrink(a, kind)
+    }
+    return [
+      ...drink,
+      { t: 'call', fn: () => {
+        const i = free()
+        if (i < 0) return
+        const spot = b.spots[i]!
+        this.balconyClaims.set(i, a)
+        a.queue.unshift(
+          { t: 'walk', to: { x: spot.x, y: spot.y } },
+          { t: 'face', dir: spot.facing ?? 'down' },
+          { t: 'wait', ms: dwellMs },
+          { t: 'call', fn: () => { if (this.balconyClaims.get(i) === a) this.balconyClaims.delete(i) } },
+        )
+      } },
+    ]
+  }
+
+  /**
+   * Balkonda sohbet: iki ya da daha cok kisi durunca sirayla konusurlar (konusan digerine doner, digerleri ona). Tek kisi
+   * denize bakar. Isi gelen (ambient'i kesilen) ya da sahneden cikan kisinin nokta tutmasi burada duser.
+   */
+  private balconyLife(now: number): void {
+    for (const [i, who] of this.balconyClaims) {
+      if (who.offstage || !who.busy || !who.ambient) this.balconyClaims.delete(i)
+    }
+    const b = this.balcony
+    if (!b) return
+    const here = this.people().filter(p => !p.offstage && !p.walking && !p.frozen && b.onFloor(p.pos))
+    if (here.length < 2) { this.balconyLastSpeaker = null; return }
+    if (now < this.balconyTalkAt) return
+    const pool = here.filter(p => p !== this.balconyLastSpeaker && !p.bubble)
+    const speaker = pool[Math.floor(Math.random() * pool.length)]
+    if (!speaker) return
+    const others = here.filter(p => p !== speaker)
+    const partner = others.reduce((m, o) => (Math.abs(o.pos.x - speaker.pos.x) < Math.abs(m.pos.x - speaker.pos.x) ? o : m))
+    speaker.faceTo(partner.pos)
+    for (const o of others) o.faceTo(speaker.pos)
+    speaker.bubble = { kind: 'talk', until: now + 1900 }
+    this.balconyLastSpeaker = speaker
+    this.balconyTalkAt = now + 2300 + Math.random() * 1500
   }
 
   // ------------------------------------------------------------------ dinlenme ve misafirler
@@ -684,9 +812,11 @@ export class World {
    * sonra kapidan cikis. Dolu durak/koltuk o an atlanir. Durak rezervasyonu her duraktan sonra elle birakilir (visitTour notu).
    */
   private guestTour(g: Agent): Action[] {
-    const kinds = ['coffee', 'water', 'lounge', 'window', 'board', 'visit', 'cat']
+    const kinds = ['coffee', 'water', 'lounge', 'window', 'board', 'visit', 'cat', 'balcony']
       .sort(() => Math.random() - 0.5)
       .slice(0, 2 + Math.floor(Math.random() * 2))
+    // Balkonda biri varsa misafir de sik sik oraya cikar: sohbet eslesmesi.
+    if (this.balconyClaims.size > 0 && !kinds.includes('balcony') && Math.random() < 0.5) kinds[kinds.length - 1] = 'balcony'
     // Icecek once alinsin: kanepede oturup icmek, bardakla pano onunde durmaktan daha dogal.
     kinds.sort((x, y) => Number(y === 'coffee' || y === 'water') - Number(x === 'coffee' || x === 'water'))
 
@@ -707,6 +837,8 @@ export class World {
         actions.push(...this.loungeTrip(g, 15_000 + Math.random() * 20_000))
       } else if (k === 'cat') {
         actions.push(...this.catVisit(g))
+      } else if (k === 'balcony') {
+        actions.push(...this.balconyTrip(g, 12_000 + Math.random() * 15_000))
       } else if (k === 'visit') {
         const seated = [...this.agents.values()].filter(o => o.seated && !o.offstage && !o.frozen)
         const o = seated[Math.floor(Math.random() * seated.length)]
@@ -882,11 +1014,21 @@ export class World {
 
   draw(ctx: CanvasRenderingContext2D, scale: number, now: number): void {
     const { w, h } = this.cfg.world
-    if (this.cfg.window) drawSky(ctx, this.cfg.window, this.hourNow(), scale)
+    if (this.cfg.window) {
+      drawSky(ctx, this.cfg.window, this.hourNow(), scale)
+      drawFerry(ctx, this.cfg.window, this.hourNow(), Date.now())
+    }
     ctx.drawImage(this.background(scale), 0, 0, w, h)
+
+    // Arka plandan kesitler (cam duvar onu, balkon kapisi kanatlari) ayni gorselden olcekle alinir.
+    const bgMeta = this.sprites.atlas.background
+    const bgImg = this.sprites.img(bgMeta.image)
+    const sx = bgMeta.w / w
+    const sy = bgMeta.h / h
 
     this.drawCafeSpecial(ctx, now)
     if (this.cfg.door) this.door.draw(ctx, this.sprites, this.cfg.door.x, this.cfg.door.y, this.cfg.door.h, this.cfg.door.w)
+    this.balcony?.drawDoor(ctx, bgImg, sx, sy)
 
     // Nesneler + varliklar alt kenara gore siralanir.
     type Item = { y: number; draw: () => void }
@@ -904,10 +1046,6 @@ export class World {
       } })
     }
     // Arka plandan kesitler (cam duvar onu gibi): varliklarin onune, alt kenara gore.
-    const bgMeta = this.sprites.atlas.background
-    const bgImg = this.sprites.img(bgMeta.image)
-    const sx = bgMeta.w / w
-    const sy = bgMeta.h / h
     for (const [ox, oy, ow, oh] of this.cfg.overlays ?? []) {
       items.push({ y: oy + oh, draw: () => ctx.drawImage(bgImg, ox * sx, oy * sy, ow * sx, oh * sy, ox, oy, ow, oh) })
     }
@@ -924,10 +1062,14 @@ export class World {
     items.push({ y: this.cat.pos.y, draw: () => this.cat.draw(ctx, this.sprites, now) })
     // Pano zeminde bir nesnedir: ajanlar onunden ve arkasindan gecer.
     items.push({ y: this.cfg.board.y + this.cfg.board.h, draw: () => this.board.draw(ctx, now) })
+    // Balkon korkulugu: balkonda duranlarin onunde.
+    const balcony = this.balcony
+    if (balcony) items.push({ y: balcony.def.rail.y + balcony.def.rail.h, draw: () => balcony.drawRail(ctx) })
     items.sort((p, q) => p.y - q.y)
     for (const it of items) it.draw()
 
     this.drawLights(ctx, now)
+    this.balcony?.drawHover(ctx)
     for (const a of this.people()) a.drawBubble(ctx, this.sprites, now)
     this.drawLabels(ctx)
   }
@@ -1088,6 +1230,16 @@ export class World {
       if (p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h) return id
     }
     return null
+  }
+
+  /** Nokta balkon kapisinin uzerinde mi. */
+  hitBalcony(p: Pt): boolean {
+    return this.balcony?.hit(p) ?? false
+  }
+
+  /** Balkon kapisi: tiklaninca acik tutulur / birakilir (birakilinca gecen yoksa kapanir). Yalniz bu tarayicida. */
+  toggleBalcony(): void {
+    if (this.balcony) this.balcony.held = !this.balcony.held
   }
 
   /** Nokta kedinin uzerinde mi (oksamak icin). */
