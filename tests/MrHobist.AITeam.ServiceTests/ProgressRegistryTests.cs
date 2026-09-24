@@ -55,8 +55,9 @@ public class ProgressRegistryTests
         Assert.Equal(["thinking", "tool"], live.Stream.Select(e => e.Kind));
         Assert.Equal("src/A.cs", live.Stream[1].Target);
         Assert.Equal(1, live.ToolCount);
-        Assert.Equal(new RuntimeUsage(3000, 55, 0, 2800, 140), live.Usage);
-        Assert.Equal(new RuntimeUsage(3000, 55, 0, 2800, 140), reg.UsageOf(token));
+        // Tepe baglam toplam degil en buyuk tek mesajdir (m2: 2000).
+        Assert.Equal(new RuntimeUsage(3000, 55, 0, 2800, 140, 0, 2000), live.Usage);
+        Assert.Equal(new RuntimeUsage(3000, 55, 0, 2800, 140, 0, 2000), reg.UsageOf(token));
         Assert.Equal("abc", Assert.Single(live.Context).Text);
         Assert.Equal([SceneEventTypes.AgentTool], scene.Types); // sahneye yalniz arac gider
 
@@ -86,6 +87,18 @@ public class ProgressRegistryTests
         var price = new ModelPrice(4m, 20m, 0.2m, 8m);
         // 1M okuma (0.2) + 0.1M yazma (0.8) + 0.01M dogrudan (0.04) + 0.05M cikti (1.0)
         Assert.Equal(2.04m, price.Estimate(new RuntimeUsage(1_110_000, 50_000, 0, 1_000_000, 100_000)));
+    }
+
+    [Fact]
+    public void Bes_dakikalik_yazma_ucuz_fiyatla_hesaplanir()
+    {
+        // 5 dk fiyati verilmezse standart oran: girdi x 1,25 = 5 $/M. 0.1M yazmanin 0.06M'i 5 dk: 0.04*8 + 0.06*5 = 0.62.
+        var price = new ModelPrice(4m, 20m, 0.2m, 8m);
+        Assert.Equal(5m, price.CacheWriteShort);
+        Assert.Equal(0.62m, price.Estimate(100_000, 0, 0, 100_000, 60_000));
+        Assert.Equal(0.8m, price.Estimate(100_000, 0, 0, 100_000)); // kirilim yok: hepsi 1 sa (bugunku davranis)
+        Assert.Equal(0.5m, price.Estimate(100_000, 0, 0, 100_000, 500_000)); // pay yazmayi asamaz
+        Assert.Equal(0.3m, new ModelPrice(4m, 20m, 0.2m, 8m, 3m).Estimate(100_000, 0, 0, 100_000, 100_000)); // tabloda verilen fiyat kazanir
     }
 
     /// <summary>

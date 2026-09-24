@@ -21,6 +21,19 @@ public static class SpecSchema
             "architecture": { "type": "string", "description": "Mimari kararlar ve yapi" },
             "rules": { "type": "array", "items": { "type": "string" }, "description": "Baglayici kurallar" },
             "knowledge": { "type": "array", "items": { "type": "string" }, "description": "Gorevlerin ihtiyac duydugu bilgi dosyasi anahtarlari; bos = hepsi" },
+            "codeMap": {
+              "type": "array",
+              "description": "Analizde okudugun ve uygulayicinin bilmesi gereken dosyalar (en cok 25): goreli yol + ne icerdigi tek satir",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path", "note"],
+                "properties": {
+                  "path": { "type": "string" },
+                  "note": { "type": "string", "description": "imza, desen, dikkat edilecek nokta; tek satir" }
+                }
+              }
+            },
             "tasks": {
               "type": "array",
               "items": {

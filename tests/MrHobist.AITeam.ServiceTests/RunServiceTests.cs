@@ -678,6 +678,68 @@ public sealed class RunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Kod_haritasi_gorev_istemine_gider_gorevin_dosyalari_once_ust_sinirda_kesilir()
+    {
+        var filler = string.Join(",", Enumerable.Range(0, 40).Select(i => $$"""{"path":"src/Dolgu{{i}}.cs","note":"{{new string('x', 150)}}"}"""));
+        _runtime.SpecJson = $$"""
+            {"summary":"s","architecture":"a","rules":["r"],
+             "codeMap":[{{filler}},{"path":"./b.vue","note":"ekran: useB() kompozisyonu"},{"path":"a.cs","note":"AService.Get(id) -> Dto\nikinci satir"}],
+             "tasks":[
+               {"id":"t1","title":"api","description":"...","files":["a.cs"],"acceptance":["build"],"dependsOn":[]},
+               {"id":"t2","title":"ekran","description":"...","files":["b.vue"],"acceptance":["build"],"dependsOn":["t1"]}]}
+            """;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Contains("codeMap", _runtime.Calls[0].Messages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("codeMap", _runtime.Calls[0].SchemaJson, StringComparison.Ordinal);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+
+        var impl = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).Select(c => c.Messages[^1].Content).ToList();
+        var t1 = impl.First(m => m.Contains("# Görev t1", StringComparison.Ordinal));
+        var t2 = impl.First(m => m.Contains("# Görev t2", StringComparison.Ordinal));
+        var map1 = t1[t1.IndexOf("# Kod haritası", StringComparison.Ordinal)..];
+        // Gorevin kendi dosyasi haritanin sonunda olsa da ilk satirda; not tek satira iner.
+        Assert.StartsWith("- `a.cs` — AService.Get(id) -> Dto ikinci satir", map1.Split('\n')[2], StringComparison.Ordinal);
+        Assert.Contains("- `./b.vue` — ekran", t2, StringComparison.Ordinal); // ./ onekiyle de gorevin dosyasi sayilir
+        // Ust sinir: 42 satirin hepsi sigmaz, istem 3000 karakterlik haritayla sinirli kalir.
+        var lines = map1.Split('\n').Count(l => l.StartsWith("- `", StringComparison.Ordinal));
+        Assert.InRange(lines, 5, 41);
+        Assert.DoesNotContain("src/Dolgu39.cs", t1, StringComparison.Ordinal);
+        _runtime.SpecJson = null;
+    }
+
+    [Fact]
+    public async Task Onbellek_omru_ayardan_runtimea_gider_tepe_baglam_ve_5dk_payi_tur_kaydina_yazilir()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        await _fx.Settings.SaveAsync(new Domain.Settings.AppSettings(Domain.Settings.AppSettings.Default.LimitGuards, Domain.Settings.CacheTtls.FiveMinutes), Ct);
+        var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, settings: _fx.Settings);
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
+        _runtime.ImplementUsage = new RuntimeUsage(900_000, 20, 0, 800_000, 99_000, 60_000, 120_000);
+
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        await svc.DispatchAsync(run.Id, Ct);
+
+        Assert.NotEmpty(_runtime.Calls);
+        Assert.All(_runtime.Calls, c => Assert.Equal(c.Provider == Provider.Anthropic ? "5m" : null, c.CacheTtl));
+        var turn = (await _store.ReadTurnsAsync(run.Id, "developer", Ct)).First(t => t.Task == "t1" && t.Stage == "gelistirme");
+        Assert.Equal((120_000, 60_000, "5m"), (turn.PeakContextTokens, turn.CacheWrite5mTokens, turn.CacheTtl));
+        _runtime.ImplementUsage = null;
+
+        // Ayar bos -> CLI varsayilani, alan gitmez.
+        await _fx.Settings.SaveAsync(Domain.Settings.AppSettings.Default, Ct);
+        var before = _runtime.Calls.Count;
+        var again = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(again.Id, Ct);
+        Assert.All(_runtime.Calls.Skip(before), c => Assert.Null(c.CacheTtl));
+    }
+
+    [Fact]
     public async Task Yeniden_baslatmada_running_calismalar_interrupted()
     {
         var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
@@ -926,6 +988,9 @@ public sealed class RunServiceTests : IDisposable
         /// <summary>Asili tur, asilmadan once bu kullanimi canli akisa bildirsin (kesilen turun maliyeti testi).</summary>
         public (ProgressRegistry Registry, RuntimeUsage Usage)? HangReports { get; set; }
 
+        /// <summary>Uygulama turunun bildirdigi kullanim; null = sabit kucuk deger.</summary>
+        public RuntimeUsage? ImplementUsage { get; set; }
+
         private static async Task<RuntimeTurnResponse> HangAsync(CancellationToken ct)
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, ct);
@@ -983,7 +1048,7 @@ public sealed class RunServiceTests : IDisposable
                 var report = blockNow
                     ? """{"summary":"takildim","filesChanged":[],"commandsRun":[],"blocked":true,"question":"Türkçe karakter: i mi I mı?"}"""
                     : """{"summary":"slug.py yazildi","filesChanged":["slug.py"],"commandsRun":["python -m pytest: 3 passed"],"blocked":false,"question":null}""";
-                return Task.FromResult(new RuntimeTurnResponse("", report, request.Provider, request.Model, destination, new RuntimeUsage(50, 20, 0), 0.01m, 2.0, 1, [new RuntimeToolUse("Write", "slug.py")], 5));
+                return Task.FromResult(new RuntimeTurnResponse("", report, request.Provider, request.Model, destination, ImplementUsage ?? new RuntimeUsage(50, 20, 0), 0.01m, 2.0, 1, [new RuntimeToolUse("Write", "slug.py")], 5));
             }
 
             if (request.SchemaJson.Contains("verdict", StringComparison.Ordinal))

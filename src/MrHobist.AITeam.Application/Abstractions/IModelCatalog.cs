@@ -21,19 +21,27 @@ public interface IModelCatalog
 
 public sealed record CatalogModel(Provider Provider, string Model);
 
-/// <summary>Milyon token basina esdeger $ (abonelikte ucret kesilmez; CLAUDE.md §4).</summary>
-public sealed record ModelPrice(decimal Input, decimal Output, decimal CacheRead, decimal CacheWrite)
+/// <summary>
+/// Milyon token basina esdeger $ (abonelikte ucret kesilmez; CLAUDE.md §4). <see cref="CacheWrite"/> 1 saatlik yazmadir
+/// (CLI'nin varsayilani, 2026-09-24 olcumu); <see cref="CacheWrite5m"/> 5 dakikalik yazma, verilmezse standart oran girdi x 1,25.
+/// </summary>
+public sealed record ModelPrice(decimal Input, decimal Output, decimal CacheRead, decimal CacheWrite, decimal? CacheWrite5m = null)
 {
+    /// <summary>5 dakikalik yazmanin fiyati.</summary>
+    public decimal CacheWriteShort => CacheWrite5m ?? Input * 1.25m;
+
     /// <summary><paramref name="usage"/>'in girdisi TOPLAMDIR (dogrudan + okunan + yazilan); dogrudan pay farktan cikar.</summary>
     public decimal Estimate(RuntimeUsage usage)
     {
         ArgumentNullException.ThrowIfNull(usage);
-        return Estimate(usage.InputTokens, usage.OutputTokens, usage.CacheReadTokens, usage.CacheWriteTokens);
+        return Estimate(usage.InputTokens, usage.OutputTokens, usage.CacheReadTokens, usage.CacheWriteTokens, usage.CacheWrite5mTokens);
     }
 
-    public decimal Estimate(long inputTotal, long output, long cacheRead, long cacheWrite)
+    /// <summary><paramref name="cacheWrite5m"/> <paramref name="cacheWrite"/>'in icindeki 5 dk payidir; 0 = hepsi 1 saatlik sayilir.</summary>
+    public decimal Estimate(long inputTotal, long output, long cacheRead, long cacheWrite, long cacheWrite5m = 0)
     {
         var direct = Math.Max(0, inputTotal - cacheRead - cacheWrite);
-        return ((direct * Input) + (cacheRead * CacheRead) + (cacheWrite * CacheWrite) + (output * Output)) / 1_000_000m;
+        var shortWrite = Math.Clamp(cacheWrite5m, 0, cacheWrite);
+        return ((direct * Input) + (cacheRead * CacheRead) + ((cacheWrite - shortWrite) * CacheWrite) + (shortWrite * CacheWriteShort) + (output * Output)) / 1_000_000m;
     }
 }

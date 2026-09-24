@@ -29,7 +29,8 @@ public sealed class JsonModelCatalog(StoragePaths paths) : IModelCatalog
             try
             {
                 var v = entry.Value;
-                prices[entry.Name] = new ModelPrice(v.GetProperty("input").GetDecimal(), v.GetProperty("output").GetDecimal(), v.GetProperty("cacheRead").GetDecimal(), v.GetProperty("cacheWrite").GetDecimal());
+                prices[entry.Name] = new ModelPrice(v.GetProperty("input").GetDecimal(), v.GetProperty("output").GetDecimal(), v.GetProperty("cacheRead").GetDecimal(), v.GetProperty("cacheWrite").GetDecimal(),
+                    v.TryGetProperty("cacheWrite5m", out var shortWrite) ? shortWrite.GetDecimal() : null);
             }
             catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException or FormatException)
             {

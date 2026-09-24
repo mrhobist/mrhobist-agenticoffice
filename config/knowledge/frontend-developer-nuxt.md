@@ -28,6 +28,12 @@ Mevcut desene birebir uy, yeni desen icat etme; emin değilsen komşu modüle ba
   getirir ve yığını sessizce değiştirir (ölçüldü: PrimeVue 5 geldi, ticari lisans istedi, ekran "Invalid License" verdi).
   PrimeVue ailesi **4.x**'te kalır (`primevue`, `@primevue/nuxt-module` 4.x, `@primeuix/themes` 2.x). Kurduktan sonra
   `package.json`'daki sürümü kontrol et; brief bir sürüm söylüyorsa ona uy.
+- **TypeScript 6'da kal:** `typescript@latest` 7'dir (Go portu, JS API'si yok) ve `vue-tsc`'yi çalıştırmaz;
+  `typescript@^6` sabitle.
+- **PrimeVue ile aynı adlı yerel bileşen** (`components/common/DataTable.vue`, `ConfirmDialog.vue`): PrimeVue d.ts'leri bu
+  adları `GlobalComponents`'e bildirir, `vue-tsc` PrimeVue'nun tipini kullanır (DataTable'da yanlış prop hatası,
+  ConfirmDialog'da sessizce yanlış tip; çalışma anı doğrudur). Kullanan dosyada **açık import** yaz:
+  `import DataTable from '@/components/common/DataTable.vue'`.
 - Auto-import: Vue/Nuxt API'leri, `src/components/**` (`pathPrefix: false`), composable'lar
   (`useGlobalToast`, `useGlobalLoader`, `useSession`).
 

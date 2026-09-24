@@ -98,6 +98,9 @@ class TurnRequest(BaseModel):
     #: Modele hic sunulmayacak araclar (SDK `disallowed_tools`): MCP'de secilmemis araclar, `mcp__{anahtar}__{arac}`.
     #: Semalari baglama girmez. .NET hesaplar; None = yok.
     disallowed_tools: list[str] | None = Field(default=None, alias="disallowedTools")
+    #: Istem onbelleginin omru: `5m` (yazma 1,25x) | `1h` (yazma 2x) | None = CLI varsayilani (olculdu 2026-09-24: 1 sa).
+    #: Secim .NET'in (Ayarlar); burasi yalniz CLI ortam degiskenine esler. Onbellek tutmayan saglayici yok sayar.
+    cache_ttl: Literal["5m", "1h"] | None = Field(default=None, alias="cacheTtl")
 
     model_config = {"populate_by_name": True}
 
@@ -118,6 +121,12 @@ class Usage(BaseModel):
     #: Ikisi de 0 ise ya saglayici onbellek kullanmiyor ya da bildirmiyordur -- "olculemedi" demektir.
     cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
     cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
+    #: `cache_write_tokens` icindeki 5 DAKIKALIK yazma payi (fiyati 1 saatliginden ucuz). 0 = hepsi 1 saatlik ya da
+    #: saglayici ayirmiyor: fiyat hesabi bugunku (1 sa) varsayima duser.
+    cache_write_5m_tokens: int = Field(default=0, alias="cacheWrite5mTokens")
+    #: Turdaki en buyuk tek API cagrisinin girdisi (dogrudan + okunan + yazilan) = ajanin baglaminin tepe noktasi.
+    #: Toplam girdi ic turlarin toplamidir; baglamin ne kadar buyudugunu yalniz bu soyler. 0 = olculemedi.
+    peak_context_tokens: int = Field(default=0, alias="peakContextTokens")
 
     model_config = {"populate_by_name": True}
 
@@ -152,6 +161,7 @@ class LocalUsage(BaseModel):
     output_tokens: int = Field(default=0, alias="outputTokens")
     cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
     cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
+    cache_write_5m_tokens: int = Field(default=0, alias="cacheWrite5mTokens")
 
     model_config = {"populate_by_name": True}
 

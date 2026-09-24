@@ -34,7 +34,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         string SystemPromptMode,
         IReadOnlyDictionary<string, McpServerDto>? McpServers,
         IReadOnlyList<string>? ReadDirs,
-        IReadOnlyList<string>? DisallowedTools);
+        IReadOnlyList<string>? DisallowedTools,
+        string? CacheTtl);
 
     /// <summary>SDK bicimi (<c>McpStdioServerConfig</c> / <c>McpHttpServerConfig</c> / <c>McpSSEServerConfig</c>); bos alan yazilmaz.</summary>
     private sealed record McpServerDto(
@@ -54,7 +55,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
 
     private sealed record ToolUseDto(string Tool, string? Target);
 
-    private sealed record UsageDto(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0);
+    private sealed record UsageDto(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0, int CacheWrite5mTokens = 0, int PeakContextTokens = 0);
 
     private sealed record TurnResultDto(
         string Text,
@@ -117,7 +118,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             (l.Limits ?? []).Select(x => new RuntimeUsageLimit(x.Kind, x.Group, x.Percent, x.Severity, x.ResetsAt, x.Scope, x.IsActive)).ToList())).ToList();
     }
 
-    private sealed record LocalUsageDto(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens);
+    private sealed record LocalUsageDto(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens, long CacheWrite5mTokens = 0);
 
     public async Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
     {
@@ -137,7 +138,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             throw new RuntimeUnavailableException($"runtime'a ulasilamadi: {ex.Message}");
         }
 
-        return (items ?? []).Select(x => new RuntimeLocalUsage(x.Source, x.Project, x.Model, x.Messages, x.InputTokens, x.OutputTokens, x.CacheReadTokens, x.CacheWriteTokens)).ToList();
+        return (items ?? []).Select(x => new RuntimeLocalUsage(x.Source, x.Project, x.Model, x.Messages, x.InputTokens, x.OutputTokens, x.CacheReadTokens, x.CacheWriteTokens, x.CacheWrite5mTokens)).ToList();
     }
 
     public async Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, string? apiKey, CancellationToken ct)
@@ -222,7 +223,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             request.SystemPromptMode,
             request.McpServers is { Count: > 0 } mcp ? mcp.ToDictionary(kv => kv.Key, kv => ToDto(kv.Value), StringComparer.Ordinal) : null,
             request.ReadDirs is { Count: > 0 } dirs ? dirs : null,
-            request.DisallowedTools is { Count: > 0 } denied ? denied : null);
+            request.DisallowedTools is { Count: > 0 } denied ? denied : null,
+            request.CacheTtl);
 
         HttpResponseMessage response;
         try
@@ -266,7 +268,7 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             result.Model,
             Enum.Parse<Destination>(result.Destination, ignoreCase: true),
             new RuntimeUsage(result.Usage?.InputTokens ?? 0, result.Usage?.OutputTokens ?? 0, result.Usage?.ReasoningChars ?? 0,
-                result.Usage?.CacheReadTokens ?? 0, result.Usage?.CacheWriteTokens ?? 0),
+                result.Usage?.CacheReadTokens ?? 0, result.Usage?.CacheWriteTokens ?? 0, result.Usage?.CacheWrite5mTokens ?? 0, result.Usage?.PeakContextTokens ?? 0),
             result.CostUsd,
             result.DurationS,
             result.Attempts,

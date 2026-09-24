@@ -176,16 +176,19 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
     /// <summary>Mesajlarin toplami; cikti mesaj basina bildirilen ile icerikten tahmin edilenin buyugudur.</summary>
     private static RuntimeUsage Sum(IEnumerable<(RuntimeUsage Usage, int Chars)> all)
     {
-        int input = 0, output = 0, read = 0, write = 0;
+        int input = 0, output = 0, read = 0, write = 0, shortWrite = 0, peak = 0;
         foreach (var (u, chars) in all)
         {
             input += u.InputTokens;
             output += Math.Max(u.OutputTokens, (int)Math.Ceiling(chars / OutputCharsPerToken));
             read += u.CacheReadTokens;
             write += u.CacheWriteTokens;
+            shortWrite += u.CacheWrite5mTokens;
+            // Tek mesajin girdisi o anki baglamdir; tepe toplam degil en buyuk mesajdir.
+            peak = Math.Max(peak, u.InputTokens);
         }
 
-        return new RuntimeUsage(input, output, 0, read, write);
+        return new RuntimeUsage(input, output, 0, read, write, shortWrite, peak);
     }
 
     /// <summary>

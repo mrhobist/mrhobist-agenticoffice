@@ -232,6 +232,19 @@ ve akışı `aclose()` ile hemen kapatır.
 puanı yöneten Claude Code oturumları, ~9 puanı ofis ajanıydı — uzun bağlamlı yönetim oturumu her mesajda
 yüz binlerce token'ı yeniden okur. Tahmin etmeden önce verinin zaten bir yerde yazılı olup olmadığına bak.
 
+## İzin geri çağrısı her yazmayı görmez (2026-09-24)
+
+Runtime'ın `_guard`'ı "dosya yazma yalnız cwd altında" sınırını uyguluyordu ve testleri geçiyordu. Ama ofis ajanı
+4 işte 9 turda `~/.claude/projects/<cwd>/memory/` altına dosya **yazdı ve düzenledi**: Claude Code'un otomatik
+hafızası açıktı ve CLI kendi hafıza dizinine yazmayı **izin sormadan** onaylıyor — `can_use_tool` hiç çağrılmıyor.
+Sonuç iki kat kötü: sınır delindi ve veritabanı dışında, çalışmadan çalışmaya taşınan gizli bir durum birikti
+(ajan her görevin başında o notları okuyordu). `setting_sources=[]` bunu kapatmıyor; ayrı değişken gerekiyor
+(`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`).
+
+**Ders:** bir izin kancasının sınırı, yalnız kancanın **gördüğü** çağrılar için geçerlidir. Sınırı test ederken
+"kanca reddediyor mu"ya değil, **gerçek bir koşunun araç kayıtlarında cwd dışı yol var mı**ya bak — o kayıt zaten
+`run_turn.data.toolUses`'ta duruyordu. Notların işe yarayanları bilgi dosyasına ve ajan md'sine taşındı.
+
 ## Sahne donması tuval boyutundan gelir, koddan değil (2026-09-26)
 
 "Ajanlar dolaşırken donuyor" şikâyetinde sahne kodu masum çıktı (kare 0,5 ms, yol bulma 1 ms, uzun görev yok).

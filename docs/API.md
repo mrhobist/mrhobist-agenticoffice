@@ -193,7 +193,7 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 | `GET /api/v1/runs/overview` | `RunsOverview` | **İşler** ekranı ve üst bar: kaç iş var, kaçı ne durumda, kaçı kullanıcıdan bir şey bekliyor (`inbox`). UI 5 s'de bir yoklar |
 | `GET /api/v1/jobs/health` | `{ status, pending }` | iş kanalında bekleyen iş sayısı (kimliksiz) |
 | `POST /api/v1/progress/{token}` `{ kind?: tool\|text\|thinking\|usage, tool?, target?, text?, messageId?, usage? }` | **204** | Runtime'ın canlı bildirimi (kimliksiz; tek kullanımlık `token` yetkidir, tur bitince düşer). `kind` yoksa araç (eski gövde). Araçta Api `agent.tool` sahne olayı yayımlar; metin/düşünce `live` görünümüne, kullanım kesilen turun kaydına gider. Bilinmeyen belirteç sessizce 204 |
-| `GET /api/v1/settings` · `PUT /api/v1/settings` `{ limitGuards: { anthropic: 99 } }` | `SettingsDto` | Limit koruması eşiği, sağlayıcı başına % (1–100; değilse 400 `settings.invalid`). `app_settings` |
+| `GET /api/v1/settings` · `PUT /api/v1/settings` `{ limitGuards: { anthropic: 99 }, cacheTtl: null }` | `SettingsDto` | Limit koruması eşiği, sağlayıcı başına % (1–100; değilse 400 `settings.invalid`). `cacheTtl` (2026-09-24): Anthropic istem önbelleğinin ömrü `5m` \| `1h` \| `null` (CLI varsayılanı, bugün 1 sa); başka değer 400 `settings.invalid`, atlanırsa `null`. `app_settings` |
 
 `RunsOverview.awaitingInput`: takılıp seçim bekleyen çalışma sayısı (sona eklendi; `awaitingApproval` yalnız plan onayı).
 `RunSummary` ek alanlar: `question` (`awaitingInput`'ta `{ ts, agent, text, options: [{ id, label, detail, needsNote }], task, stage, context }`),
@@ -213,7 +213,8 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 { ...RunSummary,
   "workflowDef": { /* Workflow, calismayla birlikte dondurulan kopya */ },
   "spec": { "summary": "…", "architecture": "…", "rules": ["…"],
-            "tasks": [{ "id": "t1", "title": "…", "description": "…", "files": ["…"], "acceptance": ["…"], "dependsOn": [] }] },
+            "knowledge": ["…"], "codeMap": [{ "path": "src/A.cs", "note": "tek satır öz" }],   // ikisi de isteğe bağlı
+            "tasks": [{ "id": "t1", "title": "…", "description": "…", "files": ["…"], "acceptance": ["…"], "dependsOn": [], "ruleRefs": [0] }] },
   "order": ["t1", "t2"],                       // topolojik yürütme sırası
   "tasks": [{ "id": "t1", "phases": [ /* Phase[] */ ] }],
   "messages": [ /* Message[]: plan notları, devir notları, sorular */ ] }
@@ -236,7 +237,7 @@ uzun işi (analiz, dağıtım) Api içindeki sıralı iş kanalına bırakır ve
 - `Message`: `{ ts, kind: ask|answer|handoff|note, from, to, body, task, stage, ref, subject }`. Plan revize notu
   `from: "user", to: "analyst", kind: "note", subject: "plan-revision"`. Bir adım hata ile bitince
   `from: <ajan>, to: "user", kind: "note", subject: "error", body: <neden>` yazılır ("takıldı" tek başına bilgi değildir).
-- `Turn`: `{ ts, agent, stage, task, round, provider, model, destination, durationS, promptChars, outputChars, costUsd, prompt, output, inputTokens, outputTokens, toolUses, turns, cacheReadTokens, cacheWriteTokens, toolsOffered, context, cutShort }`. `cutShort=true`: tur yarıda kesildi, kullanım canlı bildirimden, `costUsd` fiyat tablosundan tahmin (fiyat yoksa null).
+- `Turn`: `{ ts, agent, stage, task, round, provider, model, destination, durationS, promptChars, outputChars, costUsd, prompt, output, inputTokens, outputTokens, toolUses, turns, cacheReadTokens, cacheWriteTokens, toolsOffered, context, cutShort, mcpServers, cacheWrite5mTokens, peakContextTokens, cacheTtl }`. `cutShort=true`: tur yarıda kesildi, kullanım canlı bildirimden, `costUsd` fiyat tablosundan tahmin (fiyat yoksa null). `peakContextTokens`: turdaki en büyük tek API çağrısının girdisi (bağlamın tepesi; `inputTokens` iç turların toplamıdır). `cacheWrite5mTokens`: `cacheWriteTokens` içindeki 5 dk'lık pay. Üçü de 2026-09-24 öncesi satırlarda yok.
   `context` (geçmiş taşınmadıysa `null`): `{ carriedMessages, carriedChars, keptMessages, keptChars, charsPerToken, calibrationSamples }` —
   sıkıştırma öncesi/sonrası; `calibrationSamples: 0` ise oran ölçülmemiş varsayılandır (DOMAIN.md → Bağlam bütçesi).
 - SSE (`GET /runs/{id}/events`) **henüz yok**; UI aktif çalışmayı 2 s'de bir `GET /runs/{id}` ile yoklar — varsayımla ilerlenir.

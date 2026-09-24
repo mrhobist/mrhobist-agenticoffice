@@ -2321,6 +2321,10 @@ export interface components {
             /** Format: int32 */
             maxPerRun: number | string;
         };
+        CodeNote: {
+            path: string;
+            note: string;
+        };
         ContextStats: {
             /** Format: int32 */
             carriedMessages: number | string;
@@ -2938,6 +2942,16 @@ export interface components {
              * @default 0
              */
             cacheWriteTokens: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            cacheWrite5mTokens: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            peakContextTokens: number | string;
         };
         RuntimeUsageLimit: {
             kind: string;
@@ -2956,6 +2970,7 @@ export interface components {
             limitGuards: {
                 [key: string]: number | string;
             };
+            cacheTtl?: null | string;
         };
         Spec: {
             summary: string;
@@ -2963,6 +2978,7 @@ export interface components {
             rules: string[];
             tasks: components["schemas"]["RunTask"][];
             knowledge?: null | string[];
+            codeMap?: null | components["schemas"]["CodeNote"][];
         };
         SpendLine: {
             source: string;
@@ -3075,6 +3091,11 @@ export interface components {
             context?: null | components["schemas"]["ContextStats"];
             cutShort?: null | boolean;
             mcpServers?: null | string[];
+            /** Format: int32 */
+            cacheWrite5mTokens?: null | number | string;
+            /** Format: int32 */
+            peakContextTokens?: null | number | string;
+            cacheTtl?: null | string;
         };
         UpdateAgentRequest: {
             name: string;

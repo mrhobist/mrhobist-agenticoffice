@@ -38,7 +38,12 @@ public sealed record RuntimeTurnRequest(
     /// Modele HIC sunulmayacak araclar (SDK <c>disallowed_tools</c>): MCP sunucusunda secilmemis araclar, <c>mcp__{key}__{arac}</c>.
     /// Semalari baglama girmez. Sona eklendi; null = yok.
     /// </summary>
-    IReadOnlyList<string>? DisallowedTools = null);
+    IReadOnlyList<string>? DisallowedTools = null,
+    /// <summary>
+    /// Istem onbelleginin omru (<see cref="Domain.Settings.CacheTtls"/>): Ayarlar'dan, yalniz Anthropic'e. null = CLI varsayilani (2026-09-24
+    /// olcumu: 1 sa). Runtime yalniz CLI degiskenine esler. Sona eklendi (CLAUDE.md §5).
+    /// </summary>
+    string? CacheTtl = null);
 
 /// <summary>Runtime'a giden MCP baglantisi (SDK bicimi): <c>stdio</c> komut/args/env · <c>http</c>|<c>sse</c> url/basliklar.</summary>
 public sealed record RuntimeMcpServer(
@@ -79,8 +84,10 @@ public sealed record RuntimeMessage(string Role, string Content);
 /// Tur kullanimi. <paramref name="InputTokens"/> TOPLAMDIR: dogrudan + onbellege yazilan + onbellekten okunan.
 /// <paramref name="CacheReadTokens"/> ve <paramref name="CacheWriteTokens"/> o toplamin icindeki paylardir
 /// (ikisi de 0 = saglayici onbellek bildirmiyor). Yeni alanlar SONA eklendi (CLAUDE.md §5).
+/// <paramref name="CacheWrite5mTokens"/>: yazmanin 5 dakikalik payi (ucuz omur); 0 = hepsi 1 saatlik ya da bildirilmedi.
+/// <paramref name="PeakContextTokens"/>: turdaki en buyuk tek API cagrisinin girdisi, yani baglamin tepesi (0 = olculemedi).
 /// </summary>
-public sealed record RuntimeUsage(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0);
+public sealed record RuntimeUsage(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0, int CacheWrite5mTokens = 0, int PeakContextTokens = 0);
 
 public sealed record RuntimeToolUse(string Tool, string? Target);
 
@@ -153,7 +160,7 @@ public interface IAgentRuntimeService
     Task<RuntimeMcpProbe> ProbeMcpAsync(RuntimeMcpServer server, CancellationToken ct);
 }
 
-public sealed record RuntimeLocalUsage(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens);
+public sealed record RuntimeLocalUsage(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens, long CacheWrite5mTokens = 0);
 
 /// <summary>Runtime'a ulasilamiyor: Api 503 <c>runtime.unavailable</c> doner.</summary>
 public sealed class RuntimeUnavailableException(string message) : Exception(message);

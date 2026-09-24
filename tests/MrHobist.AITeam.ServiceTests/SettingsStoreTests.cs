@@ -36,6 +36,20 @@ public sealed class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Onbellek_omru_varsayilan_bos_kaydedilir_ve_gecersizi_reddedilir()
+    {
+        var store = _fx.Settings;
+        Assert.Null((await store.LoadAsync(Ct)).CacheTtl); // varsayilan: CLI'nin kendi omru
+
+        await store.SaveAsync(new AppSettings(AppSettings.Default.LimitGuards, CacheTtls.FiveMinutes), Ct);
+        Assert.Equal("5m", (await store.LoadAsync(Ct)).CacheTtl);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => store.SaveAsync(new AppSettings(AppSettings.Default.LimitGuards, "2h"), Ct));
+        Assert.Equal(ErrorCodes.SettingsInvalid, ex.ErrorCode);
+        Assert.Equal("5m", (await store.LoadAsync(Ct)).CacheTtl); // gecersiz kayit oncekini bozmaz
+    }
+
+    [Fact]
     public async Task Gecersiz_esik_kaydedilmez()
     {
         var ex = await Assert.ThrowsAsync<DomainException>(() => _fx.Settings.SaveAsync(new AppSettings(new Dictionary<Provider, int> { [Provider.Anthropic] = 0 }), Ct));

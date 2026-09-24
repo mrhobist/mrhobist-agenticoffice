@@ -256,7 +256,7 @@ def test_http_turn_anthropic_yonlenir(monkeypatch, cli_present):
     body = r.json()
     assert body["text"] == "ok" and body["costUsd"] == 0.5
     assert body["usage"] == {"inputTokens": 1, "outputTokens": 2, "reasoningChars": 0,
-                             "cacheReadTokens": 0, "cacheWriteTokens": 0}
+                             "cacheReadTokens": 0, "cacheWriteTokens": 0, "cacheWrite5mTokens": 0, "peakContextTokens": 0}
     assert body["destination"] == "anthropic"
 
 
@@ -482,6 +482,47 @@ def test_alt_surec_kullanici_ortamini_devralmaz(cli_present):
     opts = AnthropicProvider()._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m", "tools": ["Read"], "cwd": "."}))
     assert opts.setting_sources == [] and opts.strict_mcp_config is True
     assert opts.env["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
+    # 2026-09-24: otomatik hafiza `_guard`'a ugramadan cwd disina yaziyordu.
+    assert opts.env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+
+
+def test_onbellek_omru_cli_degiskenine_eslenir(cli_present):
+    """Secim .NET'in (Ayarlar); runtime yalniz esler. Bos = CLI varsayilani, hicbir degisken yazilmaz."""
+    def env(ttl):
+        body = {"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m", "tools": ["Read"], "cwd": "."}
+        if ttl:
+            body["cacheTtl"] = ttl
+        return AnthropicProvider()._options(TurnRequest.model_validate(body)).env
+
+    assert env("5m")["FORCE_PROMPT_CACHING_5M"] == "1" and "ENABLE_PROMPT_CACHING_1H" not in env("5m")
+    assert env("1h")["ENABLE_PROMPT_CACHING_1H"] == "1" and "FORCE_PROMPT_CACHING_5M" not in env("1h")
+    assert "FORCE_PROMPT_CACHING_5M" not in env(None) and "ENABLE_PROMPT_CACHING_1H" not in env(None)
+    with pytest.raises(ValueError):
+        env("2h")
+
+
+async def test_tepe_baglam_ve_5dk_yazma_payi_olculur(monkeypatch, cli_present):
+    """Toplam girdi ic turlarin toplamidir; baglamin tepesi en buyuk tek cagridir. Sonuc toplaminda omur kirilimi yoksa
+    mesajlardan (her mesajin son degeri) toplanir."""
+    def u(ctx, write, short):
+        return {"input_tokens": 2, "cache_read_input_tokens": ctx - write - 2, "cache_creation_input_tokens": write,
+                "cache_creation": {"ephemeral_5m_input_tokens": short, "ephemeral_1h_input_tokens": write - short}, "output_tokens": 5}
+    monkeypatch.setattr(claude_agent_sdk, "query", _fake_query({}, messages=[
+        AssistantMessage(content=[TextBlock(text="a")], model="m", message_id="m1", usage=u(20_000, 20_000, 20_000)),
+        AssistantMessage(content=[TextBlock(text="b")], model="m", message_id="m2", usage=u(90_000, 5_000, 5_000)),
+        AssistantMessage(content=[TextBlock(text="c")], model="m", message_id="m3", usage=u(60_000, 1_000, 0)),
+        _result(result="ok", usage={"input_tokens": 6, "cache_read_input_tokens": 143_994, "cache_creation_input_tokens": 26_000, "output_tokens": 15}),
+    ]))
+    req = TurnRequest(systemPrompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m", tools=["Read"], cwd=".")
+    resp = await AnthropicProvider().complete(req)
+    assert resp.usage.peak_context_tokens == 90_000
+    assert resp.usage.cache_write_tokens == 26_000 and resp.usage.cache_write_5m_tokens == 25_000
+
+
+def test_kullanim_omur_kirilimi_okunur():
+    raw = {"input_tokens": 1, "cache_creation_input_tokens": 300, "cache_creation": {"ephemeral_5m_input_tokens": 200, "ephemeral_1h_input_tokens": 100}}
+    assert mod._usage_of(raw).cache_write_5m_tokens == 200
+    assert mod._usage_of({"cache_creation_input_tokens": 300}).cache_write_5m_tokens == 0, "kirilim yoksa 1 sa varsayilir"
 
 
 def test_scope_nesneden_model_adi_cikarilir():
@@ -551,7 +592,7 @@ async def test_canli_akis_metin_dusunce_arac_ve_kullanimi_bildirir(monkeypatch, 
     # m1 ikinci blokta ayni kullanimla gelir ama icerik buyudu (arac girdisi): yeniden bildirilir.
     assert [e["kind"] for e in sent] == ["thinking", "usage", "tool", "usage", "text", "usage"]
     assert sent[0]["text"] == "once dizine bakayim"
-    assert sent[1] == {"kind": "usage", "messageId": "m1", "chars": 19, "usage": {"inputTokens": 1002, "outputTokens": 7, "reasoningChars": 0, "cacheReadTokens": 900, "cacheWriteTokens": 100}}
+    assert sent[1] == {"kind": "usage", "messageId": "m1", "chars": 19, "usage": {"inputTokens": 1002, "outputTokens": 7, "reasoningChars": 0, "cacheReadTokens": 900, "cacheWriteTokens": 100, "cacheWrite5mTokens": 0, "peakContextTokens": 0}}
     assert sent[2]["tool"] == "Read" and sent[2]["target"] == "a.cs"
     assert sent[3]["chars"] == 19 + len(json.dumps({"file_path": "a.cs"}))
     assert sent[5]["messageId"] == "m2" and sent[5]["chars"] == 5
@@ -633,4 +674,5 @@ def test_yerel_kullanim_kaynak_ve_klasore_gore_toplanir_mesaj_tekillenir(tmp_pat
     office = by[("sdk-py", "C--Hedef")]
     assert office.messages == 2 and office.input_tokens == 222 and office.output_tokens == 10
     assert office.cache_read_tokens == 200 and office.cache_write_tokens == 20
+    assert office.cache_write_5m_tokens == 0, "kirilimsiz kayit 1 sa sayilir"
     assert by[("claude-desktop", "C--Ofis")].messages == 1

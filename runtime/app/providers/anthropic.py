@@ -272,15 +272,19 @@ def _sdk_mcp(cfg: McpServerConfig) -> dict[str, Any]:
 
 
 def _usage_of(raw: dict[str, Any] | None) -> Usage:
-    """SDK kullanim sozlugu -> sozlesme. Girdi = dogrudan + onbellege yazilan + onbellekten okunan."""
+    """SDK kullanim sozlugu -> sozlesme. Girdi = dogrudan + onbellege yazilan + onbellekten okunan.
+    Yazmanin omur kirilimi `cache_creation.ephemeral_5m_input_tokens`'ta; yoksa 0 (fiyat 1 sa varsayar)."""
     raw = raw or {}
     read = int(raw.get("cache_read_input_tokens") or 0)
     write = int(raw.get("cache_creation_input_tokens") or 0)
+    split = raw.get("cache_creation")
+    short = int(split.get("ephemeral_5m_input_tokens") or 0) if isinstance(split, dict) else 0
     return Usage(
         input_tokens=int(raw.get("input_tokens") or 0) + read + write,
         output_tokens=int(raw.get("output_tokens") or 0),
         cache_read_tokens=read,
         cache_write_tokens=write,
+        cache_write_5m_tokens=min(short, write),
     )
 
 
@@ -322,8 +326,16 @@ class AnthropicProvider:
             # commit imza kurali da ajanin baglamina siziyordu. Ajan hedef projenin CLAUDE.md'sini kendi araciyla okur.
             "setting_sources": [],
             "strict_mcp_config": True,
-            "env": {"ENABLE_CLAUDEAI_MCP_SERVERS": "false"},
+            # Otomatik hafiza da kapali (2026-09-24 olcumu): acikken ajan `~/.claude/projects/<cwd>/memory/` altina 9 turda
+            # yazdi/okudu. CLI kendi hafiza dizinini izin sormadan onayliyor, `_guard`'a hic ugramiyor: "yazma yalniz cwd"
+            # sinirini deliyor ve veritabani disinda gizli, calismadan calismaya tasinan durum biriktiriyordu.
+            "env": {"ENABLE_CLAUDEAI_MCP_SERVERS": "false", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"},
         }
+        if request.cache_ttl == "5m":
+            # Onbellek omru .NET'in secimi (Ayarlar); burasi yalniz CLI'nin degiskenine esler. 5 dk yazma 1,25x, 1 sa 2x.
+            opts["env"]["FORCE_PROMPT_CACHING_5M"] = "1"
+        elif request.cache_ttl == "1h":
+            opts["env"]["ENABLE_PROMPT_CACHING_1H"] = "1"
         if prompt_file:
             # Uzun istem komut satirina sigmaz (bkz. PROMPT_FILE_THRESHOLD): ayni metin dosyadan okunur.
             if request.system_prompt_mode == "claude_code":
@@ -477,6 +489,9 @@ class AnthropicProvider:
         # Ayni API mesaji blok basina tekrar gelir (ayni message_id, ayni kullanim): degismeyen kullanim yeniden bildirilmez.
         sent_usage: dict[str, tuple[Usage, int]] = {}
         chars: dict[str, int] = {}
+        # Tek API cagrisinin girdisi = o anki baglam; turun tepesi olcu olarak doner (is kurali degil, sayim).
+        peak = 0
+        short_by_msg: dict[str, int] = {}
         stream: Any = None
         try:
             prompt_text = self._prompt(request)
@@ -506,6 +521,8 @@ class AnthropicProvider:
                     if msg.usage and msg.message_id:
                         chars[msg.message_id] = chars.get(msg.message_id, 0) + sum(_block_chars(b) for b in msg.content)
                         state = (_usage_of(msg.usage), chars[msg.message_id])
+                        peak = max(peak, state[0].input_tokens)
+                        short_by_msg[msg.message_id] = state[0].cache_write_5m_tokens
                         if sent_usage.get(msg.message_id) != state:
                             sent_usage[msg.message_id] = state
                             await _report_progress(client, request.progress_url, ProgressEvent(kind="usage", message_id=msg.message_id, usage=state[0], chars=state[1]))
@@ -538,6 +555,11 @@ class AnthropicProvider:
             if client is not None:
                 await client.aclose()
 
+        usage = _usage_of(usage_raw)
+        if usage.cache_write_tokens and not usage.cache_write_5m_tokens and short_by_msg:
+            # Sonuc toplaminda kirilim yoksa mesajlardan toplanir (ayni mesajin son degeri).
+            usage.cache_write_5m_tokens = min(sum(short_by_msg.values()), usage.cache_write_tokens)
+        usage.peak_context_tokens = peak
         return TurnResponse(
             text="\n".join(parts).strip(),
             structured=structured,
@@ -546,7 +568,7 @@ class AnthropicProvider:
             destination=DESTINATION_OF[PROVIDER_NAME],
             # Girdi = dogrudan + onbellege yazilan + onbellekten okunan: kullanici "kac token gitti" diye bakar.
             # Kirilim ayrica tasinir: toplam tek basina "baglam bosa mi gitti" sorusunu cevaplamaz.
-            usage=_usage_of(usage_raw),
+            usage=usage,
             cost_usd=cost,
             duration_s=round(time.monotonic() - started, 3),
             attempts=1,
@@ -828,6 +850,7 @@ class AnthropicProvider:
             g.output_tokens += u.output_tokens
             g.cache_read_tokens += u.cache_read_tokens
             g.cache_write_tokens += u.cache_write_tokens
+            g.cache_write_5m_tokens += u.cache_write_5m_tokens
         return sorted(groups.values(), key=lambda g: (g.source, g.project, g.model))
 
     def models(self) -> list[ModelInfo]:

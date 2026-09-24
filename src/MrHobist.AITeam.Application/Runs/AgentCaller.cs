@@ -89,7 +89,7 @@ public sealed record TurnWatch(TimeSpan Idle, TimeSpan HardCap, TimeSpan Poll)
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
-public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null, IModelCatalog? catalog = null, IMcpStore? mcp = null, Mcp.IMcpTokenRefresher? mcpTokens = null)
+public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null, IModelCatalog? catalog = null, IMcpStore? mcp = null, Mcp.IMcpTokenRefresher? mcpTokens = null, ISettingsStore? settings = null)
 {
     /// <summary>Kesilen turun kismi yaniti bu anahtarla istisnaya eklenir; RunService maliyeti calismanin toplamina ekler.</summary>
     public const string PartialReplyKey = "aiteam.partialReply";
@@ -142,11 +142,13 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage), LiveContext(parts, messages, mcpServers))
             : null;
         var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
+        var cacheTtl = await CacheTtlForAsync(target.Provider, ct).ConfigureAwait(false);
         var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
             Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
             SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace,
             McpServers: mcpServers, ReadDirs: tools?.ReadDirs,
-            DisallowedTools: resolvedMcp is { Disallowed.Count: > 0 } ? resolvedMcp.Disallowed : null);
+            DisallowedTools: resolvedMcp is { Disallowed.Count: > 0 } ? resolvedMcp.Disallowed : null,
+            CacheTtl: cacheTtl);
 
         var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -168,7 +170,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             {
                 // Tur yarida kesildi (zaman asimi, iptal, saglayici hatasi) ama token harcandi: kayda gecmeden kaybolmasin
                 // (CLAUDE.md §4). 2026-09-23'te kesilen ilk t1 ~3 $ harcamis, run_turn'e hic yazilmamisti.
-                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, ex, callStarted, tools is not null, context).ConfigureAwait(false);
+                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, ex, callStarted, tools is not null, context, cacheTtl).ConfigureAwait(false);
                 ex.Data[PartialReplyKey] = partial;
                 throw;
             }
@@ -207,7 +209,10 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 r.Usage.CacheWriteTokens,
                 ToolsOffered: tools is not null,
                 Context: context,
-                McpServers: mcpServers is { Count: > 0 } ? [.. mcpServers.Keys] : null);
+                McpServers: mcpServers is { Count: > 0 } ? [.. mcpServers.Keys] : null,
+                CacheWrite5mTokens: r.Usage.CacheWrite5mTokens > 0 ? r.Usage.CacheWrite5mTokens : null,
+                PeakContextTokens: r.Usage.PeakContextTokens > 0 ? r.Usage.PeakContextTokens : null,
+                CacheTtl: cacheTtl);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
             return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m, turn.ToolUses ?? [], r.Usage.InputTokens, r.Usage.OutputTokens);
@@ -224,6 +229,27 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     }
 
     private sealed record Attempted(RuntimeTurnResponse Response, TimeSpan Elapsed);
+
+    /// <summary>
+    /// Istem onbellegi omru (Ayarlar): yalniz Anthropic'e gider, onbellek omrunu baska saglayici tanimiyor. Ayar okunamazsa
+    /// CLI varsayilani (null): bir olcum ayari turu durdurmamali.
+    /// </summary>
+    private async Task<string?> CacheTtlForAsync(Provider provider, CancellationToken ct)
+    {
+        if (settings is null || provider != Provider.Anthropic)
+        {
+            return null;
+        }
+
+        try
+        {
+            return (await settings.LoadAsync(ct).ConfigureAwait(false)).CacheTtl;
+        }
+        catch (DomainException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// Ajana bu turda acilacak MCP sunuculari (docs/DOMAIN.md → MCP sunuculari): yalniz aracli turda ve MCP calistirabilen saglayicida.
@@ -275,7 +301,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     /// Bu yol hicbir zaman asil hatayi ortmemeli: kayit basarisizsa yutulur. Iptal belirteci kullanilmaz -- iptal edilmis
     /// calismanin da harcamasi yazilmalidir.
     /// </summary>
-    private async Task<AgentReply> RecordCutShortAsync(Run run, string agentKey, string? stage, string? task, int? round, AgentTarget target, string system, IReadOnlyList<RuntimeMessage> messages, RuntimeUsage spent, Exception ex, DateTimeOffset started, bool toolsOffered, ContextStats? context)
+    private async Task<AgentReply> RecordCutShortAsync(Run run, string agentKey, string? stage, string? task, int? round, AgentTarget target, string system, IReadOnlyList<RuntimeMessage> messages, RuntimeUsage spent, Exception ex, DateTimeOffset started, bool toolsOffered, ContextStats? context, string? cacheTtl)
     {
         decimal? cost = null;
         try
@@ -315,7 +341,10 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             spent.CacheWriteTokens,
             ToolsOffered: toolsOffered,
             Context: context,
-            CutShort: true);
+            CutShort: true,
+            CacheWrite5mTokens: spent.CacheWrite5mTokens > 0 ? spent.CacheWrite5mTokens : null,
+            PeakContextTokens: spent.PeakContextTokens > 0 ? spent.PeakContextTokens : null,
+            CacheTtl: cacheTtl);
         try
         {
             await runs.AppendTurnAsync(run.Id, turn, CancellationToken.None).ConfigureAwait(false);

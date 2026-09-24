@@ -63,7 +63,7 @@ public sealed class SpendReader(IAgentRuntimeService runtime, IRunStore runs, IM
 
         var lines = (await runtime.ListLocalUsageAsync(from, until, ct).ConfigureAwait(false))
             .Select(u => new SpendLine(u.Source, u.Project, u.Model, u.Messages, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens,
-                prices.TryGetValue(u.Model, out var p) ? Math.Round(p.Estimate(u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens), 2) : null))
+                prices.TryGetValue(u.Model, out var p) ? Math.Round(p.Estimate(u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.CacheWrite5mTokens), 2) : null))
             .ToList();
 
         var sources = lines

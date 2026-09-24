@@ -964,3 +964,30 @@ ekipteki kişilere MCP yetkisi verilsin." Kararlar belgede (DOMAIN.md → Ekler,
   (Haiku 4.5, $0,01): ajan cwd dışındaki eki Read ile okudu, `mcp__echo__echo` aracını çağırdı.
 - **Görülmedi:** eki olan bir çalışmanın detay ekranı (gerçek iş kota harcar); PDF/resim okumanın Opus'la büyük dosyada davranışı.
 - **Bilinçli dışarıda:** revize/devam brief'ine ek; Codex (openai) MCP bağlantısı; MCP araç çağrısı başına izin sorma.
+
+## Token yönetimi: ölçüm ve dört kaldıraç (2026-09-24, kullanıcı: "1, 2, 4, 5, 6") ✅
+
+**Ölçüm (4 iş, 18 tur, $35,05 eşdeğer):** önbelleğe yazma %40, çıktı %38, okuma %22; analiz %15. .NET sıkıştırması ve
+kalibrasyonu canlı akışta hiç devreye girmiyor (taşınan geçmiş 0, araçsız tur 0). Bağlam CLI oturumunun içinde büyüyor:
+tepe tur başına 95–168K, araç sonuçlarının %47'si Bash (ajan `for f …; cat` ile 20–25K karakterlik yığın döküyordu),
+ajan CLI'nin taşan çıktı dosyalarını (47K/37K karakter) baştan sona okuyordu. Bütün yazmalar 1 saatlik TTL.
+
+1. **Otomatik hafıza kapalı** (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`): ajan 9 turda cwd dışına, CLI'nin hafıza dizinine
+   yazmıştı; `_guard`'a uğramıyordu (LESSONS). İşe yarayan notlar taşındı: ofis ortamı (Bash sınırının URL/regex/`..`
+   tuzakları, dolu portlar) ajan md'sine, TypeScript 7 / PrimeVue global tip çakışması ön yüz bilgisine. Projeye özel
+   notlar (referans projelerin yeri, build rotası grep'i) taşınmadı; hedef projenin eski hafıza dosyaları diskte duruyor.
+2. **İstem önbelleği ömrü ayarı** (Ayarlar → İstem önbelleği; varsayılan değişmedi). Runtime 5 dk yazma payını ayırır,
+   tur kaydı `cacheWrite5mTokens` + `cacheTtl` taşır, fiyat tablosu `cacheWrite5m`. DOMAIN → İstem önbelleği ömrü.
+4. **Okuma disiplini** ajan md'sinde: önce ara sonra dar oku, topluca `cat` yok, kod haritası/rapordaki dosyayı yeniden
+   okuma, taşan çıktıyı Grep/tail ile.
+5. **Kod haritası:** plan `codeMap[]` (yol + tek satır öz, ≤25); görev isteminde "Kod haritası", görevin dosyaları önce,
+   3000 karakterde kesilir.
+6. **Ölçü:** `Turn.peakContextTokens` (turun en büyük tek çağrısı); `context-report.py` ikinci bölüm "context inside the
+   call". .NET compactor'ı bilinçli uykuda (DOMAIN → Bağlam bütçesi).
+
+**Doğrulama:** 50 birim + 160 servis + 66 Python testi geçti; UI typecheck temiz; tipler yeni Api'den (yalıtılmış, 5081,
+geçici veri) `openapi-typescript` ile üretildi, fark yalnız eklemeli. Canlı Api (5080) yeniden başlatılmadı: yeni kod
+bir sonraki kalkışta devreye girer.
+
+**Ölçülmedi:** gerçek koşu yok. Sıradaki iş koşusunda bakılacak: tepe bağlam ve iç tur başına girdi düştü mü (okuma
+disiplini + harita), analizin `codeMap`'i dolduruyor mu, `5m` ile yazma maliyeti ve kota yüzdesi ne oldu.

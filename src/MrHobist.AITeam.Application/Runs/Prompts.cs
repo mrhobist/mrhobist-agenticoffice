@@ -49,6 +49,8 @@ public static class Prompts
         sb.AppendLine("Belirsizlikte en makul varsayımı seç ve rules içinde açıkça yaz.");
         // 2026-09-23 maliyet kaldiraclari: her gorev tum kurallari ve tum bilgi dosyalarini her ic turda yeniden okuyordu.
         sb.AppendLine("Her görevin ruleRefs alanına o görevi bağlayan kuralların 0 tabanlı sıra numaralarını yaz (tüm görevleri bağlayan kural her görevde yer alır); emin değilsen boş bırak, o zaman tüm kurallar gider.");
+        // 2026-09-24: gorevler analizin okudugu dosyalari anlamak icin yeniden okuyordu; harita her gorevin istemine gider.
+        sb.AppendLine("Okuduğun dosyalardan uygulayıcının bilmesi gerekenleri codeMap'e yaz (en çok 25): yol + tek satır not (imza, desen, dikkat). Uygulayıcı bu dosyaları anlamak için yeniden okumaz; yalnız değiştireceğini açar. Dosya içeriği kopyalama, yalnız özü.");
         if (knowledge is { Count: > 1 })
         {
             sb.AppendLine().AppendLine("# Bilgi dosyaları");
@@ -223,6 +225,49 @@ public static class Prompts
         _ => $"{bytes / 1024.0 / 1024.0:0.#} MB",
     };
 
+    /// <summary>Kod haritasinin istemdeki ust siniri (karakter): her ic turda yeniden okunur, buyurse kazanctan cok maliyet olur.</summary>
+    public const int CodeMapMaxChars = 3000;
+
+    /// <summary>
+    /// Analizin kod haritasi (<see cref="Spec.CodeMap"/>): once gorevin dosyalari, sonra digerleri; <see cref="CodeMapMaxChars"/>'ta kesilir.
+    /// Not satiri 200 karakterle sinirli. Bos harita = bolum yok.
+    /// </summary>
+    private static void AppendCodeMap(StringBuilder sb, Spec spec, RunTask task)
+    {
+        if (spec.CodeMap is not { Count: > 0 } map)
+        {
+            return;
+        }
+
+        var own = new HashSet<string>(task.Files.Select(Normalize), StringComparer.OrdinalIgnoreCase);
+        var ordered = map.Where(n => !string.IsNullOrWhiteSpace(n.Path)).OrderBy(n => own.Contains(Normalize(n.Path)) ? 0 : 1).ToList();
+        var lines = new List<string>();
+        var used = 0;
+        foreach (var n in ordered)
+        {
+            var note = n.Note.Trim().ReplaceLineEndings(" ");
+            var line = $"- `{n.Path.Trim()}` — {(note.Length <= 200 ? note : note[..199] + "…")}";
+            if (used + line.Length > CodeMapMaxChars)
+            {
+                break;
+            }
+
+            lines.Add(line);
+            used += line.Length;
+        }
+
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("# Kod haritası (analizden)");
+        sb.AppendLine("Analiz bu dosyaları okudu. Anlamak için yeniden OKUMA; yalnız değiştireceğin dosyayı düzenlemeden önce aç.");
+        sb.AppendJoin('\n', lines).AppendLine().AppendLine();
+
+        static string Normalize(string path) => path.Trim().Replace('\\', '/').TrimStart('.', '/');
+    }
+
     /// <summary>Gorev baglami: plan + gorev + kurallar + dizin. Uc yurutucu de bunu kullanir.</summary>
     private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null)
     {
@@ -242,6 +287,7 @@ public static class Prompts
         }
 
         sb.AppendLine();
+        AppendCodeMap(sb, spec, a.Task);
         if (attachments is { Items.Count: > 0 })
         {
             AppendAttachments(sb, attachments);

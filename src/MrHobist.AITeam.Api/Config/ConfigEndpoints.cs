@@ -109,11 +109,14 @@ public static class ConfigEndpoints
 // Ad `ProviderLoginRequest`: Auth/LoginRequest (kullanici adi + sifre) ile OpenAPI semasinda cakismasin (gen:api).
 public sealed record ProviderLoginRequest(string? Mode, string? Email, string? ApiKey = null);
 
-/// <summary><c>GET/PUT /settings</c> govdesi: <c>{ limitGuards: { anthropic: 99 } }</c>. Sozlesmede saglayici adi kucuk harf.</summary>
-public sealed record SettingsDto(Dictionary<string, int> LimitGuards)
+/// <summary>
+/// <c>GET/PUT /settings</c> govdesi: <c>{ limitGuards: { anthropic: 99 }, cacheTtl: null }</c>. Sozlesmede saglayici adi kucuk harf.
+/// <c>cacheTtl</c>: <c>5m</c> | <c>1h</c> | null (CLI varsayilani); atlanirsa null.
+/// </summary>
+public sealed record SettingsDto(Dictionary<string, int> LimitGuards, string? CacheTtl = null)
 {
     public static SettingsDto From(Domain.Settings.AppSettings s)
-        => new(s.LimitGuards.ToDictionary(kv => Domain.Agents.Providers.Wire(kv.Key), kv => kv.Value));
+        => new(s.LimitGuards.ToDictionary(kv => Domain.Agents.Providers.Wire(kv.Key), kv => kv.Value), s.CacheTtl);
 
     public Domain.Settings.AppSettings ToDomain()
     {
@@ -124,6 +127,6 @@ public sealed record SettingsDto(Dictionary<string, int> LimitGuards)
             guards[p] = value;
         }
 
-        return new Domain.Settings.AppSettings(guards);
+        return new Domain.Settings.AppSettings(guards, string.IsNullOrWhiteSpace(CacheTtl) ? null : CacheTtl.Trim());
     }
 }

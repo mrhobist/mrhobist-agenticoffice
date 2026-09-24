@@ -342,8 +342,11 @@ export interface UserQuestion {
 /** POST /api/v1/runs/{id}/answer */
 export interface AnswerRequest { choice: string; note?: string | null }
 
-/** GET/PUT /api/v1/settings — saglayici basina limit korumasi esigi (%). */
-export interface AppSettings { limitGuards: Record<string, number> }
+/**
+ * GET/PUT /api/v1/settings — saglayici basina limit korumasi esigi (%) ve Anthropic istem onbelleginin omru
+ * (`5m` | `1h` | null = CLI varsayilani, bugun 1 sa).
+ */
+export interface AppSettings { limitGuards: Record<string, number>; cacheTtl?: '5m' | '1h' | null }
 
 /** Gelen kutusu satirinin turu: soru (plan onayi), karar (durdu: yeniden dene / iptal), soru (ajan ask). */
 export type InboxKind = Schemas['InboxKind']

@@ -59,7 +59,11 @@ function guardOf(p: string): number { return settings.value?.limitGuards[p] ?? 9
 function setGuard(p: string, v: string) {
   if (!settings.value) return
   const n = Math.round(Number(v))
-  settings.value = { limitGuards: { ...settings.value.limitGuards, [p]: Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : 99 } }
+  settings.value = { ...settings.value, limitGuards: { ...settings.value.limitGuards, [p]: Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : 99 } }
+}
+function setCacheTtl(v: string) {
+  if (!settings.value) return
+  settings.value = { ...settings.value, cacheTtl: v === '5m' || v === '1h' ? v : null }
 }
 
 async function load(refresh = false) {
@@ -258,6 +262,23 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
         <p v-else class="sub">Yükleniyor…</p>
       </section>
 
+      <!-- ---------------------------------------------------------- istem onbellegi (deneme) -->
+      <section class="block">
+        <div class="block-head">
+          <h3>İstem önbelleği</h3>
+          <button type="button" class="small primary" :disabled="savingSettings || !settings" @click="saveSettings">{{ savingSettings ? '…' : settingsSaved ? 'Kaydedildi ✓' : 'Kaydet' }}</button>
+        </div>
+        <p class="sub">Anthropic ajanlarının bağlamı önbelleğe kaç süreliğine yazılsın. Ölçüm: önbelleğe yazma maliyetin ~%40'ı ve bugün hepsi 1 saatlik (2×). 5 dakikalık yazma 1,25× — hesapta ~%15 ucuz; ama 5 dakikayı aşan bir araç çağrısından (npm install, uzun test) sonra bağlam yeniden yazılır. Etki <code>scripts/context-report.py</code> ile okunur.</p>
+        <label v-if="settings" class="guard">
+          <span>Önbellek süresi</span>
+          <select :value="settings.cacheTtl ?? ''" @change="setCacheTtl(($event.target as HTMLSelectElement).value)">
+            <option value="">Varsayılan (1 saat)</option>
+            <option value="5m">5 dakika (deneme)</option>
+            <option value="1h">1 saat (açıkça)</option>
+          </select>
+        </label>
+      </section>
+
       <!-- ---------------------------------------------------------- kim ne harcadi -->
       <section class="block">
         <div class="block-head">
@@ -365,6 +386,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .primary { background: #23283a; color: #fff; border-color: #23283a; }
 .guards { display: flex; flex-direction: column; gap: 6px; }
 .guard { display: grid; grid-template-columns: 140px 90px auto; align-items: center; gap: 8px; font-size: 13px; }
+.guard select { font: inherit; font-size: 13px; background: #fff; color: #23283a; border: 1px solid #c9c3b3; border-radius: 4px; padding: 5px 8px; grid-column: span 2; }
 .guard input { font: inherit; font-size: 13px; background: #fff; color: #23283a; border: 1px solid #c9c3b3; border-radius: 4px; padding: 5px 8px; }
 .ghost { background: transparent; }
 .small { padding: 3px 8px; font-size: 11px; }

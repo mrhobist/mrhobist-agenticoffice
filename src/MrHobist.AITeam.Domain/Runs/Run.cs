@@ -191,7 +191,15 @@ public sealed record RunTask(
 /// <see cref="Knowledge"/>: gorevlerin ihtiyac duydugu bilgi dosyalari (ajan md'sindeki <c>includes</c> anahtarlari). Bos/null = ajanin
 /// tum bilgi dosyalari. 2026-09-23 maliyet kaldiraci: yalniz on yuz isinde arka yuz bilgisi sistem istemine girmesin. Sona eklendi.
 /// </remarks>
-public sealed record Spec(string Summary, string Architecture, IReadOnlyList<string> Rules, IReadOnlyList<RunTask> Tasks, IReadOnlyList<string>? Knowledge = null);
+/// <summary>
+/// Analistin plani. <see cref="CodeMap"/> (2026-09-24): analizin okudugu dosyalar ve her birinde ne oldugu -- gorevler ayni
+/// dosyalari anlamak icin yeniden okumasin (olcum: bir gorev analizin okudugu 11 dosyanin 6'sini yeniden okudu, analiz
+/// maliyetin %15'i). Sona eklendi; null = yok (eski planlar).
+/// </summary>
+public sealed record Spec(string Summary, string Architecture, IReadOnlyList<string> Rules, IReadOnlyList<RunTask> Tasks, IReadOnlyList<string>? Knowledge = null, IReadOnlyList<CodeNote>? CodeMap = null);
+
+/// <summary>Kod haritasinin bir satiri: proje kokune gore goreli yol + ne icerdigi (imza, desen, dikkat) tek satirda.</summary>
+public sealed record CodeNote(string Path, string Note);
 
 /// <summary>Bir gorevin bir fazi: <c>runs/{id}/tasks/{task}/phases.jsonl</c>.</summary>
 public sealed record Phase(
@@ -260,7 +268,20 @@ public sealed record Turn(
     /// Bu turda ajana acilan MCP sunuculari (anahtarlar). MCP kullanim raporu "verildi ama kullanilmadi"yi bundan cikarir: her
     /// sunucunun arac semalari her ic turda baglama girer, kullanilmayan sunucu bosuna odenir. Eski satirlarda null. Sona eklendi.
     /// </summary>
-    IReadOnlyList<string>? McpServers = null);
+    IReadOnlyList<string>? McpServers = null,
+    /// <summary>
+    /// <see cref="CacheWriteTokens"/> icindeki 5 dakikalik yazma payi (1 saatliginden ucuz). null/0 = hepsi 1 saatlik ya da
+    /// saglayici ayirmadi. Onbellek omru denemesini (Ayarlar) olcmek icin. Sona eklendi (CLAUDE.md §5).
+    /// </summary>
+    int? CacheWrite5mTokens = null,
+    /// <summary>
+    /// Turdaki en buyuk tek API cagrisinin girdisi: ajanin baglaminin tepe noktasi. <see cref="InputTokens"/> ic turlarin
+    /// TOPLAMIDIR, baglamin ne kadar buyudugunu soylemez; okuma disiplini ve kod haritasinin etkisi bununla okunur
+    /// (<c>scripts/context-report.py</c>). null = olculemedi. Sona eklendi.
+    /// </summary>
+    int? PeakContextTokens = null,
+    /// <summary>Istenen onbellek omru (<c>5m</c> | <c>1h</c>); null = CLI varsayilani. Sona eklendi.</summary>
+    string? CacheTtl = null);
 
 /// <summary>
 /// Bir turda tasinan gecmisin olcusu (docs/DOMAIN.md → Baglam butcesi). Sikistirmanin neyi dusurdugunu ve hangi

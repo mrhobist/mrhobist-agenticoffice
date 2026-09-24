@@ -222,6 +222,12 @@ madde ancak cevap verilince düşer.
 
 1. Analist brief'i alır, `Spec` şemasıyla yapısal çıktı üretir → çalışma satırının `spec` alanı.
    Çalışma `AwaitingApproval` olur; sahnede analist `done`, not: "plan onay bekliyor".
+   Plan, maliyet için üç isteğe bağlı alan taşır: görev başına `ruleRefs` (yalnız o görevi bağlayan kurallar),
+   `knowledge` (işin gerçekten ihtiyaç duyduğu bilgi dosyaları) ve **`codeMap`** (2026-09-24): analizin okuduğu
+   dosyalardan uygulayıcının bilmesi gerekenler, yol + tek satır öz. Harita her görevin istemine "Kod haritası"
+   olarak girer — önce görevin kendi dosyaları, **3000 karakterde kesilir** (her iç turda yeniden okunur; büyürse
+   kazançtan çok maliyet olur). Uygulayıcıya "anlamak için yeniden okuma, yalnız değiştireceğini aç" denir.
+   Gerekçe: bir görev analizin okuduğu 11 dosyanın 6'sını yeniden okudu; analiz maliyetin %15'i.
 2. Kullanıcı UI'da planı görür: özet, mimari, kurallar, görevler (kimlik, başlık, açıklama,
    dosyalar, kabul ölçütleri, bağımlılıklar) ve **yürütme sırası** (topolojik).
 3. **Onayla** → `Running`; `board.set` ile görevler ilk görev-sütununda `queued` açılır; dağıtım başlar.
@@ -425,6 +431,27 @@ LLM özeti (üçüncü kademe) **yoktur**, ölçüm onu hak ettiğini gösterene
 - **Üçüncü kademe (LLM özeti) için koşul:** raporda düşen geçmişin, özet turunun maliyetini aşacak kadar sık ve
   büyük olduğu görülmeli. Kurulursa `config/agents/` altında ucuz modelli bir ajan olur, `AgentCaller` üzerinden
   çağrılır (tur kaydı, bütçe ve limit koruması kendiliğinden).
+- **Tek ajanlı ekipte bu katman UYKUDADIR (2026-09-24 ölçümü, bilinçli).** 4 gerçek işin 18 turunda taşınan geçmiş
+  **0**, araçsız tur **0** (kalibrasyon örneği yok → oran 4'te). Geçmiş yalnız red döngüsünde taşınır, tek ajanlı
+  akışta red yok. Kod silinmedi: çok rollü akış geri gelirse kendiliğinden devreye girer. Yatırım yapılmaz.
+- **Bağlam asıl CLI oturumunun İÇİNDE büyür**: araç sonuçları, yazılan kod, düşünme. Ölçülen tepe tur başına 95–168K
+  token; CLI'nin kendi sıkıştırması hiç tetiklenmedi. Bu yüzden ölçü `Turn.peakContextTokens`'tır (turdaki en büyük
+  tek API çağrısı; `inputTokens` iç turların toplamı olduğu için büyümeyi söylemez) ve kaldıraçlar istem tarafındadır:
+  ajan md'sinde **okuma disiplini** (önce ara sonra dar oku, dosyaları topluca `cat` etme, taşan çıktıyı baştan
+  sona okuma), plandaki **kod haritası**. Etki `context-report.py`'nin ikinci bölümünden okunur.
+
+### İstem önbelleği ömrü (2026-09-24, kullanıcı onayı; varsayılan değişmedi)
+
+- Ölçüm: CLI **tüm** önbellek yazmalarını 1 saatlik yapıyor (oturum kayıtlarında `ephemeral_5m` = 0). 1 sa yazma baz
+  girdinin 2 katı, 5 dk yazma 1,25 katı. 4 işte ($35) yazma %40, çıktı %38, okuma %22; 5 dk ile hesapta **~%15** eder.
+- **Ayar:** Ayarlar → İstem önbelleği (`app_settings.cacheTtl`): boş = CLI varsayılanı · `5m` · `1h`. Yalnız Anthropic'e
+  gider; runtime yalnız CLI değişkenine eşler (`FORCE_PROMPT_CACHING_5M` / `ENABLE_PROMPT_CACHING_1H`), karar .NET'te.
+- **Bedeli:** iç turlar saniyeler arayla gelir, ama 5 dk'yı aşan bir araç çağrısından (npm install, uzun test) sonra
+  bağlamın tamamı yeniden yazılır; görevler arası ortak önek de (~20K) 5 dk'dan uzun arada düşer. Net etki ölçülmeli.
+- **Ölçü:** runtime yazmanın 5 dk payını ayırır (`Turn.cacheWrite5mTokens`), istenen ömür `Turn.cacheTtl`'a yazılır.
+  Fiyat tablosunda `cacheWrite5m` (yoksa girdi × 1,25): kesilen turun tahmini ve "Kim ne harcadı" bununla doğru kalır.
+  Abonelikte eşdeğer $ düşse de **kotanın aynı oranda düştüğü ölçülmedi**.
+- Karar ölçümden sonra: bir iş 5 dk ile koşar, `context-report.py` + kota yüzdesi karşılaştırılır; iyiyse varsayılan olur.
 
 ## Model, efor ve kimlik (2026-09-19, kullanıcı kararı)
 

@@ -25,6 +25,8 @@ Brief'i **tek göreve** çevir; brief birden çok bağımsız parça istemiyorsa
 - `rules`: yalnız gerçekten bağlayıcı olanlar — projenin kendi kurallarından bu işe değenler; süsleme yok.
 - `acceptance`: çalıştırılabilir komutlar (build, test, typecheck, beklenen çıktı) — 3. bölümde kendin
   koşacaksın. Test yazılacaksa hangi davranışın sınanacağını da buraya yaz.
+- `codeMap`: okuduğun dosyalardan geliştirmede lazım olacakları, yol + tek satır özle (imza, desen, dikkat). Geliştirme
+  adımı bunları yeniden okumaz; not yeterince somut olsun ("`OrderService.Create(dto)` → `Result<Guid>`, doğrulama FluentValidation'da").
 - Kapsamı büyütme. Brief ne istiyorsa o kadarını planla. Uzun düşünme: brief açıksa plan kısa iştir.
 
 ## 2. Geliştirme (Geliştirme adımı)
@@ -49,6 +51,30 @@ Kod yazıldı diye bitmez. Aynı adımda, raporu vermeden önce:
 
 Bitince `summary` + `filesChanged` + `commandsRun` bildir; `summary`'de hangi testlerin koşup geçtiğini
 yaz. Doğrulayamadığın bir şey varsa (ör. gerçek veritabanı, tarayıcıda görsel kontrol) bunu açıkça söyle.
+
+## Okuma disiplini
+
+Okuduğun her satır adım bitene kadar bağlamda kalır ve **her iç turda yeniden gönderilir**; 60 iç turluk bir adımda
+gereksiz 20 bin karakter 60 kez ödenir. Bu yüzden:
+- **Önce ara, sonra oku.** Yeri Grep/Glob ile bul, Read'i `offset`/`limit` ile o bölüme daralt. Büyük dosyayı
+  (migration, üretilmiş kod, lock dosyası, derleme çıktısı) baştan sona okuma.
+- **Dosyaları topluca dökme.** `cat a b c` ya da `for f in …; do cat $f; done` ile tek komutta onlarca dosya
+  okuma: ihtiyacın olmayan kısım da bağlama girer. Neye, ne için baktığını bilerek tek tek oku.
+- **Kod haritasını ve bağımlı görev raporunu kullan.** İstemde "Kod haritası" ya da biten görevlerin raporu varsa o
+  dosyaları anlamak için yeniden okuma; yalnız değiştireceğin dosyayı düzenlemeden önce aç.
+- **Taşan çıktıyı okuma.** Araç çıktısı çok uzunsa CLI onu bir dosyaya yazıp yolunu verir; o dosyayı baştan sona
+  Read ile okuma — aradığını Grep ile bul ya da sonunu `tail` ile al.
+
+## Bu ofisin ortamı
+
+- Bash komutları bir sınır denetiminden geçer: komuttaki `/` ile başlayan her parça yol sayılır ve çalışma dizininin
+  dışındaysa komut reddedilir — URL (`http://…`), `sed 's/a/b/'`, `//` içeren regex de takılır; `..` hiç kullanılamaz.
+  Regex aramasını **Grep aracıyla** yap; HTTP denemesi gerekiyorsa çalışma dizinine geçici bir betik yaz, koş, sil.
+- Her Bash komutunu **proje kökünden, göreli yollarla** koş. Mutlak yolla alt dizine `cd` (`cd /c/…/src`) reddedilebilir;
+  npm en yakın `package.json`'ı yukarı doğru bulur, alt dizin gerekirse `npm --prefix <dizin> run …` kullan.
+- Portlar **3000** (ofis arayüzü), **5080** (ofis API'si) ve **5090** (ofis runtime'ı) dolu: bunlara dokunma, uygulamanı
+  denerken başka port seç (ör. 3456, 5999).
+- Grep aracında alt yollu süslü glob (`{a.md,src/x.ts}`) eşleşme kaçırabilir; birden çok yolu ayrı Grep'lerle ara.
 
 ## Takıldığında
 
