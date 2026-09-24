@@ -362,7 +362,9 @@ CATALOGS = ROOT / "assets" / "reference" / "v2-catalogs"
 PANEL_ORDER = ["S", "SW", "W", "NW", "N", "NE", "E", "SE", "SIT", "TYPE"]
 PANEL_FRAMES = {"SIT": 8, "TYPE": 6}
 DIR_ROWS_8 = {"down": 0, "downleft": 1, "left": 2, "upleft": 3, "up": 4, "upright": 5, "right": 6, "downright": 7}
-CHAR_V2_HEIGHT_WORLD = 78
+# 2026-09-24 (kullanici: "simler masaya gore kucuk, masaya uzak oturuyor"): 78 -> 94. Olcum: masanin on yuzu ~55 dunya px,
+# 78 px'lik karakter oturunca basi masa ustunun kenarina hic yetismiyordu. Oturma noktalari da masaya yanastirildi (scene.json).
+CHAR_V2_HEIGHT_WORLD = 94
 
 # HSV ops shared by derived characters (PIL hue 0-255: red 0, orange ~20, yellow ~42, green ~85, blue ~170, purple ~200).
 # Brown hair in these packs sits at hue 5-30 and is darker than skin of the same hue, hence the val cap.
@@ -494,8 +496,60 @@ def catalog_frames(key: str) -> tuple[dict[str, list[Image.Image]], float]:
     return frames, scale
 
 
+# Kaynak katalogda "yazma" paneli sandalyesiz cizilmis karakterler (sim8: ayakta, elinde laptop). Masada arkadan oturma
+# kareleri (TYPE 3-5) bagiscinin sandalyesi + karakterin arkadan yuruyus karesinin ust govdesiyle uretilir.
+# Bagisci secimi olcumle: yesil kapusonun koyu tonlari ve koyu sac sandalye maskesine karisiyor, "bun"un sandalyesi temiz kesiliyor.
+SEATED_BACK_DONOR: dict[str, str] = {"hipster": "bun"}
+
+
+def _chair_masks(rgba: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(lacivert, lacivert|koyu dis cizgi) maskeleri (PIL HSV). Ust sinir yalniz lacivertten bulunur: koyu sac da 'koyu'dur."""
+    hsv = np.asarray(Image.fromarray(rgba[:, :, :3], "RGB").convert("HSV")).astype(int)
+    h, s_, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    opaque = rgba[:, :, 3] > 128
+    navy = (h >= 140) & (h <= 190) & (s_ >= 35) & (v <= 190) & opaque
+    return navy, (navy | (v <= 70)) & opaque
+
+
+def synth_seated_back(key: str, frames: dict[str, list[Image.Image]], scale: float) -> None:
+    donor_frames, donor_scale = catalog_frames(SEATED_BACK_DONOR[key])
+    k = donor_scale / scale  # bagisci karesi -> bu karakterin kaynak pikseli
+    torso_src = frames["N"][0]
+    tb = torso_src.getchannel("A").point(lambda a: 255 if a > 128 else 0).getbbox()
+    torso_src = torso_src.crop(tb)
+    torso = torso_src.crop((0, 0, torso_src.width, int(torso_src.height * 0.62)))  # bas + govde, kalca sandalye arkasinda kalir
+    out = list(frames["TYPE"])
+    for i in (3, 4, 5):
+        d = donor_frames["TYPE"][i]
+        d = d.resize((max(1, round(d.width * k)), max(1, round(d.height * k))), Image.LANCZOS)
+        a = np.asarray(d.convert("RGBA")).copy()
+        navy, chair = _chair_masks(a)
+        row_frac = navy.mean(axis=1)
+        rows = np.where(row_frac >= 0.45)[0]
+        top = int(rows[0]) if len(rows) else a.shape[0] // 3
+        keep = np.zeros_like(chair)
+        keep[top:, :] = chair[top:, :]
+        # Bagiscinin kol dis cizgileri sandalyenin yaninda kalir: lacivertin yatay sinirinin disindaki koyu pikseller atilir.
+        cols = np.where(navy[top:, :].any(axis=0))[0]
+        if len(cols):
+            keep[:, : max(0, int(cols[0]) - 1)] = False
+            keep[:, int(cols[-1]) + 2 :] = False
+        a[:, :, 3] = np.where(keep, a[:, :, 3], 0)
+        chair_img = Image.fromarray(a, "RGBA")
+        head_top = d.getchannel("A").point(lambda v: 255 if v > 128 else 0).getbbox()[1]
+        w = max(chair_img.width, torso.width)
+        canvas = Image.new("RGBA", (w, chair_img.height), (0, 0, 0, 0))
+        canvas.alpha_composite(torso, ((w - torso.width) // 2, head_top))
+        canvas.alpha_composite(chair_img, ((w - chair_img.width) // 2, 0))
+        out[i] = canvas
+    frames["TYPE"] = out
+
+
 def build_character_v2(key: str) -> dict:
     frames, scale = catalog_frames(key)
+    if key in SEATED_BACK_DONOR:
+        frames = dict(frames)
+        synth_seated_back(key, frames, scale)
 
     def pack(rows: list[list[Image.Image]], out_name: str) -> dict:
         max_w = max(f.width for r in rows for f in r)

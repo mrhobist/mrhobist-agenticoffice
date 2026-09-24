@@ -4,8 +4,8 @@
     "shirt-tie": {
       "walk": {
         "image": "char-shirt-tie-walk.png",
-        "frameW": 90,
-        "frameH": 162,
+        "frameW": 108,
+        "frameH": 195,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -21,15 +21,15 @@
       },
       "sit": {
         "image": "char-shirt-tie-sit.png",
-        "frameW": 83,
-        "frameH": 138,
+        "frameW": 99,
+        "frameH": 166,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-shirt-tie-type.png",
-        "frameW": 89,
-        "frameH": 160,
+        "frameW": 106,
+        "frameH": 193,
         "cols": 6,
         "rows": 1
       }
@@ -37,8 +37,8 @@
     "green-hoodie": {
       "walk": {
         "image": "char-green-hoodie-walk.png",
-        "frameW": 92,
-        "frameH": 163,
+        "frameW": 110,
+        "frameH": 195,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -54,15 +54,15 @@
       },
       "sit": {
         "image": "char-green-hoodie-sit.png",
-        "frameW": 87,
-        "frameH": 140,
+        "frameW": 103,
+        "frameH": 168,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-green-hoodie-type.png",
-        "frameW": 81,
-        "frameH": 150,
+        "frameW": 97,
+        "frameH": 180,
         "cols": 6,
         "rows": 1
       }
@@ -70,8 +70,8 @@
     "ponytail": {
       "walk": {
         "image": "char-ponytail-walk.png",
-        "frameW": 97,
-        "frameH": 161,
+        "frameW": 116,
+        "frameH": 194,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -87,15 +87,15 @@
       },
       "sit": {
         "image": "char-ponytail-sit.png",
-        "frameW": 87,
-        "frameH": 142,
+        "frameW": 104,
+        "frameH": 170,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-ponytail-type.png",
-        "frameW": 92,
-        "frameH": 149,
+        "frameW": 111,
+        "frameH": 179,
         "cols": 6,
         "rows": 1
       }
@@ -103,8 +103,8 @@
     "bun": {
       "walk": {
         "image": "char-bun-walk.png",
-        "frameW": 83,
-        "frameH": 158,
+        "frameW": 99,
+        "frameH": 190,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -120,15 +120,15 @@
       },
       "sit": {
         "image": "char-bun-sit.png",
-        "frameW": 82,
-        "frameH": 137,
+        "frameW": 98,
+        "frameH": 164,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-bun-type.png",
-        "frameW": 76,
-        "frameH": 151,
+        "frameW": 91,
+        "frameH": 182,
         "cols": 6,
         "rows": 1
       }
@@ -136,8 +136,8 @@
     "blond-maroon": {
       "walk": {
         "image": "char-blond-maroon-walk.png",
-        "frameW": 88,
-        "frameH": 159,
+        "frameW": 106,
+        "frameH": 191,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -153,15 +153,15 @@
       },
       "sit": {
         "image": "char-blond-maroon-sit.png",
-        "frameW": 81,
-        "frameH": 132,
+        "frameW": 97,
+        "frameH": 159,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-blond-maroon-type.png",
-        "frameW": 88,
-        "frameH": 160,
+        "frameW": 106,
+        "frameH": 193,
         "cols": 6,
         "rows": 1
       }
@@ -169,8 +169,8 @@
     "curly-yellow": {
       "walk": {
         "image": "char-curly-yellow-walk.png",
-        "frameW": 91,
-        "frameH": 160,
+        "frameW": 108,
+        "frameH": 193,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -186,15 +186,15 @@
       },
       "sit": {
         "image": "char-curly-yellow-sit.png",
-        "frameW": 89,
-        "frameH": 147,
+        "frameW": 107,
+        "frameH": 177,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-curly-yellow-type.png",
-        "frameW": 86,
-        "frameH": 167,
+        "frameW": 102,
+        "frameH": 200,
         "cols": 6,
         "rows": 1
       }
@@ -202,8 +202,8 @@
     "hipster": {
       "walk": {
         "image": "char-hipster-walk.png",
-        "frameW": 104,
-        "frameH": 184,
+        "frameW": 125,
+        "frameH": 221,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -219,15 +219,15 @@
       },
       "sit": {
         "image": "char-hipster-sit.png",
-        "frameW": 77,
-        "frameH": 125,
+        "frameW": 92,
+        "frameH": 151,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-hipster-type.png",
-        "frameW": 68,
-        "frameH": 141,
+        "frameW": 87,
+        "frameH": 182,
         "cols": 6,
         "rows": 1
       }
@@ -235,8 +235,8 @@
     "blue-hoodie": {
       "walk": {
         "image": "char-blue-hoodie-walk.png",
-        "frameW": 92,
-        "frameH": 163,
+        "frameW": 110,
+        "frameH": 195,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -252,15 +252,15 @@
       },
       "sit": {
         "image": "char-blue-hoodie-sit.png",
-        "frameW": 87,
-        "frameH": 140,
+        "frameW": 103,
+        "frameH": 168,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-blue-hoodie-type.png",
-        "frameW": 81,
-        "frameH": 150,
+        "frameW": 97,
+        "frameH": 180,
         "cols": 6,
         "rows": 1
       }
@@ -268,8 +268,8 @@
     "ponytail-blonde": {
       "walk": {
         "image": "char-ponytail-blonde-walk.png",
-        "frameW": 97,
-        "frameH": 161,
+        "frameW": 116,
+        "frameH": 194,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -285,15 +285,15 @@
       },
       "sit": {
         "image": "char-ponytail-blonde-sit.png",
-        "frameW": 87,
-        "frameH": 142,
+        "frameW": 104,
+        "frameH": 170,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-ponytail-blonde-type.png",
-        "frameW": 92,
-        "frameH": 149,
+        "frameW": 111,
+        "frameH": 179,
         "cols": 6,
         "rows": 1
       }
@@ -301,8 +301,8 @@
     "ponytail-red": {
       "walk": {
         "image": "char-ponytail-red-walk.png",
-        "frameW": 97,
-        "frameH": 161,
+        "frameW": 116,
+        "frameH": 194,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -318,15 +318,15 @@
       },
       "sit": {
         "image": "char-ponytail-red-sit.png",
-        "frameW": 87,
-        "frameH": 142,
+        "frameW": 104,
+        "frameH": 170,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-ponytail-red-type.png",
-        "frameW": 92,
-        "frameH": 149,
+        "frameW": 111,
+        "frameH": 179,
         "cols": 6,
         "rows": 1
       }
@@ -334,8 +334,8 @@
     "ponytail-black": {
       "walk": {
         "image": "char-ponytail-black-walk.png",
-        "frameW": 97,
-        "frameH": 161,
+        "frameW": 116,
+        "frameH": 194,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -351,15 +351,15 @@
       },
       "sit": {
         "image": "char-ponytail-black-sit.png",
-        "frameW": 87,
-        "frameH": 142,
+        "frameW": 104,
+        "frameH": 170,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-ponytail-black-type.png",
-        "frameW": 92,
-        "frameH": 149,
+        "frameW": 111,
+        "frameH": 179,
         "cols": 6,
         "rows": 1
       }
@@ -367,8 +367,8 @@
     "bun-black": {
       "walk": {
         "image": "char-bun-black-walk.png",
-        "frameW": 83,
-        "frameH": 158,
+        "frameW": 99,
+        "frameH": 190,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -384,15 +384,15 @@
       },
       "sit": {
         "image": "char-bun-black-sit.png",
-        "frameW": 82,
-        "frameH": 137,
+        "frameW": 98,
+        "frameH": 164,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-bun-black-type.png",
-        "frameW": 76,
-        "frameH": 151,
+        "frameW": 91,
+        "frameH": 182,
         "cols": 6,
         "rows": 1
       }
@@ -400,8 +400,8 @@
     "bun-auburn": {
       "walk": {
         "image": "char-bun-auburn-walk.png",
-        "frameW": 83,
-        "frameH": 158,
+        "frameW": 99,
+        "frameH": 190,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -417,15 +417,15 @@
       },
       "sit": {
         "image": "char-bun-auburn-sit.png",
-        "frameW": 82,
-        "frameH": 137,
+        "frameW": 98,
+        "frameH": 164,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-bun-auburn-type.png",
-        "frameW": 76,
-        "frameH": 151,
+        "frameW": 91,
+        "frameH": 182,
         "cols": 6,
         "rows": 1
       }
@@ -433,8 +433,8 @@
     "shirt-tie-blond": {
       "walk": {
         "image": "char-shirt-tie-blond-walk.png",
-        "frameW": 90,
-        "frameH": 162,
+        "frameW": 108,
+        "frameH": 195,
         "cols": 6,
         "rows": 8,
         "dirRows": {
@@ -450,15 +450,15 @@
       },
       "sit": {
         "image": "char-shirt-tie-blond-sit.png",
-        "frameW": 83,
-        "frameH": 138,
+        "frameW": 99,
+        "frameH": 166,
         "cols": 8,
         "rows": 1
       },
       "type": {
         "image": "char-shirt-tie-blond-type.png",
-        "frameW": 89,
-        "frameH": 160,
+        "frameW": 106,
+        "frameH": 193,
         "cols": 6,
         "rows": 1
       }

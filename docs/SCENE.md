@@ -53,7 +53,8 @@ döngüsü oynar, ziyaretçi gelince yüzünü döner (ön kareler).
 **sandalyesizdi**: tasarımcı masasına oturunca ayakta duruyor gibi görünüyordu. Kısa süre sprite
 hattında sandalye monte edildi (başka bir katalogdan ayıklayıp ölçekleyerek); kullanıcı kataloğu
 sandalyeli olarak yeniden üretince bu ara çözüm kaldırıldı — `sim3.png` artık kendi sandalyeli
-karelerini taşıyor, hat hiçbir karakter için kare bileştirmiyor.
+karelerini taşıyor. 2026-09-24'te aynı sorun `hipster`de (`sim8`) görüldü ve bileştirme geri geldi, yalnız o karakter için
+(aşağıda "Boy ve oturma", `SEATED_BACK_DONOR`).
 
 **Hâlâ eksik / istenirse üretilecek**
 
@@ -108,6 +109,15 @@ hemen ardına çizilir.
 **Yeni masa eklemek** arka plan görselini gerektirmez: `props[]`'a `desk-wide` (+ `monitor-*`,
 `spriteOff`), `seats`'e koltuk (`monitor` ile), `blocked`'a masanın dikdörtgeni eklenir; bir ajanı
 oturtmak için `agents[].home.seat` o koltuğa çevrilir. Üçüncü ada (`deskC-*`) böyle eklendi; arka plandaki A/B masaları da `background.erase` ile silinip aynı sprite'la yeniden kuruldu, böylece altı masa tek stilde.
+
+**Boy ve oturma (2026-09-24, kullanıcı: "simler masaya göre küçük, masaya uzak oturuyor").** Karakter ayakta dünyada
+94 px (`CHAR_V2_HEIGHT_WORLD`; önce 78 — masanın ön yüzü ~55 px iken oturan karakterin başı masa üstünün kenarına
+yetişmiyordu). Masa koltuğu (`seats[].y`) = masa dikdörtgeninin alt kenarı + 16 px: sandalye masanın önüne yanaşır,
+baş masa üstünün kenarına biner; `blocked` kutusunun dışında kalır ki yürüyüş ızgarası oraya ulaşsın. Önceki değerler
+masaya 37–45 px uzaktı ve masadan masaya tutarsızdı. Ölçüm çevrimdışı bir sahne kopyasıyla yapıldı (arka plan +
+props + karakterler, aynı sıralama/ölçek). `hipster`in kaynak kataloğunda "yazma" paneli sandalyesiz (ayakta, laptopla):
+arkadan oturma kareleri `bun`un sandalyesi + hipster'ın arkadan yürüyüş karesinin üst gövdesiyle üretilir
+(`SEATED_BACK_DONOR`); öne bakan oturma kareleri hâlâ ayakta — bugün öne bakan koltuk yok.
 
 ## Ajan yerleşimi ve ziyaretçi (2026-09-20)
 

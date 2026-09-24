@@ -311,7 +311,7 @@
   "seats": {
     "deskA-left": {
       "x": 328,
-      "y": 668,
+      "y": 638,
       "facing": "up",
       "monitor": "monA1",
       "mug": {
@@ -322,7 +322,7 @@
     },
     "deskA-right": {
       "x": 498,
-      "y": 668,
+      "y": 638,
       "facing": "up",
       "monitor": "monA2",
       "mug": {
@@ -333,7 +333,7 @@
     },
     "deskB-left": {
       "x": 734,
-      "y": 534,
+      "y": 508,
       "facing": "up",
       "monitor": "monB1",
       "mug": {
@@ -344,7 +344,7 @@
     },
     "deskB-right": {
       "x": 902,
-      "y": 534,
+      "y": 508,
       "facing": "up",
       "monitor": "monB2",
       "mug": {
@@ -365,7 +365,7 @@
     },
     "deskC-left": {
       "x": 737,
-      "y": 822,
+      "y": 800,
       "facing": "up",
       "monitor": "monC1",
       "mug": {
@@ -376,7 +376,7 @@
     },
     "deskC-right": {
       "x": 904,
-      "y": 822,
+      "y": 800,
       "facing": "up",
       "monitor": "monC2",
       "mug": {
@@ -387,7 +387,7 @@
     },
     "deskD-left": {
       "x": 269,
-      "y": 954,
+      "y": 927,
       "facing": "up",
       "monitor": "monD1",
       "mug": {
@@ -398,7 +398,7 @@
     },
     "deskD-right": {
       "x": 427,
-      "y": 954,
+      "y": 927,
       "facing": "up",
       "monitor": "monD2",
       "mug": {
@@ -655,7 +655,7 @@
     {
       "key": "tek-kisilik-dev-kadro",
       "name": "Tek Kişilik Dev Kadro",
-      "sprite": "hipster",
+      "sprite": "blue-hoodie",
       "home": {
         "seat": "deskA-left"
       }

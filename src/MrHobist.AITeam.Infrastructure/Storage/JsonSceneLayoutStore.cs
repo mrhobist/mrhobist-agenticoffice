@@ -16,7 +16,8 @@ public sealed class JsonSceneLayoutStore(StoragePaths paths) : ISceneLayout
     private static readonly string[] FallbackSprites = ["shirt-tie", "green-hoodie", "ponytail", "bun", "blond-maroon", "curly-yellow", "hipster", "blue-hoodie",
         "ponytail-blonde", "ponytail-red", "ponytail-black", "bun-black", "bun-auburn", "shirt-tie-blond"];
 
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    /// <summary>Satir sonu sabit LF: varsayilan Environment.NewLine Windows'ta CRLF yaziyordu, depo LF (.gitattributes) ve her kayit farkli gorunuyordu.</summary>
+    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, NewLine = "\n", Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private string File => paths.ConfigFile("scene.json");
 
