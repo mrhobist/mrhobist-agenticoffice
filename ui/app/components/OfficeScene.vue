@@ -111,13 +111,25 @@ function focusAgent(key: string | null) {
 }
 defineExpose({ publishBoard, setAttention, focusAgent, reboot })
 
+/**
+ * Tuvalin arka tamponu (cihaz pikseli) icin ust sinir. Ekran karti surucusu olmayan makinede (Microsoft Basic Render
+ * Driver) tarayici ~3.3 Mpx ustundeki tuvali hizlandirilmis yoldan cikarip yazilimla rasterliyor: kare 0.6 ms'den
+ * 30-40 ms'ye cikiyor, ajanlar takilarak yuruyordu (olcum 2026-09-26: 3.22 Mpx 0.6 ms, 3.59 Mpx 29.5 ms). Sinirin
+ * ustunde tuval daha dusuk cozunurlukte cizilir, tarayici CSS boyutuna buyutur (piksel sahnede fark edilmez).
+ * `slowFrames` sigortasi: esik baska bir makinede daha dusukse kareler yavas kaldikca sinir %25 kucultulur.
+ */
+let maxCanvasPx = 2_400_000
+let slowFrames = 0
+let sampledFrames = 0
+
 function fit() {
   const el = host.value
   const canvas = cv.value
   if (!el || !canvas || !world) return
-  const dpr = Math.min(2, window.devicePixelRatio || 1)
   const cw = el.clientWidth
   const ch = el.clientHeight
+  let dpr = Math.min(2, window.devicePixelRatio || 1)
+  if (cw * ch * dpr * dpr > maxCanvasPx) dpr = Math.sqrt(maxCanvasPx / Math.max(1, cw * ch))
   canvas.width = Math.floor(cw * dpr)
   canvas.height = Math.floor(ch * dpr)
   canvas.style.width = `${cw}px`
@@ -141,7 +153,25 @@ function frame(now: number) {
   ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, view.ox * dpr, view.oy * dpr)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
+  const t0 = performance.now()
   world.draw(ctx, view.scale * dpr, now)
+  guardFrameCost(performance.now() - t0)
+}
+
+/** 60 karede 30'dan fazlasi 14 ms'yi asarsa tuval cozunurlugu %25 dusurulur (en az 0.8 Mpx). Geri buyutulmez. */
+function guardFrameCost(ms: number) {
+  if (document.visibilityState !== 'visible') return
+  sampledFrames++
+  if (ms > 14) slowFrames++
+  if (sampledFrames < 60) return
+  if (slowFrames > 30 && maxCanvasPx > 800_000) {
+    const cur = (cv.value?.width ?? 0) * (cv.value?.height ?? 0)
+    maxCanvasPx = Math.max(800_000, Math.floor(Math.min(maxCanvasPx, cur) * 0.75))
+    console.info('[sahne] kare yavas: tuval siniri', maxCanvasPx, 'px')
+    fit()
+  }
+  sampledFrames = 0
+  slowFrames = 0
 }
 
 function publishAgents() {

@@ -166,6 +166,11 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 arka planda kalsa da ajanlar yerlerine varır. Geliştirmede `window.__world` sahneyi konsoldan
 sorgulamak için açıktır.
 
+**Tuval çözünürlüğü sınırlıdır** (2026-09-26): arka tampon en fazla 2,4 Mpx; üstünde sahne daha düşük
+çözünürlükte çizilip CSS boyutuna büyütülür. Ekran kartı sürücüsü olmayan makinede büyük tuval yazılımla
+rasterleniyor ve kare 30–40 ms'ye çıkıyordu (`docs/LESSONS.md`). 60 karenin yarısından çoğu 14 ms'yi aşarsa
+sınır %25 küçülür. Tileset nesneleri de o anki ölçekte bir kez örneklenip saklanır (`Sprites.drawObject`).
+
 **Kedi koltukta uyur.** Uyku 60–150 s, gezinti kısa; komutla `sleep` 120 s. Koltuk köşesi
 (2026-09-20): tek büyük engel dikdörtgeni yerine **koltuk gövdesi** ve **sehpa** ayrı ayrı
 engellendi; arada kalan minder şeridi yürünebilir. Yatak orada olduğu için kedi artık ışınlanmaz

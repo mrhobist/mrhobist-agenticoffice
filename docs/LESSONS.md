@@ -231,3 +231,20 @@ ve akışı `aclose()` ile hemen kapatır.
 çağrısı kendi oturum kaydına kullanımıyla ve giriş noktasıyla yazılıyordu. İlk ölçüm: haftalık %92'nin ≥~83
 puanı yöneten Claude Code oturumları, ~9 puanı ofis ajanıydı — uzun bağlamlı yönetim oturumu her mesajda
 yüz binlerce token'ı yeniden okur. Tahmin etmeden önce verinin zaten bir yerde yazılı olup olmadığına bak.
+
+## Sahne donması tuval boyutundan gelir, koddan değil (2026-09-26)
+
+"Ajanlar dolaşırken donuyor" şikâyetinde sahne kodu masum çıktı (kare 0,5 ms, yol bulma 1 ms, uzun görev yok).
+Bu makinede tarayıcının çizim motoru **Microsoft Basic Render Driver** (ekran kartı sürücüsü yok). Tarayıcı
+~3,3 Mpx üstündeki tuvali hızlandırılmış yoldan çıkarıp yazılımla rasterliyor; eşik keskin:
+
+| Arka tampon | Kare |
+|---|---|
+| 1800×1787 (3,22 Mpx) | 0,6 ms |
+| 1900×1887 (3,59 Mpx) | 29,5 ms |
+| 2300×2284 (5,25 Mpx) | 41,6 ms |
+
+Maliyet tek bir çağrıda görünmez: toplu rasterleştirme ilk senkron noktada ödenir (profilde masum bir `save()`
+40 ms görünür). **Kural:** tuval arka tamponu sınırlıdır (`OfficeScene.vue → maxCanvasPx`, 2,4 Mpx) ve kareler
+yavaş kaldıkça sınır kendini küçültür. Performansı küçük panelde ölçme; büyük tuvalde (`canvas.width = 2400`) ölç,
+`webgl` renderer adına bak.
