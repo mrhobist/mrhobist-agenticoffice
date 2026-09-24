@@ -39,14 +39,21 @@ let ro: ResizeObserver | null = null
 let agentsTimer: ReturnType<typeof setInterval> | undefined
 let simTimer: ReturnType<typeof setInterval> | undefined
 let simLast = 0
+/** Son cizilen karenin zamani (performance.now). Zamanlayici yalniz kare cizilmiyorsa adim atar. */
+let lastFrameAt = 0
 
 /**
  * Simulasyon adimi, cizimden BAGIMSIZ. Sekme gizliyken requestAnimationFrame durur;
  * setInterval (kisitli da olsa) calisir ve gecen sureyi sabit adimlarla telafi eder.
  * Boylece arka planda kalan sahne donmaz, donusunde ajanlar yerlerine varmis olur.
+ *
+ * TEK saat (performance.now) ve tek surucu (2026-09-26): onceden kare rAF zaman damgasiyla, zamanlayici
+ * performance.now ile adim atiyordu. Zamanlayici bir karenin icinde araya girince sonraki karenin damgasi ondan
+ * GERIDE kaliyor, o karede kimse kipirdamiyor, sonrakinde iki adim atiliyordu: saniyede 5 kez yurume takilmasi.
+ * Simdi saat geri gitmez; kare cizildikce adimi kare atar, zamanlayici yalniz kare durmussa (gizli sekme) devreye girer.
  */
 function step(now: number) {
-  if (!world) return
+  if (!world || now <= simLast) return
   let elapsed = Math.min(5, (now - simLast) / 1000)
   simLast = now
   while (elapsed > 0) {
@@ -139,10 +146,13 @@ function fit() {
   view = { scale, ox: (cw - w * scale) / 2, oy: (ch - h * scale) / 2 }
 }
 
-function frame(now: number) {
+function frame() {
   raf = requestAnimationFrame(frame)
   // Ilk karede tuval henuz olculmemis olabilir (0x0): drawImage firlatir.
   if (!world || !cv.value || cv.value.width === 0 || cv.value.height === 0) return
+  const now = performance.now()
+  if (import.meta.dev) notePerfGap(now)
+  lastFrameAt = now
   step(now)
 
   const ctx = cv.value.getContext('2d')!
@@ -172,6 +182,41 @@ function guardFrameCost(ms: number) {
   }
   sampledFrames = 0
   slowFrames = 0
+}
+
+/**
+ * Takilma kaydi (gelistirme, 2026-09-26): gorunur sekmede 50 ms'yi asan kare araliklari ve tarayicinin uzun animasyon
+ * kareleri (suclu betik/islevle). Konsoldan `__perf` okunur; `__perf.report()` ozet verir. Tahmin yerine olcum icin.
+ */
+const perf = {
+  gaps: [] as Array<{ at: number; ms: number }>,
+  loaf: [] as Array<{ at: number; ms: number; blame: string }>,
+  report() {
+    const g = [...this.gaps].sort((a, b) => b.ms - a.ms).slice(0, 5)
+    return { gaps: this.gaps.length, worst: g, loaf: this.loaf.slice(-10) }
+  },
+}
+function notePerfGap(now: number) {
+  const gap = now - lastFrameAt
+  if (lastFrameAt && gap > 50 && gap < 5000 && document.visibilityState === 'visible') {
+    perf.gaps.push({ at: Math.round(now), ms: Math.round(gap) })
+    if (perf.gaps.length > 200) perf.gaps.shift()
+  }
+}
+function watchLongFrames() {
+  ;(window as unknown as { __perf?: typeof perf }).__perf = perf
+  try {
+    const po = new PerformanceObserver(list => {
+      for (const e of list.getEntries() as Array<PerformanceEntry & { scripts?: Array<{ duration: number; invoker?: string; sourceFunctionName?: string; sourceURL?: string }> }>) {
+        const top = [...(e.scripts ?? [])].sort((a, b) => b.duration - a.duration)[0]
+        const src = top?.sourceURL?.split('/').pop()?.split('?')[0] ?? ''
+        const blame = top ? `${top.invoker ?? ''} ${top.sourceFunctionName ?? ''} ${src} (${Math.round(top.duration)} ms)` : 'betik disi (cizim/GC)'
+        perf.loaf.push({ at: Math.round(e.startTime), ms: Math.round(e.duration), blame })
+        if (perf.loaf.length > 100) perf.loaf.shift()
+      }
+    })
+    po.observe({ type: 'long-animation-frame', buffered: false })
+  } catch { /* tarayici desteklemiyor */ }
 }
 
 function publishAgents() {
@@ -206,7 +251,7 @@ async function boot() {
   }
   world.onHud = h => emit('hud', h)
   // Gelistirme: konsoldan sahneyi sorgulamak icin (uretimde yok).
-  if (import.meta.dev) (window as unknown as { __world?: World }).__world = world
+  if (import.meta.dev) { (window as unknown as { __world?: World }).__world = world; watchLongFrames() }
   ready.value = true
   fit()
   feed = connectFeed(apiBase, (e: SceneEvent) => {
@@ -219,7 +264,10 @@ async function boot() {
   agentsTimer = setInterval(publishAgents, 1500)
   simLast = performance.now()
   clearInterval(simTimer)
-  simTimer = setInterval(() => step(performance.now()), 200)
+  simTimer = setInterval(() => {
+    const t = performance.now()
+    if (t - lastFrameAt > 400) step(t)
+  }, 200)
   cancelAnimationFrame(raf)
   raf = requestAnimationFrame(frame)
 }
