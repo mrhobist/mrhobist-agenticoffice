@@ -709,7 +709,8 @@ public sealed class RunService(
                     // Onceki deneme yarida kesildiyse (zaman asimi, yeniden baslatma) dizinde onun isi var: ajan bastan yazmasin, devam etsin.
                     var cutShort = (await runs.ReadPhasesAsync(run.Id, a.Task.Id, ct).ConfigureAwait(false))
                         .LastOrDefault(p => p.Stage == a.Stage.Id && p.Status != PhaseStatus.Started) is { IsCutShort: true };
-                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort, prior, att), ct).ConfigureAwait(false);
+                    var written = await WrittenSoFarAsync(run.Id, root, before, a.Task, ct).ConfigureAwait(false);
+                    var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort, prior, att, written), ct).ConfigureAwait(false);
                     var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
@@ -1016,6 +1017,33 @@ public sealed class RunService(
         var revert = new QuestionOption("revert", "Son turu geri al ve yeniden dene",
             $"\"{producer.Title}\" adımının son turda yazdıkları SILINIR, dizin o turdan önceki haline döner; görev notunla birlikte o adımdan yeniden başlar.", NeedsNote: true);
         return [.. options.Where(o => o.Id != "cancel"), revert, .. options.Where(o => o.Id == "cancel")];
+    }
+
+    /// <summary>
+    /// Calismanin ILK kaydedilmis halinden <paramref name="now"/>'a kadar yazilan kod (<see cref="CodeDigest"/>): onceki gorevler
+    /// ve bu gorevin onceki denemeleri. Ilk hal, kapanmis fazlarin en eskisinin anlik goruntusudur (uretici adim yazmadan onceki hal).
+    /// Ilk gorevin ilk denemesinde ya da git yoksa bos: bolum istemde hic acilmaz.
+    /// </summary>
+    private async Task<IReadOnlyList<WrittenFile>> WrittenSoFarAsync(string runId, string root, string? now, RunTask task, CancellationToken ct)
+    {
+        if (snapshots is null || string.IsNullOrWhiteSpace(now))
+        {
+            return [];
+        }
+
+        Phase? first = null;
+        foreach (var id in await runs.ListTasksAsync(runId, ct).ConfigureAwait(false))
+        {
+            foreach (var p in await runs.ReadPhasesAsync(runId, id, ct).ConfigureAwait(false))
+            {
+                if (!string.IsNullOrWhiteSpace(p.Snapshot) && (first is null || p.Ts < first.Ts))
+                {
+                    first = p;
+                }
+            }
+        }
+
+        return first is null ? [] : await CodeDigest.CollectAsync(snapshots, root, first.Snapshot!, now, task, ct).ConfigureAwait(false);
     }
 
     /// <summary>Bir gorevin bir adimindaki son kaydedilmis calisma alani hali; yoksa null.</summary>

@@ -22,7 +22,20 @@ public interface IWorkspaceSnapshot
     /// kullanicinin acik secimiyle cagrilir. Basarisizsa <c>false</c> doner; cagiran kullaniciya soyler.
     /// </summary>
     Task<bool> RestoreAsync(string workDir, string snapshot, CancellationToken ct);
+
+    /// <summary>
+    /// Iki goruntu arasinda degisen dosyalar (salt okunur). Kapsam cagiranin desenleriyle daralir: <paramref name="include"/>
+    /// bos degilse yalniz onlar, <paramref name="exclude"/> her zaman disarida (git pathspec glob'u, ör. <c>**/*.cs</c>,
+    /// <c>**/node_modules/**</c>). Yeniden adlandirma ayri sayilmaz: silinen + eklenen. Alinamazsa bos liste.
+    /// </summary>
+    Task<IReadOnlyList<WorkspaceChange>> DiffAsync(string workDir, string fromSnapshot, string toSnapshot, IReadOnlyList<string> include, IReadOnlyList<string> exclude, CancellationToken ct);
+
+    /// <summary>Bir dosyanin o goruntudeki metni; yoksa ya da okunamazsa <c>null</c>.</summary>
+    Task<string?> ReadAsync(string workDir, string snapshot, string path, CancellationToken ct);
 }
+
+/// <summary>Iki goruntu arasinda degisen bir dosya. <see cref="Status"/>: <c>A</c> eklendi · <c>M</c> degisti · <c>D</c> silindi. Ikili dosyada satir sayilari 0.</summary>
+public sealed record WorkspaceChange(string Path, char Status, int Added, int Deleted);
 
 /// <summary>Anlik goruntu yok: her cagri bos doner. Testlerde ve ozelligin kapali oldugu kurulumda.</summary>
 public sealed class NoWorkspaceSnapshot : IWorkspaceSnapshot
@@ -30,4 +43,9 @@ public sealed class NoWorkspaceSnapshot : IWorkspaceSnapshot
     public Task<string?> TrackAsync(string workDir, CancellationToken ct) => Task.FromResult<string?>(null);
 
     public Task<bool> RestoreAsync(string workDir, string snapshot, CancellationToken ct) => Task.FromResult(false);
+
+    public Task<IReadOnlyList<WorkspaceChange>> DiffAsync(string workDir, string fromSnapshot, string toSnapshot, IReadOnlyList<string> include, IReadOnlyList<string> exclude, CancellationToken ct)
+        => Task.FromResult<IReadOnlyList<WorkspaceChange>>([]);
+
+    public Task<string?> ReadAsync(string workDir, string snapshot, string path, CancellationToken ct) => Task.FromResult<string?>(null);
 }

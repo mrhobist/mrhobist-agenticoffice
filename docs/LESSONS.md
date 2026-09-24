@@ -245,6 +245,17 @@ Sonuç iki kat kötü: sınır delindi ve veritabanı dışında, çalışmadan 
 "kanca reddediyor mu"ya değil, **gerçek bir koşunun araç kayıtlarında cwd dışı yol var mı**ya bak — o kayıt zaten
 `run_turn.data.toolUses`'ta duruyordu. Notların işe yarayanları bilgi dosyasına ve ajan md'sine taşındı.
 
+## "Kolaylık, çalışmayı durdurmaz" sessiz ölüm demektir (2026-09-24)
+
+Anlık görüntü "bir kolaylık" diye tasarlanmıştı: alınamazsa `null`, çalışma sürer. Canlı projede **bir gün boyunca
+hiç** alınamadı — proje Visual Studio'da açıktı, `.vs` altındaki kilitli indeks dosyası `git add`'i tamamen
+düşürüyordu. Hiçbir şey kırmızıya dönmedi; "son turu geri al" seçeneği sessizce hiç sunulmadı. Fark eden, üstüne
+yeni bir özellik kurmaya çalışan oldu. Testler geçiyordu: test dizininde kilitli dosya yoktu.
+
+**Ders:** hatayı yutan bir yol, yuttuğunu **kayda** düşmeli ve kayıt okunmalı. "Durdurmaz" ile "görünmez"
+aynı şey değil. Yeni bir özelliği mevcut bir mekanizmaya bağlamadan önce, o mekanizmanın canlı veride gerçekten
+ürettiğine bak (`run_phase.data.snapshot` boştu). Testte gerçek ortamın kötü hâlini kur: burada açık bir IDE.
+
 ## Sahne donması tuval boyutundan gelir, koddan değil (2026-09-26)
 
 "Ajanlar dolaşırken donuyor" şikâyetinde sahne kodu masum çıktı (kare 0,5 ms, yol bulma 1 ms, uzun görev yok).

@@ -1,3 +1,4 @@
+using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Infrastructure.Storage;
 
 namespace MrHobist.AITeam.ServiceTests;
@@ -64,6 +65,67 @@ public sealed class WorkspaceSnapshotTests : IDisposable
 
         Assert.False(Directory.Exists(Path.Combine(_work, ".git")), "proje dizininde .git olusturulmus");
         Assert.True(Directory.Exists(Path.Combine(_root, "data", "snapshots")), "golge depo data/snapshots altinda olmali");
+    }
+
+    /// <summary>
+    /// 2026-09-24 canli hata: proje Visual Studio'da acikken .vs/…/*.vsidx kilitli, git add TAMAMEN dusuyordu -- 23 Eylul'den
+    /// beri hic goruntu yoktu. IDE dizini goruntuye girmez; geri donuste de silinmez (izlenmedigi icin "yok" sayilirdi).
+    /// </summary>
+    [Fact]
+    public async Task Ide_dizininde_kilitli_dosya_goruntuyu_dusurmez_geri_donus_ona_dokunmaz()
+    {
+        var vs = Path.Combine(_work, ".vs", "Proje", "FileContentIndex");
+        Directory.CreateDirectory(vs);
+        var index = Path.Combine(vs, "kilitli.vsidx");
+        await File.WriteAllTextAsync(index, "ide", Ct);
+        await File.WriteAllTextAsync(Path.Combine(_work, "Program.cs"), "ilk hali", Ct);
+
+        string? point;
+        using (new FileStream(index, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            point = await _snap.TrackAsync(_work, Ct);
+        }
+
+        Assert.NotNull(point);
+        await File.WriteAllTextAsync(Path.Combine(_work, "Program.cs"), "developer bozdu", Ct);
+        Assert.True(await _snap.RestoreAsync(_work, point!, Ct));
+        Assert.Equal("ilk hali", await File.ReadAllTextAsync(Path.Combine(_work, "Program.cs"), Ct));
+        Assert.True(File.Exists(index), "IDE dizini geri donuste silinmemeli");
+    }
+
+    /// <summary>
+    /// Iki goruntu arasi fark (gorev basinda yazilan kodun ozeti): durum + satir sayisi, Turkce harfli yol bozulmaz,
+    /// disarida birakilan dizin (node_modules) listeye girmez, dosya metni goruntudeki haliyle okunur (diskteki sonraki hali degil).
+    /// </summary>
+    [Fact]
+    public async Task Iki_goruntu_arasi_fark_ve_goruntudeki_metin_okunur()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_work, "Program.cs"), "a\nb\n", Ct);
+        await File.WriteAllTextAsync(Path.Combine(_work, "Silinecek.cs"), "x\n", Ct);
+        var from = await _snap.TrackAsync(_work, Ct);
+        Assert.NotNull(from);
+
+        await File.WriteAllTextAsync(Path.Combine(_work, "Program.cs"), "a\nc\nd\n", Ct);
+        File.Delete(Path.Combine(_work, "Silinecek.cs"));
+        Directory.CreateDirectory(Path.Combine(_work, "src", "Öğeler"));
+        await File.WriteAllTextAsync(Path.Combine(_work, "src", "Öğeler", "Çizim.cs"), "public sealed class Çizim;\n", Ct);
+        Directory.CreateDirectory(Path.Combine(_work, "ui", "node_modules", "paket"));
+        await File.WriteAllTextAsync(Path.Combine(_work, "ui", "node_modules", "paket", "index.cs"), "paket\n", Ct);
+        await File.WriteAllTextAsync(Path.Combine(_work, "resim.png"), "ikili sayilmaz, desende yok", Ct);
+        var to = await _snap.TrackAsync(_work, Ct);
+        Assert.NotNull(to);
+
+        var changes = await _snap.DiffAsync(_work, from!, to!, ["**/*.cs"], ["**/node_modules/**"], Ct);
+
+        Assert.Equal(
+            new List<WorkspaceChange> { new("Program.cs", 'M', 2, 1), new("Silinecek.cs", 'D', 0, 1), new("src/Öğeler/Çizim.cs", 'A', 1, 0) },
+            changes.OrderBy(c => c.Path, StringComparer.Ordinal).ToList());
+        Assert.Equal("public sealed class Çizim;\n", await _snap.ReadAsync(_work, to!, "src/Öğeler/Çizim.cs", Ct));
+
+        await File.WriteAllTextAsync(Path.Combine(_work, "Program.cs"), "sonradan", Ct);
+        Assert.Equal("a\nc\nd\n", await _snap.ReadAsync(_work, to!, "Program.cs", Ct));
+        Assert.Null(await _snap.ReadAsync(_work, to!, "yok.cs", Ct));
+        Assert.Empty(await _snap.DiffAsync(_work, to!, to!, [], [], Ct));
     }
 
     /// <summary>Gecersiz girdi calismayi durdurmaz: goruntu bir kolayliktir (bkz. IWorkspaceSnapshot).</summary>

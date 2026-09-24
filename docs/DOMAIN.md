@@ -428,6 +428,14 @@ LLM özeti (üçüncü kademe) **yoktur**, ölçüm onu hak ettiğini gösterene
   1,5–6 aralığı yoksa oran **4** kalır: ölçüm gelene kadar davranış değişmez.
 - **Ölçü kayda girer.** Geçmiş taşıyan her tur `Turn.context`'e sıkıştırma öncesi/sonrası mesaj ve karakteri,
   kullanılan oranı ve örnek sayısını yazar. Okuma: `python scripts/context-report.py`.
+- **Görev başında yazılan kod (2026-09-24, kullanıcı kararı: önce kodla, LLM yok).** Uygulama isteminde
+  "Bu işte şimdiye kadar yazılan kod": çalışmanın **ilk** anlık görüntüsünden (kapanmış fazların en eskisi) görevin
+  başlangıcına gölge depo farkı + değişen kod dosyalarının imzaları (`CodeDigest`: C# tür/genel üye/uç, TS/JS/Vue
+  dışa aktarılan + makrolar, Python üst düzey + genel metot + rota). Kaynak ajanın raporu değil **disk**: Bash'le
+  yazılan dosya da girer. Paket/derleme dizinleri ve kilit dosyaları farka hiç girmez; görevin dosyaları önce,
+  **3000 karakterde kesilir** (kod haritasıyla aynı gerekçe). İlk görevin ilk denemesinde ya da git yoksa bölüm
+  yoktur. Gerekçe (4 iş/14 görev): sonraki görevlerde 57 Read'in 18'i önceki görevin dosyasına, 12'si düzenlemeden.
+  Ölçüm: sonraki koşularda bu 12 düştü mü (`toolUses`), istem büyümesi iç tur başına girdiye oranla ne kadar.
 - **Üçüncü kademe (LLM özeti) için koşul:** raporda düşen geçmişin, özet turunun maliyetini aşacak kadar sık ve
   büyük olduğu görülmeli. Kurulursa `config/agents/` altında ucuz modelli bir ajan olur, `AgentCaller` üzerinden
   çağrılır (tur kaydı, bütçe ve limit koruması kendiliğinden).

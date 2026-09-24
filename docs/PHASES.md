@@ -991,3 +991,25 @@ bir sonraki kalkışta devreye girer.
 
 **Ölçülmedi:** gerçek koşu yok. Sıradaki iş koşusunda bakılacak: tepe bağlam ve iç tur başına girdi düştü mü (okuma
 disiplini + harita), analizin `codeMap`'i dolduruyor mu, `5m` ile yazma maliyeti ve kota yüzdesi ne oldu.
+
+## Görev başında yazılan kodun özeti + anlık görüntü onarımı (2026-09-24, kullanıcı: "2 ile başla, kodla") ✅
+
+**Araştırma sonucu (yan/ucuz LLM ile bağlam yönetimi):** taşınan geçmişe LLM özeti **kurulmadı** — canlı veride
+taşınan geçmiş 0, sıkıştırma hiç tetiklenmedi; bağlam CLI'nin iç tur döngüsünde büyüyor (18 tur, 857 iç tur, girdinin
+%95,6'sı önbellek okuması). Sıra: (2) kodla önceki görev özeti — bu iş; (3) Haiku keşif alt ajanı (SDK `agents`,
+kararı .NET verir) — kullanıcı "fena değil" dedi, açık: alt ajan tokenlerinin model bazında kayda düşmesi ve aynı
+brief'le önce/sonra karşılaştırması şartıyla.
+
+- **Özet:** DOMAIN → Bağlam bütçesi, "Görev başında yazılan kod". `IWorkspaceSnapshot` iki salt okunur işlem aldı
+  (`DiffAsync`, `ReadAsync`); imza çıkarımı `Application/Runs/CodeDigest.cs` (saf, testli).
+- **Canlı hata (bu işte bulundu):** canlı projede 23 Eylül'den beri **hiç** anlık görüntü alınmamış — fazlarda
+  `snapshot` yok, gölge deponun tek commit'i boş ağaç. Neden: proje Visual Studio'da açık, `.vs/…/*.vsidx` kilitli,
+  `git add -A --force` "Permission denied" ile tamamen düşüyor; `TrackAsync` null dönüp sessizce geçiyor. Sonuç:
+  "son turu geri al" seçeneği hiç sunulmadı. **Onarım:** `.vs` görüntüye girmez, geri dönüşte silinmez (`clean -e`);
+  `add` 3 dk (ilk görüntü ~20 bin dosya/~260 MB node_modules hash'ler, 30 sn'yi aşabilirdi) ve bundan eski
+  `index.lock` silinir (öldürülen add'in kilidi sonraki her görüntüyü düşürürdü). Kuru çalıştırma (`--dry-run`) canlı
+  projede önce `exit 128`, onarımla `exit 0`.
+- **Doğrulama:** 167 servis + 50 birim testi (yeni: imza çıkarımı ×4, gerçek git ile fark/okuma, kilitli `.vs`
+  dosyası, sahte görüntüyle uçtan uca istem); Api `-warnaserror` temiz (canlı Api kilitli olduğu için geçici klasöre).
+  **Görülmedi:** gerçek bir koşuda ilk görüntünün süresi ve bölümün istemdeki hâli; canlı Api yeniden başlatılmadı.
+- **Açık:** görüntü alınamadığında hâlâ yalnız konsol loguna yazılıyor (dosya logu yok); kayda/ekrana düşmüyor.

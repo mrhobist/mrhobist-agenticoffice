@@ -268,8 +268,49 @@ public static class Prompts
         static string Normalize(string path) => path.Trim().Replace('\\', '/').TrimStart('.', '/');
     }
 
+    /// <summary>
+    /// Bu iste simdiye kadar yazilan kod (<see cref="CodeDigest"/>): dosya satiri + imzalar, <see cref="CodeDigest.MaxChars"/>'ta
+    /// kesilir. Sigmayan dosyanin imzalari duser, yalniz satiri kalir; o da sigmazsa sayisi yazilir. Bos liste = bolum yok.
+    /// </summary>
+    private static void AppendWrittenCode(StringBuilder sb, IReadOnlyList<WrittenFile> files)
+    {
+        var entries = new List<string>();
+        var used = 0;
+        var left = 0;
+        foreach (var f in files)
+        {
+            var head = $"- `{f.Path}` — {f.Status switch { 'A' => "yeni", 'D' => "silindi", _ => "değişti" }}{(f.Status == 'D' ? "" : f.Deleted > 0 ? $", +{f.Added} −{f.Deleted}" : $", +{f.Added}")}";
+            var full = f.Signatures.Count == 0 ? head : head + "\n" + string.Join('\n', f.Signatures.Select(s => "  " + s));
+            var entry = used + full.Length <= CodeDigest.MaxChars ? full : used + head.Length <= CodeDigest.MaxChars ? head : null;
+            if (entry is null)
+            {
+                left++;
+                continue;
+            }
+
+            entries.Add(entry);
+            used += entry.Length + 1;
+        }
+
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("# Bu işte şimdiye kadar yazılan kod");
+        sb.AppendLine("Önceki görevlerin ve bu görevin önceki denemelerinin diske yazdıkları; liste dosya farkından kodla çıkarıldı (rapora değil diske dayanır). "
+            + "Girintili satırlar dosyanın imzalarıdır: bir dosyayı ANLAMAK için açma, yalnız DEĞİŞTİRECEĞİN dosyayı aç.");
+        sb.AppendJoin('\n', entries).AppendLine();
+        if (left > 0)
+        {
+            sb.AppendLine($"(+{left} dosya daha sığmadı.)");
+        }
+
+        sb.AppendLine();
+    }
+
     /// <summary>Gorev baglami: plan + gorev + kurallar + dizin. Uc yurutucu de bunu kullanir.</summary>
-    private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null)
+    private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null, IReadOnlyList<WrittenFile>? written = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# Görev {a.Task.Id} — {a.Task.Title}").AppendLine(a.Task.Description).AppendLine();
@@ -303,6 +344,11 @@ public static class Prompts
             }
         }
 
+        if (written is { Count: > 0 })
+        {
+            AppendWrittenCode(sb, written);
+        }
+
         if (notes.Count > 0)
         {
             sb.AppendLine("# Bu görevle ilgili notlar (eskiden yeniye)");
@@ -316,11 +362,11 @@ public static class Prompts
     }
 
     /// <summary>Developer: araclarla dosyalari yazar, build'i kosar, sonunda rapor semasini doldurur.</summary>
-    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round, bool resumed = false, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null)
+    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round, bool resumed = false, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null, IReadOnlyList<WrittenFile>? written = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
-        var sb = TaskContext(spec, a, projectRoot, notes, prior, attachments);
+        var sb = TaskContext(spec, a, projectRoot, notes, prior, attachments, written);
         sb.AppendLine("# Yapılacak");
         sb.AppendLine(round > 1
             ? $"Bu görevin {round}. turu: yukarıdaki geri bildirimi (red/hata notu) MADDE MADDE gider, sonra kabul ölçütlerini yeniden doğrula."

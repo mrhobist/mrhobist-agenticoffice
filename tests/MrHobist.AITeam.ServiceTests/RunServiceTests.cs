@@ -710,6 +710,79 @@ public sealed class RunServiceTests : IDisposable
         _runtime.SpecJson = null;
     }
 
+    /// <summary>
+    /// Gorev basinda "bu iste yazilan kod": calismanin ilk anlik goruntusunden simdiye fark + imzalar, LLM'siz (CodeDigest).
+    /// Ilk gorevde fark yok, bolum acilmaz; ikinci gorev t1'in yazdigini imzasiyla gorur, gizli uye ve silinen dosyanin govdesi gelmez.
+    /// </summary>
+    [Fact]
+    public async Task Sonraki_gorev_bu_iste_yazilan_kodu_farktan_ve_imzalardan_alir()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var snap = new FakeSnapshot();
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene, new WorkspaceLocator(_fx.Paths), _scheduler, snapshots: snap);
+        _runtime.SpecJson = """
+            {"summary":"s","architecture":"a","rules":["r"],
+             "tasks":[
+               {"id":"t1","title":"api","description":"...","files":["a.cs"],"acceptance":["build"],"dependsOn":[]},
+               {"id":"t2","title":"ekran","description":"...","files":["b.vue"],"acceptance":["build"],"dependsOn":["t1"]}]}
+            """;
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        run = await svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+
+        var impl = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).Select(c => c.Messages[^1].Content).ToList();
+        var t1 = impl.First(m => m.Contains("# Görev t1", StringComparison.Ordinal));
+        var t2 = impl.First(m => m.Contains("# Görev t2", StringComparison.Ordinal));
+        Assert.DoesNotContain("# Bu işte şimdiye kadar yazılan kod", t1, StringComparison.Ordinal);
+        var section = t2[t2.IndexOf("# Bu işte şimdiye kadar yazılan kod", StringComparison.Ordinal)..];
+        Assert.Contains("- `a.cs` — yeni, +40\n  public sealed class AService\n  public Task<Dto> GetAsync(string id)\n", section, StringComparison.Ordinal);
+        Assert.Contains("- `src/liste.ts` — değişti, +3 −1\n  export function useListe(filtre: string): Ref<Satir[]>", section, StringComparison.Ordinal);
+        Assert.Contains("- `eski.cs` — silindi", section, StringComparison.Ordinal);
+        Assert.DoesNotContain("Gizli", section, StringComparison.Ordinal);
+
+        // Fark calismanin ILK halinden (t1 yazmadan once) t2'nin baslangicina; paket dizinleri git'e hic verilmez.
+        var diff = Assert.Single(snap.Diffs);
+        Assert.Equal(("s1", "s2"), (diff.From, diff.To));
+        Assert.Contains("**/*.cs", diff.Include);
+        Assert.Contains("**/node_modules/**", diff.Exclude);
+        Assert.DoesNotContain("eski.cs", snap.Reads); // silinen dosya okunmaz
+        _runtime.SpecJson = null;
+    }
+
+    private sealed class FakeSnapshot : IWorkspaceSnapshot
+    {
+        private int _n;
+
+        public List<(string From, string To, IReadOnlyList<string> Include, IReadOnlyList<string> Exclude)> Diffs { get; } = [];
+
+        public List<string> Reads { get; } = [];
+
+        public Task<string?> TrackAsync(string workDir, CancellationToken ct) => Task.FromResult<string?>($"s{++_n}");
+
+        public Task<bool> RestoreAsync(string workDir, string snapshot, CancellationToken ct) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<WorkspaceChange>> DiffAsync(string workDir, string fromSnapshot, string toSnapshot, IReadOnlyList<string> include, IReadOnlyList<string> exclude, CancellationToken ct)
+        {
+            Diffs.Add((fromSnapshot, toSnapshot, include, exclude));
+            return Task.FromResult<IReadOnlyList<WorkspaceChange>>(
+                [new("eski.cs", 'D', 0, 12), new("src/liste.ts", 'M', 3, 1), new("a.cs", 'A', 40, 0)]);
+        }
+
+        public Task<string?> ReadAsync(string workDir, string snapshot, string path, CancellationToken ct)
+        {
+            Reads.Add(path);
+            return Task.FromResult<string?>(path switch
+            {
+                "a.cs" => "namespace X;\n\npublic sealed class AService\n{\n    public Task<Dto> GetAsync(string id)\n    {\n        return Gizli(id);\n    }\n\n    private Task<Dto> Gizli(string id) => null!;\n}\n",
+                "src/liste.ts" => "import { ref } from 'vue'\n\nexport function useListe(filtre: string): Ref<Satir[]> {\n  const x = ref([])\n  return x\n}\n",
+                _ => null,
+            });
+        }
+    }
+
     [Fact]
     public async Task Onbellek_omru_ayardan_runtimea_gider_tepe_baglam_ve_5dk_payi_tur_kaydina_yazilir()
     {
