@@ -108,7 +108,10 @@ ile oku → ana akış + olumsuz yol → konsol → kapat); ajan md'si "ekran de
 - **Bağlam bedeli:** her aracın şeması her iç turda gider; MCP panelinden yalnız gereken araçlar seçilir (navigate, snapshot,
   click, type, fill_form, press_key, wait_for, console_messages, network_requests, close).
 - **Sınır:** MCP araçları runtime'ın yazma denetiminden (`_guard`) geçmez; tarayıcı yalnız yerel adres açsın diye kural md'de.
-  Sunucu tarafında köken kısıtı (`--allowed-origins`) kurulumdan sonra sürümün desteğine bakılarak eklenir.
+  `--allowed-origins` 0.0.82'de var ama belgesi "güvenlik sınırı değildir, yönlendirmeyi etkilemez" diyor ve port jokeri
+  belirsiz (ajanın portları projeye göre değişir): eklenmedi. Dosya erişimi varsayılan olarak çalışma köküyle sınırlı.
+- **Kurulum (2026-09-26, kullanıcı: "görünür Edge"):** `playwright` sunucusu görünür Edge ile (`--isolated --browser=msedge`),
+  14 araç açık (ekran görüntüsü, `evaluate`, `run_code_unsafe`, dosya yükleme kapalı), yetki `tek-kisilik-dev-kadro`'da.
 - **Alternatif (reddedilmedi):** ajan projeye Playwright testleri yazar (`@playwright/test`) — kalıcı e2e testi bırakır ama her
   projeye paket + tarayıcı indirmesi ekler ve brief istemeden test altyapısı kurar. Brief e2e testi isterse ajan bunu yapar.
 - Claude masaüstünün kendi tarayıcısı SDK alt sürecinden erişilebilir değil; bu yüzden kullanılmadı.

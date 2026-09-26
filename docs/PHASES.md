@@ -1077,3 +1077,13 @@ yalnız portlar ayrı (5181/3181 ofis, 5182/3182 Claude Code) ki doğrulama sunu
   tabanında yapılmalı. Model kırılımı başka bir şeyi gösterdi: CLI her turda kendi iç işleri için Haiku çağırıyor (~0,014 $/iş).
 - **Sınır:** Claude Code alt ajanı bir kez depoya boş `login.out` bıraktı (kendisi sildi) ve paylaşılan tarayıcıda ofis sekmesini
   kapattı; ofis ajanının yazması `_guard` ile cwd'de kalır. n=1; Claude Code'un eforu doğrudan ayarlanamadı.
+
+### Karşılaştırmadan sonra: kalite notları ve gerçek tarayıcı testi (2026-09-26, kullanıcı isteği) ✅ tekrar koşusu bekliyor
+
+- **Claude Code'un iyi yaptıkları ofis md'lerine girdi:** çerçevenin `PasswordHasher`'ı, sır `appsettings.json`'a girmez + kalkışta
+  dur, olumsuz yol testleri (arka yüz bilgisi); etiketli form, `role="alert"`, sayfa başlığı (ön yüz bilgisi); "ekran değiştiyse
+  tarayıcıda dene, araç yoksa söyle", sunucuları kapat, sapmayı raporla (ajan md'si). Düzeltme: ofis ajanı da sunucuyu kaldırıp
+  curl'lemiş ve typecheck'in gerçekten denetlediğini bilerek hatalı dosyayla sınamıştı — o ikisi fark değildi.
+- **Tarayıcı:** DOMAIN → Gerçek tarayıcıda test. Playwright MCP 0.0.82 (sabit sürüm), görünür Edge, 14 araç, bağlantı denendi
+  (25 araç listelendi). Sıradaki: aynı işin tekrarı; ofis tarayıcıda denerse ve kalite farkları kapanırsa aynı projeye ikinci iş
+  (keşif alt ajanı açık/kapalı ölçümü).

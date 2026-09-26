@@ -6,6 +6,7 @@ provider: anthropic
 model: claude-opus-5-5
 effort: high
 includes: [backend-developer, frontend-developer-nuxt]
+mcp: [playwright]
 explore_model: claude-haiku-4-5-20251001
 ---
 
