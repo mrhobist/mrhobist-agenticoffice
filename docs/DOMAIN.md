@@ -112,6 +112,12 @@ ile oku → ana akış + olumsuz yol → konsol → kapat); ajan md'si "ekran de
   belirsiz (ajanın portları projeye göre değişir): eklenmedi. Dosya erişimi varsayılan olarak çalışma köküyle sınırlı.
 - **Kurulum (2026-09-26, kullanıcı: "görünür Edge"):** `playwright` sunucusu görünür Edge ile (`--isolated --browser=msedge`),
   14 araç açık (ekran görüntüsü, `evaluate`, `run_code_unsafe`, dosya yükleme kapalı), yetki `tek-kisilik-dev-kadro`'da.
+- **Ofis standardı (2026-09-26, kullanıcı: "ikisini de yap"):** katalog girdisinde `default` (seçenek, değerler, açık araçlar,
+  `grantNewAgents`). (1) Api kalkışta md'si yetkili ama bu makinede kaydı olmayan sunucuyu bu varsayılanla kurar — yetki git'te,
+  kayıt `data/`'da; yeni makinede ya da silinen veritabanında yetki kalıp araç kaybolurdu. Kullanıcının sildiği sunucu geri
+  gelmez: silme önce yetkilerin kalkmasını ister. (2) Yeni ajan (`POST /agents`, `mcp` yok) varsayılan sunuculara yetkili
+  başlar; Ekip → Yeni ajan formunda "Ofis varsayılan araçları" kutusu (kaldırılırsa `mcp: []`). md içe aktarmada varsayılan
+  uygulanmaz: md ne diyorsa o.
 - **Sınırlar (2026-09-26 ilk kullanım):** görsel denetim yok (ekran görüntüsü kapalı: ajan metinden okur, yerleşim/renk
   hatası görmez); araç şeması iç tur başına ~4K token (analiz tepesi 21,6K → 26,5K; md büyümesiyle karışık tahmin); MCP her
   araçlı turda açılır (analizde de, gereksiz); çalışma köküne `.playwright-mcp` klasörü yazar (`_guard` dışında); görünür

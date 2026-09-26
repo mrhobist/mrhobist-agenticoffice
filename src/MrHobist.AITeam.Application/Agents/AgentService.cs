@@ -119,7 +119,7 @@ public interface IAgentService
 
 }
 
-public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, ISceneLayout scene, ISceneEventPublisher events, IMcpStore? mcp = null) : IAgentService
+public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, ISceneLayout scene, ISceneEventPublisher events, IMcpStore? mcp = null, IMcpCatalog? catalog = null) : IAgentService
 {
     /// <summary>Sahne yerlesimi degisti: UI yeniden kurar (docs/SCENE.md → scene.reload).</summary>
     private void PublishReload(string reason) => events.Publish(SceneEventTypes.SceneReload, JsonSerializer.Serialize(new { reason }));
@@ -148,9 +148,11 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
             throw new DomainException(ErrorCodes.AgentExists, $"'{key}' anahtarli ajan zaten var.");
         }
 
+        // Istekte mcp yoksa ofis varsayilanlari (katalogda grantNewAgents, ornegin tarayici): yeni ajan bunlarla baslar. [] = hic.
+        var grants = request.Mcp ?? await Mcp.McpDefaults.NewAgentGrantsAsync(catalog, mcp, Providers.Parse(request.Provider), ct).ConfigureAwait(false);
         var agent = Compose(
             new Agent(key, key, "", [], null, null, [], null, ""),
-            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort, request.Mcp, ExploreModel: request.ExploreModel));
+            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort, grants, ExploreModel: request.ExploreModel));
         // Karakter once denetlenir: bilinmeyen sprite md yazilmadan reddedilsin (yarim ajan kalmasin).
         await RequireKnownSpriteAsync(request.Sprite, ct).ConfigureAwait(false);
         var detail = await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);

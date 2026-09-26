@@ -281,6 +281,65 @@ public sealed class McpAndAttachmentTests : IDisposable
         Assert.Equal(ErrorCodes.McpInvalidKey, (await Assert.ThrowsAsync<DomainException>(() => mcp.InstallAsync("jira", new McpInstallRequest("server-pat", Key: "catalog"), Ct))).ErrorCode);
     }
 
+    private sealed class DefaultCatalog : IMcpCatalog
+    {
+        public Task<IReadOnlyList<McpCatalogEntry>> LoadAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<McpCatalogEntry>>(
+        [
+            new("tarayici", "Tarayıcı", "Test", "gerçek tarayıcı",
+                [new("yerel", "Yerel", McpTransport.Stdio, "npx", ["tarayici-mcp", "--browser={BROWSER}"], Fields: [new("BROWSER", "Tarayıcı", Choices: ["msedge", "chrome"], Default: "chrome")])],
+                Default: new McpDefaultInstall("yerel", new Dictionary<string, string?> { ["BROWSER"] = "msedge" }, ["browser_navigate"], GrantNewAgents: true)),
+            new("digeri", "Diğeri", "Test", "kimse yetkili değil",
+                [new("yerel", "Yerel", McpTransport.Stdio, "npx", ["digeri-mcp"])],
+                Default: new McpDefaultInstall("yerel")),
+        ]);
+    }
+
+    private sealed class NullEvents : ISceneEventPublisher
+    {
+        public void Publish(string type, string json)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Yetki git'te (md), kayit data/'da: yeni makinede ya da silinen veritabaninda ajan yetkili kalip araci alamazdi. Kalkista
+    /// md'si yetkili, kaydi olmayan varsayilanli sunucu kurulur; kayitli olana ve kimsenin yetkili olmadigina dokunulmaz.
+    /// </summary>
+    [Fact]
+    public async Task Yetkili_ama_kayitsiz_varsayilan_sunucu_kurulur_digerlerine_dokunulmaz()
+    {
+        var mcp = new McpService(_mcpStore, _agents, _runtime, new DefaultCatalog());
+        var dev = (await _agents.LoadTeamAsync(Ct)).Agents["developer"];
+        await _agents.SaveAgentAsync(dev with { Mcp = ["tarayici"] }, Ct);
+
+        Assert.Equal(["tarayici"], await mcp.EnsureGrantedAsync(Ct));
+        var server = (await _mcpStore.GetAsync("tarayici", Ct))!;
+        Assert.Equal(["tarayici-mcp", "--browser=msedge"], server.Args);
+        Assert.Equal(["browser_navigate"], server.Tools);
+        Assert.Null(await _mcpStore.GetAsync("digeri", Ct)); // kimse yetkili degil
+
+        Assert.Empty(await mcp.EnsureGrantedAsync(Ct)); // kayitli olana dokunulmaz
+    }
+
+    /// <summary>Yeni ajan istekte mcp yoksa ofis varsayilanlariyla baslar; [] = hic; MCP calistiramayan saglayicida verilmez.</summary>
+    [Fact]
+    public async Task Yeni_ajan_varsayilan_mcp_yetkisiyle_baslar()
+    {
+        var catalog = new DefaultCatalog();
+        var dev = (await _agents.LoadTeamAsync(Ct)).Agents["developer"];
+        await _agents.SaveAgentAsync(dev with { Mcp = ["tarayici"] }, Ct);
+        await new McpService(_mcpStore, _agents, _runtime, catalog).EnsureGrantedAsync(Ct);
+        var svc = new Application.Agents.AgentService(_agents, new JsonWorkflowStore(_fx.Paths), _fx.Get<ISceneLayout>(), new NullEvents(), _mcpStore, catalog);
+
+        static Application.Agents.CreateAgentRequest Req(string key, string? provider = null, IReadOnlyList<string>? mcp = null)
+            => new(key, key, "özet", ["dev"], provider, null, [], null, "Sen bir test ajanısın.", Mcp: mcp);
+
+        Assert.Equal(["tarayici"], (await svc.CreateAsync(Req("yeni-a"), Ct)).Mcp);
+        Assert.Empty((await svc.CreateAsync(Req("yeni-b", mcp: []), Ct)).Mcp ?? []);
+        Assert.Empty((await svc.CreateAsync(Req("yeni-c", provider: "openai"), Ct)).Mcp ?? []);
+        Assert.Equal(["tarayici"], (await _agents.LoadTeamAsync(Ct)).Agents["yeni-a"].McpServers); // md'ye yazildi
+    }
+
     // ------------------------------------------------------------------ ekler
 
     private static byte[] Docx(string text)

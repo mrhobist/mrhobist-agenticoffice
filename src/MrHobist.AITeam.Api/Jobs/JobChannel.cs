@@ -122,6 +122,12 @@ internal static partial class Log
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Count} yarim kalan calisma Interrupted isaretlendi.")]
     public static partial void Interrupted(ILogger logger, int count);
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "varsayilan MCP sunuculari kuruldu (md'de yetkili, kayit yoktu): {Keys}")]
+    public static partial void McpDefaultsInstalled(ILogger logger, string keys);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "varsayilan MCP sunuculari kurulamadi; ajanlar bu araclari almaz")]
+    public static partial void McpDefaultsFailed(ILogger logger, Exception ex);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "{Count} sema betigi uygulandi: {Database}")]
     public static partial void SchemaApplied(ILogger logger, int count, string database);
 

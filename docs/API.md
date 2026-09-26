@@ -75,7 +75,7 @@ Bir ajan bir markdown dosyasıdır: YAML frontmatter üstveri, gövde sistem pro
 
 | Uç | Dönen | Not |
 |---|---|---|
-| `POST /api/v1/agents` | **201** `AgentDetail` | gövde = PUT gövdesi + `key`; `config/agents/{key}.md` oluşturulur. Var olan anahtar → **409** `agent.exists` |
+| `POST /api/v1/agents` | **201** `AgentDetail` | gövde = PUT gövdesi + `key`; `config/agents/{key}.md` oluşturulur. Var olan anahtar → **409** `agent.exists`. `mcp` yoksa (null) ofis varsayılanları verilir: katalogda `default.grantNewAgents` olan ve bu makinede kayıtlı sunucular (bugün `playwright`); `[]` = hiç; MCP çalıştıramayan sağlayıcıda boş |
 | `DELETE /api/v1/agents/{key}` | **204** | md silinir. Bir iş akışında `role`/`handoffRole` olarak ya da başka ajanın `canAsk`'ında geçiyorsa **409** `agent.in_use` (önce oradan çıkarılır) |
 
 Ekip **açıktır**: zorunlu rol yoktur; hangi ajanların çalışacağını iş akışı belirler. Sahnede yeri

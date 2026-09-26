@@ -381,6 +381,12 @@
       "description": "Gerçek tarayıcıyı sürer: sayfa aç, tıkla, form doldur, ekran görüntüsü al — ön yüzü uçtan uca test etmek için",
       "docsUrl": "https://github.com/microsoft/playwright-mcp",
       "official": true,
+      "default": {
+        "option": "headed",
+        "values": { "BROWSER": "msedge" },
+        "tools": ["browser_navigate", "browser_navigate_back", "browser_snapshot", "browser_find", "browser_click", "browser_type", "browser_fill_form", "browser_select_option", "browser_press_key", "browser_handle_dialog", "browser_wait_for", "browser_console_messages", "browser_network_requests", "browser_close"],
+        "grantNewAgents": true
+      },
       "options": [
         {
           "id": "headless",

@@ -76,6 +76,12 @@ public sealed record McpTestResult(bool Ok, string Detail, IReadOnlyList<Runtime
 
 public interface IMcpService
 {
+    /// <summary>
+    /// Md'si katalogdaki varsayilanli bir sunucuya yetkili olup bu makinede kaydi olmayan sunuculari kurar (Api kalkisinda).
+    /// Kurulan anahtarlari doner; zaten kayitli olana dokunmaz.
+    /// </summary>
+    Task<IReadOnlyList<string>> EnsureGrantedAsync(CancellationToken ct);
+
     Task<IReadOnlyList<McpServerView>> ListAsync(CancellationToken ct);
 
     Task<McpServerView> GetAsync(string key, CancellationToken ct);
@@ -132,6 +138,28 @@ public sealed class McpService(IMcpStore store, IAgentStore agents, IAgentRuntim
         var server = McpCatalogBuilder.Build(entry, option, key, request.Name, request.Values ?? new Dictionary<string, string?>());
         await store.SaveAsync(server, ct).ConfigureAwait(false);
         return await GetAsync(key, ct).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<string>> EnsureGrantedAsync(CancellationToken ct)
+    {
+        var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
+        var granted = team.Agents.Values.SelectMany(a => a.McpServers).ToHashSet(StringComparer.Ordinal);
+        var installed = new List<string>();
+        foreach (var entry in (await CatalogAsync(ct).ConfigureAwait(false)).Where(e => e.Default is not null && granted.Contains(e.Key)))
+        {
+            if (await store.GetAsync(entry.Key, ct).ConfigureAwait(false) is not null)
+            {
+                continue;
+            }
+
+            var option = entry.Options.FirstOrDefault(o => o.Id == entry.Default!.Option)
+                ?? throw new DomainException(ErrorCodes.McpInvalid, $"{entry.Name}: varsayilan kurulum '{entry.Default!.Option}' secenegini gosteriyor, katalogda yok.");
+            var server = McpCatalogBuilder.Build(entry, option, entry.Key, null, entry.Default!.Values ?? new Dictionary<string, string?>());
+            await store.SaveAsync(server with { Tools = entry.Default.Tools is { Count: > 0 } tools ? [.. tools] : null }, ct).ConfigureAwait(false);
+            installed.Add(entry.Key);
+        }
+
+        return installed;
     }
 
     private static string RequireFreeKey(string key)

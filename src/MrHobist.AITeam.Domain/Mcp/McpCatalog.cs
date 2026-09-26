@@ -66,7 +66,22 @@ public sealed record McpCatalogEntry(
     IReadOnlyList<McpAuthOption> Options,
     bool Official = false,
     string? DocsUrl = null,
-    string? Notes = null);
+    string? Notes = null,
+    /// <summary>Ofisin varsayilan kurulumu (docs/DOMAIN.md → Gercek tarayicida test); null = elle kurulur. Sona eklendi.</summary>
+    McpDefaultInstall? Default = null);
+
+/// <summary>
+/// Katalog sunucusunun ofis varsayilani. <see cref="Option"/> + <see cref="Values"/> kurulum formunun yerine gecer, <see cref="Tools"/>
+/// ajana acilan araclardir (null = hepsi). Kurulum yalniz bir ajanin md'si sunucuya yetkiliyken ve bu makinede kayit yokken olur
+/// (kayit <c>data/</c>'da, yetki git'te: yeni makinede ya da silinen veritabaninda yetki kalir, kayit kaybolurdu). Kullanicinin
+/// sildigi sunucu geri gelmez: silme once yetkilerin kalkmasini ister. <see cref="GrantNewAgents"/>: yeni olusturulan ajan
+/// (istekte <c>mcp</c> yoksa) bu sunucuya yetkili baslar.
+/// </summary>
+public sealed record McpDefaultInstall(
+    string Option,
+    IReadOnlyDictionary<string, string?>? Values = null,
+    IReadOnlyList<string>? Tools = null,
+    bool GrantNewAgents = false);
 
 /// <summary>Katalog secenegini doldurulmus degerlerle bir <see cref="McpServer"/>'a cevirir. Dosya I/O yok; kural burada.</summary>
 public static partial class McpCatalogBuilder

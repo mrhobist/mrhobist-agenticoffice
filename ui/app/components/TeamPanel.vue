@@ -35,6 +35,8 @@ const adding = ref(false)
 const nKey = ref(''); const nName = ref(''); const nSummary = ref(''); const nRoles = ref<string[]>(['dev'])
 const nProvider = ref<Provider | ''>(''); const nModel = ref(''); const nEffort = ref<Effort | ''>(''); const nCanAsk = ref(''); const nIncludes = ref<string[]>([])
 const nPrompt = ref('')
+/** Ofis varsayilan MCP yetkileri (tarayici): isaretliyse sunucu katalog varsayilanlarini verir, degilse hic MCP yok. */
+const nDefaultMcp = ref(true)
 /** Ofisteki karakter; null = otomatik (kullanilmayan ilk karakter). */
 const nSprite = ref<string | null>(null)
 const spriteUsers = computed<Record<string, string[]>>(() => {
@@ -58,9 +60,10 @@ async function addAgent() {
       key: nKey.value.trim(), name: nName.value.trim(), summary: nSummary.value.trim(), officeRoles: nRoles.value,
       provider: nProvider.value || null, model: nModel.value.trim() || null, effort: nEffort.value || null,
       includes: nIncludes.value, canAsk: nCanAsk.value || null, prompt: nPrompt.value.trim(), sprite: nSprite.value,
+      ...(nDefaultMcp.value ? {} : { mcp: [] }),
     })
     adding.value = false
-    nKey.value = ''; nName.value = ''; nSummary.value = ''; nRoles.value = ['dev']; nProvider.value = ''; nModel.value = ''; nEffort.value = ''; nCanAsk.value = ''; nIncludes.value = []; nPrompt.value = ''; nSprite.value = null
+    nKey.value = ''; nName.value = ''; nSummary.value = ''; nRoles.value = ['dev']; nProvider.value = ''; nModel.value = ''; nEffort.value = ''; nCanAsk.value = ''; nIncludes.value = []; nPrompt.value = ''; nSprite.value = null; nDefaultMcp.value = true
     emit('changed')
   } catch (e) {
     addError.value = errorText(e)
@@ -350,6 +353,9 @@ onMounted(() => { void loadKnowledge(); void loadWorkflows() })
               <div class="chips"><label v-for="k in knowledge" :key="k.key" class="chk"><input type="checkbox" :checked="nIncludes.includes(k.key)" @change="nIncludes = toggleIn(nIncludes, k.key)"> {{ k.title }}</label></div>
             </div>
           </div>
+          <label v-if="!nProvider || nProvider === 'anthropic'" class="chk" title="Katalogda yeni ajanlara verilen MCP sunucuları (bugün Playwright: gerçek tarayıcıda test). Sonra MCP panelinden değiştirilebilir.">
+            <input v-model="nDefaultMcp" type="checkbox"> Ofis varsayılan araçları (tarayıcıda test · Playwright)
+          </label>
           <div class="field"><label class="lbl" for="n-prompt">Sistem promptu</label><textarea id="n-prompt" v-model="nPrompt" rows="6" required placeholder="Sen bir yazılım üretim ofisinin … rolüsün. …" /></div>
           <div class="actions">
             <button class="primary" type="submit" :disabled="addBusy">{{ addBusy ? 'Ekleniyor…' : 'Ekle' }}</button>
