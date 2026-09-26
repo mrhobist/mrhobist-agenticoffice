@@ -157,12 +157,14 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 : null;
             var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
             var cacheTtl = await CacheTtlForAsync(target.Provider, ct).ConfigureAwait(false);
+            var subagents = Explorer.For(agent, target, tools);
             var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
-                Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
+                Tools: Explorer.WithAgentTool(tools?.Tools, subagents), Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
                 SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace,
                 McpServers: mcpServers, ReadDirs: tools?.ReadDirs,
                 DisallowedTools: resolvedMcp is { Disallowed.Count: > 0 } ? resolvedMcp.Disallowed : null,
-                CacheTtl: cacheTtl);
+                CacheTtl: cacheTtl,
+                Subagents: subagents);
 
             // Yarida kalan her deneme (tekrar edilen gecici hata dahil) kendi turu olarak kaydedilir ve maliyeti calismaya
             // tasinir (CLAUDE.md §4). Once yalniz SON hata kaydediliyordu: tekrar basarili olursa dusen denemenin harcamasi kayboluyordu.
@@ -176,7 +178,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 }
 
                 // 2026-09-23'te kesilen ilk t1 ~3 $ harcamis, run_turn'e hic yazilmamisti.
-                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, ex, attemptStarted, tools is not null, context, cacheTtl).ConfigureAwait(false);
+                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, progress.UsageByModel(progressToken), ex, attemptStarted, tools is not null, context, cacheTtl).ConfigureAwait(false);
                 progress.ResetUsage(progressToken); // sonraki deneme sifirdan sayilir: ayni harcama iki kez yazilmasin
                 attemptStarted = DateTimeOffset.UtcNow;
                 return partial;
@@ -235,7 +237,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 McpServers: mcpServers is { Count: > 0 } ? [.. mcpServers.Keys] : null,
                 CacheWrite5mTokens: r.Usage.CacheWrite5mTokens > 0 ? r.Usage.CacheWrite5mTokens : null,
                 PeakContextTokens: r.Usage.PeakContextTokens > 0 ? r.Usage.PeakContextTokens : null,
-                CacheTtl: cacheTtl);
+                CacheTtl: cacheTtl,
+                ModelUsage: r.ModelUsage is { Count: > 1 } mu ? [.. mu.Select(m => new ModelTokens(m.Model, m.InputTokens, m.OutputTokens, m.CacheReadTokens, m.CacheWriteTokens, m.CostUsd))] : null);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
             // Dusen denemeler ayri tur olarak zaten kayitta; calismanin toplamina bu yanitla birlikte girer.
@@ -254,6 +257,10 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     }
 
     private sealed record Attempted(RuntimeTurnResponse Response, TimeSpan Elapsed);
+
+    private static RuntimeUsage Add(RuntimeUsage a, RuntimeUsage b)
+        => new(a.InputTokens + b.InputTokens, a.OutputTokens + b.OutputTokens, a.ReasoningChars + b.ReasoningChars, a.CacheReadTokens + b.CacheReadTokens,
+            a.CacheWriteTokens + b.CacheWriteTokens, a.CacheWrite5mTokens + b.CacheWrite5mTokens, Math.Max(a.PeakContextTokens, b.PeakContextTokens));
 
     /// <summary>Iki kismi harcamanin toplami; ikisi de yoksa null.</summary>
     private static AgentReply? Plus(AgentReply? a, AgentReply? b)
@@ -327,17 +334,27 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
     /// <summary>
     /// Kesilen turu kaydeder: kullanim runtime'in mesaj basina bildiriminden, maliyet fiyat tablosundan tahmin (fiyat yoksa null).
+    /// Fiyat MODEL BASINA: kesif alt ajaninin mesajlari kendi modelinin fiyatiyla; modeli bildirilmeyen mesaj ana modelin fiyatiyla.
+    /// Bir modelin fiyati yoksa toplam maliyet olculemedi (null) kalir: eksik bir toplam yazmaktansa.
     /// Bu yol hicbir zaman asil hatayi ortmemeli: kayit basarisizsa yutulur. Iptal belirteci kullanilmaz -- iptal edilmis
     /// calismanin da harcamasi yazilmalidir.
     /// </summary>
-    private async Task<AgentReply> RecordCutShortAsync(Run run, string agentKey, string? stage, string? task, int? round, AgentTarget target, string system, IReadOnlyList<RuntimeMessage> messages, RuntimeUsage spent, Exception ex, DateTimeOffset started, bool toolsOffered, ContextStats? context, string? cacheTtl)
+    private async Task<AgentReply> RecordCutShortAsync(Run run, string agentKey, string? stage, string? task, int? round, AgentTarget target, string system, IReadOnlyList<RuntimeMessage> messages, RuntimeUsage spent, IReadOnlyList<(string? Model, RuntimeUsage Usage)> byModel, Exception ex, DateTimeOffset started, bool toolsOffered, ContextStats? context, string? cacheTtl)
     {
         decimal? cost = null;
+        var parts = (byModel.Count > 0 ? byModel : [(target.Model, spent)])
+            .GroupBy(m => m.Model ?? target.Model, StringComparer.Ordinal)
+            .Select(g => (Model: g.Key, Usage: g.Select(x => x.Usage).Aggregate(Add)))
+            .ToList();
+        List<ModelTokens>? modelUsage = null;
         try
         {
-            if (catalog is not null && (await catalog.LoadPricesAsync(CancellationToken.None).ConfigureAwait(false)).TryGetValue(target.Model, out var price))
+            if (catalog is not null)
             {
-                cost = Math.Round(price.Estimate(spent), 6);
+                var prices = await catalog.LoadPricesAsync(CancellationToken.None).ConfigureAwait(false);
+                modelUsage = [.. parts.Select(p => new ModelTokens(p.Model, p.Usage.InputTokens, p.Usage.OutputTokens, p.Usage.CacheReadTokens, p.Usage.CacheWriteTokens,
+                    prices.TryGetValue(p.Model, out var price) ? Math.Round(price.Estimate(p.Usage), 6) : null))];
+                cost = modelUsage.All(m => m.CostUsd is not null) ? modelUsage.Sum(m => m.CostUsd!.Value) : null;
             }
         }
         catch (DomainException)
@@ -373,7 +390,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             CutShort: true,
             CacheWrite5mTokens: spent.CacheWrite5mTokens > 0 ? spent.CacheWrite5mTokens : null,
             PeakContextTokens: spent.PeakContextTokens > 0 ? spent.PeakContextTokens : null,
-            CacheTtl: cacheTtl);
+            CacheTtl: cacheTtl,
+            ModelUsage: modelUsage is { Count: > 1 } ? modelUsage : null);
         try
         {
             await runs.AppendTurnAsync(run.Id, turn, CancellationToken.None).ConfigureAwait(false);

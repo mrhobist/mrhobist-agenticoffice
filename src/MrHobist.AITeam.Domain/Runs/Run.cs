@@ -281,7 +281,15 @@ public sealed record Turn(
     /// </summary>
     int? PeakContextTokens = null,
     /// <summary>Istenen onbellek omru (<c>5m</c> | <c>1h</c>); null = CLI varsayilani. Sona eklendi.</summary>
-    string? CacheTtl = null);
+    string? CacheTtl = null,
+    /// <summary>
+    /// Model basina kirilim (ana model + kesif alt ajani gibi alt ajanlar). Ust alanlar (<see cref="InputTokens"/>, <see cref="CostUsd"/>)
+    /// turun TOPLAMIDIR; alt ajanin payi yalniz burada ayrisir. Tek model ya da bildirilmediyse null. Sona eklendi.
+    /// </summary>
+    IReadOnlyList<ModelTokens>? ModelUsage = null);
+
+/// <summary>Turdaki tek modelin payi. <see cref="InputTokens"/> toplamdir (dogrudan + onbellek okuma + yazma).</summary>
+public sealed record ModelTokens(string Model, int InputTokens, int OutputTokens, int CacheReadTokens, int CacheWriteTokens, decimal? CostUsd);
 
 /// <summary>
 /// Bir turda tasinan gecmisin olcusu (docs/DOMAIN.md → Baglam butcesi). Sikistirmanin neyi dusurdugunu ve hangi

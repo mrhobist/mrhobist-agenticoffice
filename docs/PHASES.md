@@ -1038,3 +1038,17 @@ Kod incelemesinin bulguları; davranış değişikliği yalnız doğruluk ve hı
 - **Doğrulama:** 50 birim + 170 servis + 67 Python testi. Yeni `AgentCallerTests` `RunServiceTests` ile paralel koşunca 4 test
   `Running`'de kalıyordu: ajan kilitleri statik, biri "developer" kilidini tutarken diğerinin dağıtımı "ajan meşgul" sanıyordu.
   İki sınıf aynı xUnit koleksiyonunda (`agent-locks`), sırayla koşar. Kod hatası değil.
+
+## Keşif alt ajanı (Haiku) + anlık görüntü hatası kayda düşer (2026-09-26, kullanıcı: "haiku keşif alt ajanı ve küçük açıklar") 🔶 ölçüm bekliyor
+
+- **Keşif alt ajanı:** DOMAIN → Keşif alt ajanı. md `explore_model` → araçlı turda salt okunur `kesif` alt ajanı (SDK `agents`,
+  Read/Glob/Grep, 25 iç tur). Karar `Application/Runs/Explorer`; runtime yalnız eşler ve `Agent` aracını verilen alt ajanlarla
+  sınırlar (yerleşik general-purpose/Explore reddedilir). Kullanıcının iki şartından **kayıt** karşılandı: `Turn.modelUsage`
+  (SDK `model_usage`), kesilen turda alt ajan mesajları kendi fiyatıyla, tepe bağlam ana ajanın. Ekip panelinde "Keşif alt
+  ajanı" seçimi; çalışma panelinde turun alt ajan payı. `tek-kisilik-dev-kadro`'da Haiku 4.5 ile açık.
+- **Anlık görüntü hatası görünür:** görüntü alınamazsa nedeni (`git add (128): … Permission denied` gibi, ilk satır) çalışmanın
+  kaydına `snapshot` notu olarak düşer; eskiden yalnız konsol logundaydı. İş durmaz.
+- **Doğrulama:** 50 birim + 174 servis + 69 Python testi; Api `-warnaserror`; UI typecheck; tipler canlı Api'den üretildi (yalnız
+  eklemeli). **Ölçülmedi:** gerçek koşu (şart 2, aynı brief'le önce/sonra) — sıradaki iş.
+- **Açık:** `.claude/worktrees/agent-a2dae16…` (dal `main`'e birleşmiş) içinde 19 Eylül'den kalma 15 commit'lenmemiş UI dosyası
+  var; silmek geri alınamaz, kullanıcıya soruldu.

@@ -448,6 +448,24 @@ LLM özeti (üçüncü kademe) **yoktur**, ölçüm onu hak ettiğini gösterene
   ajan md'sinde **okuma disiplini** (önce ara sonra dar oku, dosyaları topluca `cat` etme, taşan çıktıyı baştan
   sona okuma), plandaki **kod haritası**. Etki `context-report.py`'nin ikinci bölümünden okunur.
 
+### Keşif alt ajanı (2026-09-26, kullanıcı: "fena değil"; şartları aşağıda, ayrıntılar varsayımla ilerlenir)
+
+- **Ne:** ajan md'sinde `explore_model` doluysa (ör. `claude-haiku-4-5-20251001`) ajanın **araçlı** turlarına salt okunur
+  bir alt ajan (`kesif`: Read/Glob/Grep, en çok 25 iç tur) açılır. Geniş kod aramasını o yapar; arama sonuçları onun
+  bağlamında kalır, ana modelin bağlamına yalnız özeti girer. Ana ajan ne zaman çağıracağına alt ajanın açıklamasından
+  karar verir ("yolunu bildiğin tek dosya için kullanma").
+- **Karar .NET'te** (`Application/Runs/Explorer`): yalnız araçlı turda, yalnız anthropic ajanında (SDK `agents`).
+  Başka sağlayıcıya verilirse 400 `agent.explore_unsupported`. Runtime yalnız eşler ve `Agent` aracını **yalnız verilen
+  alt ajanlarla** sınırlar: Claude Code'un yerleşik alt ajanları (general-purpose, Explore) reddedilir — araçlarını ve
+  modelini .NET'in seçmediği bir ajan koşmasın. Alt ajanın araçları da aynı izin denetiminden geçer.
+- **Kayıt (şart 1):** turun `inputTokens`/`costUsd`'si toplamdır; model başına pay `Turn.modelUsage`'dadır (SDK
+  `model_usage`). Kesilen turda alt ajanın mesajları kendi modelinin fiyatıyla sayılır (Opus fiyatıyla 4–5 kat
+  yazılırdı). Tepe bağlam (`peakContextTokens`) ana ajanındır, alt ajanın ayrı bağlamı ölçüye girmez. Alt ajanın araç
+  çağrıları kayıtta `kesif/Grep` diye görünür.
+- **Ölçüm (şart 2):** aynı brief'le önce/sonra karşılaştırması yapılmadan varsayılan açılmaz. `tek-kisilik-dev-kadro`
+  bu karşılaştırma için açıldı; sonuç PHASES'te. Alternatif (reddedilmedi): keşfi ayrı bir `config/agents` ajanı
+  olarak `AgentCaller` üzerinden koşmak — ama o zaman ana ajan keşfi kendisi başlatamaz, .NET'in önceden bilmesi gerekir.
+
 ### İstem önbelleği ömrü (2026-09-24, kullanıcı onayı; varsayılan değişmedi)
 
 - Ölçüm: CLI **tüm** önbellek yazmalarını 1 saatlik yapıyor (oturum kayıtlarında `ephemeral_5m` = 0). 1 sa yazma baz

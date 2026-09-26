@@ -6,7 +6,7 @@ using MrHobist.AITeam.Domain.Agents;
 namespace MrHobist.AITeam.Infrastructure.Storage;
 
 /// <summary>
-/// <c>config/agents/{key}.md</c>: frontmatter (<c>name, summary, office_roles, provider, model, effort, includes, can_ask, mcp</c>)
+/// <c>config/agents/{key}.md</c>: frontmatter (<c>name, summary, office_roles, provider, model, effort, includes, can_ask, mcp, explore_model</c>)
 /// + govde sistem promptu. <c>config/knowledge/{key}.md</c>: <c>title</c> + govde.
 /// Her yukleme diski okur; ekip butunu yuklenirken dogrulanir.
 /// </summary>
@@ -58,6 +58,7 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
             new("includes", agent.Includes.Count > 0 ? agent.Includes : null),
             new("can_ask", agent.CanAsk),
             new("mcp", agent.McpServers.Count > 0 ? agent.McpServers : null),
+            new("explore_model", agent.ExploreModel),
         };
         var target = Path.Combine(paths.AgentsDir, agent.Key + ".md");
         return AtomicFile.WriteAsync(target, Frontmatter.Render(meta, agent.Prompt), ct);
@@ -144,7 +145,8 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
             NullIfEmpty(Frontmatter.GetString(m, "can_ask")),
             doc.Body,
             Efforts.Parse(Frontmatter.GetString(m, "effort"), key),
-            Frontmatter.GetList(m, "mcp") is { Count: > 0 } mcp ? mcp : null);
+            Frontmatter.GetList(m, "mcp") is { Count: > 0 } mcp ? mcp : null,
+            NullIfEmpty(Frontmatter.GetString(m, "explore_model")));
         agent.Validate();
         return agent;
     }

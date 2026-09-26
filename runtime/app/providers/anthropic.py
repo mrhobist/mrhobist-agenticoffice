@@ -48,6 +48,7 @@ from ..contracts import (
     ModelInfo,
     LocalUsage,
     McpServerConfig,
+    ModelUsage,
     ProgressEvent,
     ProviderLimits,
     ToolUse,
@@ -288,6 +289,26 @@ def _usage_of(raw: dict[str, Any] | None) -> Usage:
     )
 
 
+def _model_usage_of(raw: dict[str, Any] | None) -> list[ModelUsage]:
+    """SDK `model_usage` (CLI'nin `modelUsage`'i, camelCase) -> sozlesme. Girdi toplamdir: dogrudan + onbellek okuma + yazma."""
+    out: list[ModelUsage] = []
+    for model, u in (raw or {}).items():
+        if not isinstance(u, dict):
+            continue
+        read = int(u.get("cacheReadInputTokens") or 0)
+        write = int(u.get("cacheCreationInputTokens") or 0)
+        cost = u.get("costUSD")
+        out.append(ModelUsage(
+            model=str(model),
+            input_tokens=int(u.get("inputTokens") or 0) + read + write,
+            output_tokens=int(u.get("outputTokens") or 0),
+            cache_read_tokens=read,
+            cache_write_tokens=write,
+            cost_usd=float(cost) if isinstance(cost, (int, float)) else None,
+        ))
+    return out
+
+
 #: `local_usage` dosya onbellegi: yol -> (mtime, boyut, [(mesaj kimligi, zaman, (kaynak, klasor, model, kullanim))]).
 _USAGE_FILE_CACHE: dict[str, tuple[float, int, list[tuple[str, float, tuple[str, str, str, dict[str, Any]]]]]] = {}
 
@@ -377,7 +398,7 @@ class AnthropicProvider:
             # yazma siniri devre disi kalir. Arac kumesi `tools`, her cagrinin karari `_guard`.
             opts["tools"] = tools
             mcp_allow = {k: (set(v.tools) if v.tools is not None else None) for k, v in (request.mcp_servers or {}).items()}
-            opts["can_use_tool"] = self._guard(request.cwd, request.read_dirs, mcp_allow)
+            opts["can_use_tool"] = self._guard(request.cwd, request.read_dirs, mcp_allow, set(request.subagents or {}))
             if request.disallowed_tools:
                 # Secilmeyen MCP araclari modele hic sunulmaz (semalari baglama girmez); `_guard` izin listesini ayrica uygular.
                 opts["disallowed_tools"] = list(request.disallowed_tools)
@@ -387,6 +408,13 @@ class AnthropicProvider:
             if request.read_dirs:
                 # Is ekleri cwd disinda: Claude Code okumayi bu dizinlerde de serbest birakir. Yazma siniri `_guard`'da, cwd'de kalir.
                 opts["add_dirs"] = list(request.read_dirs)
+            if request.subagents:
+                # Alt ajanlar .NET'ten (hangi ajan, hangi model, hangi arac). Ana ajan `Agent` araciyla cagirir; `_guard` bu adlar
+                # disindakini (yerlesik general-purpose/Explore) reddeder. Alt ajanin araclari da `_guard`'dan gecer.
+                opts["agents"] = {
+                    name: sdk.AgentDefinition(description=d.description, prompt=d.prompt, tools=list(d.tools), model=d.model, maxTurns=d.max_turns)
+                    for name, d in request.subagents.items()
+                }
             if request.mcp_servers:
                 # Ajanin MCP sunuculari (.NET secti). `strict_mcp_config` acik: kullanicinin kendi MCP'leri DEGIL yalniz bunlar yuklenir.
                 # Araclar `mcp__{anahtar}__{arac}` adini alir; izin karari yine `_guard` (dosya yazmayan arac serbest).
@@ -405,6 +433,9 @@ class AnthropicProvider:
             opts["env"] = {**opts["env"], "ANTHROPIC_API_KEY": key}
         return ClaudeAgentOptions(**opts)
 
+    #: Alt ajan araci (Claude Code'da eski adi Task).
+    AGENT_TOOLS = frozenset({"Agent", "Task"})
+
     #: Dosya degistiren araclar: hedef yol cwd disindaysa reddedilir.
     WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
 
@@ -414,9 +445,11 @@ class AnthropicProvider:
     _BASH_ALLOW_PREFIXES = ("/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/tmp")
 
     @classmethod
-    def _guard(cls, cwd: str | None, read_dirs: list[str] | None = None, mcp_allow: dict[str, set[str] | None] | None = None):
+    def _guard(cls, cwd: str | None, read_dirs: list[str] | None = None, mcp_allow: dict[str, set[str] | None] | None = None,
+               subagents: set[str] | None = None):
         """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: dosya yazma yalniz verilen dizinde; Bash verilen
-        dizinde ve .NET'in actigi okuma dizinlerinde (is ekleri: ornegin bir resmi projeye kopyalamak)."""
+        dizinde ve .NET'in actigi okuma dizinlerinde (is ekleri: ornegin bir resmi projeye kopyalamak). `Agent` yalniz
+        .NET'in verdigi alt ajanlari cagirabilir."""
         root = Path(cwd).resolve() if cwd else None
         extra = [Path(d).resolve() for d in (read_dirs or [])]
 
@@ -451,6 +484,11 @@ class AnthropicProvider:
             denied = mcp_denied(tool)
             if denied:
                 return PermissionResultDeny(message=denied)
+            if tool in cls.AGENT_TOOLS:
+                kind = str(tool_input.get("subagent_type") or "")
+                if kind not in (subagents or set()):
+                    names = ", ".join(sorted(subagents or [])) or "yok"
+                    return PermissionResultDeny(message=f"'{kind or 'varsayilan'}' alt ajani bu ajana acilmadi; kullanilabilir: {names}.")
             if root is None:
                 return PermissionResultAllow()
             if tool in cls.WRITE_TOOLS:
@@ -518,6 +556,9 @@ class AnthropicProvider:
         # Tek API cagrisinin girdisi = o anki baglam; turun tepesi olcu olarak doner (is kurali degil, sayim).
         peak = 0
         short_by_msg: dict[str, int] = {}
+        # Alt ajan cagrisi (Agent tool_use kimligi) -> alt ajanin adi: alt ajanin mesajlari parent_tool_use_id ile gelir.
+        sub_of: dict[str, str] = {}
+        model_usage: list[ModelUsage] = []
         stream: Any = None
         try:
             prompt_text = self._prompt(request)
@@ -532,7 +573,16 @@ class AnthropicProvider:
                         if _limit_reached(err_text):
                             raise _error(503, "runtime.provider_limit", err_text)
                         raise _error(502, "runtime.provider_error", err_text)
+                    sub = sub_of.get(msg.parent_tool_use_id, "alt") if msg.parent_tool_use_id else None
                     for block in msg.content:
+                        if sub is not None:
+                            # Alt ajanin mesaji: metni ana yanita girmez (alt ajanin sonucu ana ajana arac sonucu olarak doner).
+                            # Arac cagrilari kayda ve canli akisa `ad/Arac` diye girer: ana ajanin kendi okumasiyla karismasin.
+                            if isinstance(block, ToolUseBlock):
+                                use = ToolUse(tool=f"{sub}/{block.name}", target=self._tool_target(block))
+                                tool_uses.append(use)
+                                await _report_progress(client, request.progress_url, ProgressEvent(kind="tool", tool=use.tool, target=use.target))
+                            continue
                         if isinstance(block, TextBlock):
                             parts.append(block.text)
                             if block.text.strip():
@@ -541,17 +591,21 @@ class AnthropicProvider:
                             if (block.thinking or "").strip():
                                 await _report_progress(client, request.progress_url, ProgressEvent(kind="thinking", text=block.thinking[:PROGRESS_TEXT_MAX]))
                         elif isinstance(block, ToolUseBlock):
+                            if block.name in self.AGENT_TOOLS:
+                                sub_of[block.id] = str((block.input or {}).get("subagent_type") or "alt")
                             use = ToolUse(tool=block.name, target=self._tool_target(block))
                             tool_uses.append(use)
                             await _report_progress(client, request.progress_url, ProgressEvent(kind="tool", tool=use.tool, target=use.target))
                     if msg.usage and msg.message_id:
                         chars[msg.message_id] = chars.get(msg.message_id, 0) + sum(_block_chars(b) for b in msg.content)
                         state = (_usage_of(msg.usage), chars[msg.message_id])
-                        peak = max(peak, state[0].input_tokens)
+                        if sub is None:
+                            # Tepe baglam ANA ajanin baglamidir; alt ajanin kendi (ayri) baglami olcuyu bozmasin.
+                            peak = max(peak, state[0].input_tokens)
                         short_by_msg[msg.message_id] = state[0].cache_write_5m_tokens
                         if sent_usage.get(msg.message_id) != state:
                             sent_usage[msg.message_id] = state
-                            await _report_progress(client, request.progress_url, ProgressEvent(kind="usage", message_id=msg.message_id, usage=state[0], chars=state[1]))
+                            await _report_progress(client, request.progress_url, ProgressEvent(kind="usage", message_id=msg.message_id, usage=state[0], chars=state[1], model=msg.model or None))
                 elif isinstance(msg, ResultMessage):
                     if msg.is_error:
                         detail = "; ".join(msg.errors or []) or msg.result or "bilinmiyor"
@@ -564,6 +618,7 @@ class AnthropicProvider:
                     cost = msg.total_cost_usd
                     usage_raw = msg.usage or {}
                     turns = int(msg.num_turns or 1)
+                    model_usage = _model_usage_of(msg.model_usage)
                     if msg.result and not parts:
                         parts.append(msg.result)
         except HTTPException:
@@ -600,6 +655,7 @@ class AnthropicProvider:
             attempts=1,
             tool_uses=tool_uses,
             turns=turns,
+            model_usage=model_usage,
         )
 
     def auth(self, refresh: bool = False) -> AuthStatus:

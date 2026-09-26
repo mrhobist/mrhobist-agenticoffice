@@ -60,6 +60,18 @@ class McpProbeResult(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SubagentDef(BaseModel):
+    """Ajanin cagirabilecegi bir alt ajan (SDK `AgentDefinition`). Hangi ajanin hangisini aldigi .NET'in karari; burasi yalniz esler."""
+
+    description: str
+    prompt: str
+    tools: list[str] = Field(default_factory=list)
+    model: str
+    max_turns: int | None = Field(default=None, alias="maxTurns")
+
+    model_config = {"populate_by_name": True}
+
+
 class TurnRequest(BaseModel):
     """Bir LLM cagrisinin tamami. Gecmis `messages` ile gelir; sunucu hicbir sey hatirlamaz."""
 
@@ -101,6 +113,9 @@ class TurnRequest(BaseModel):
     #: Istem onbelleginin omru: `5m` (yazma 1,25x) | `1h` (yazma 2x) | None = CLI varsayilani (olculdu 2026-09-24: 1 sa).
     #: Secim .NET'in (Ayarlar); burasi yalniz CLI ortam degiskenine esler. Onbellek tutmayan saglayici yok sayar.
     cache_ttl: Literal["5m", "1h"] | None = Field(default=None, alias="cacheTtl")
+    #: Alt ajanlar (ad -> tanim). Ana ajanin `Agent` araci `tools`'ta gelir ve YALNIZ bu adlari cagirabilir (yerlesik
+    #: general-purpose/Explore gibi alt ajanlar reddedilir: araclari ve modeli .NET'in secmedigi bir ajan kosmasin). None = yok.
+    subagents: dict[str, SubagentDef] | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -145,6 +160,21 @@ class ProgressEvent(BaseModel):
     #: O API mesajinda o ana kadar uretilen icerigin karakter sayisi (metin + dusunce + arac girdisi). Akistaki
     #: `usage.output_tokens` mesajin basindaki degerdir; kesilen turun ciktisini .NET bundan tahmin eder.
     chars: int | None = None
+    #: Mesaji ureten model: alt ajanin mesajlari ana modelden ucuz olabilir, kesilen tur .NET'te model basina fiyatlanir.
+    model: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class ModelUsage(BaseModel):
+    """Turdaki tek modelin kullanimi (ana model + alt ajanlar). `input_tokens` TOPLAMDIR: dogrudan + onbellek okuma + yazma."""
+
+    model: str
+    input_tokens: int = Field(default=0, alias="inputTokens")
+    output_tokens: int = Field(default=0, alias="outputTokens")
+    cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
+    cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
+    cost_usd: float | None = Field(default=None, alias="costUsd")
 
     model_config = {"populate_by_name": True}
 
@@ -180,6 +210,8 @@ class TurnResponse(BaseModel):
     tool_uses: list[ToolUse] = Field(default_factory=list, alias="toolUses")
     #: Ajan dongusunun tur sayisi (saglayici bildirirse).
     turns: int = 1
+    #: Model basina kirilim (saglayici bildirirse; alt ajan varsa birden cok satir). Bos = bildirilmedi.
+    model_usage: list[ModelUsage] = Field(default_factory=list, alias="modelUsage")
 
     model_config = {"populate_by_name": True}
 

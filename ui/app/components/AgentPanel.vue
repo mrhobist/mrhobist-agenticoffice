@@ -52,6 +52,8 @@ function toUpdate(d: AgentDetail): AgentUpdate {
     canAsk: d.canAsk,
     prompt: d.prompt,
     sprite: d.sprite ?? null,
+    // '' = kapali (null sunucuda "korunur" demek; secim kaldirilinca md'den silinsin)
+    exploreModel: d.exploreModel?.trim() ?? '',
   }
 }
 
@@ -162,6 +164,13 @@ const spriteUsers = computed<Record<string, string[]>>(() => {
   }
   return map
 })
+
+/** Kesif alt ajani yalniz Claude'da (SDK alt ajani); secenekler ayni model listesinden. */
+const exploreModel = computed<string>({
+  get: () => form.value?.exploreModel ?? '',
+  set: (v) => { if (form.value) form.value.exploreModel = v || '' },
+})
+const canExplore = computed(() => (form.value?.provider ?? 'anthropic') === 'anthropic')
 
 const effortModel = computed<Effort | ''>({
   get: () => form.value?.effort ?? '',
@@ -400,6 +409,14 @@ defineExpose({ canLeave })
               <option value="">varsayılan (yüksek)</option>
               <option v-for="e in EFFORTS" :key="e" :value="e">{{ EFFORT_LABEL[e] }}</option>
             </select>
+          </div>
+          <div v-if="canExplore" class="field">
+            <label class="lbl" for="agent-explore" title="Araçlı adımlarda salt okunur keşif alt ajanı: geniş kod aramasını ucuz model yapar, ana model yalnız sonucu okur.">Keşif alt ajanı</label>
+            <select v-if="modelsState === 'ready' && models.length" id="agent-explore" v-model="exploreModel">
+              <option value="">yok</option>
+              <option v-for="m in models" :key="m.model" :value="m.model">{{ m.model }}</option>
+            </select>
+            <input v-else id="agent-explore" v-model="exploreModel" type="text" autocomplete="off" spellcheck="false" placeholder="yok (ör. claude-haiku-4-5-20251001)">
           </div>
         </div>
         <span class="sub" :class="{ warn: modelsState === 'runtime-down' || modelsState === 'error' }">{{ modelsHint }}</span>

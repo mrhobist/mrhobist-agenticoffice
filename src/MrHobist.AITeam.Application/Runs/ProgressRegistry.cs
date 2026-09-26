@@ -16,8 +16,9 @@ public sealed record ProgressContext(string RunId, string Agent, string? Task, s
 /// bos alani hic gondermez, zorunlu olsaydi metin/kullanim govdesi 400 alirdi (2026-09-23'te boyle oldu).
 /// <see cref="Chars"/>: o API mesajinda o ana kadar uretilen icerigin (metin, dusunce, arac girdisi) karakter sayisi.
 /// Akistaki <c>outputTokens</c> mesajin BASINDAKI degerdir (olculdu: 2 → gercek 464); kesilen turun ciktisi bundan tahmin edilir.
+/// <see cref="Model"/>: mesaji ureten model (kesif alt ajaninin mesajlari ana modelden ucuzdur; kesilen tur model basina fiyatlanir).
 /// </summary>
-public sealed record ProgressEvent(string? Tool = null, string? Target = null, string? Kind = null, string? Text = null, string? MessageId = null, RuntimeUsage? Usage = null, int? Chars = null);
+public sealed record ProgressEvent(string? Tool = null, string? Target = null, string? Kind = null, string? Text = null, string? MessageId = null, RuntimeUsage? Usage = null, int? Chars = null, string? Model = null);
 
 /// <summary>
 /// Ajanin o anki baglaminin bir parcasi (sistem istemi, bilgi dosyasi, gorev istemi, tasinan gecmis). <see cref="Text"/> yalniz
@@ -81,7 +82,7 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
 
         public Queue<LiveEntry> Stream { get; } = new();
 
-        public Dictionary<string, (RuntimeUsage Usage, int Chars)> Usage { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, (RuntimeUsage Usage, int Chars, string? Model)> Usage { get; } = new(StringComparer.Ordinal);
 
         public object Gate { get; } = new();
     }
@@ -136,6 +137,23 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
     }
 
     /// <summary>
+    /// <see cref="UsageOf"/>'un model basina kirilimi (anahtar: mesaji ureten model; bildirmeyen eski runtime'da null). Kesilen turun
+    /// maliyeti bundan fiyatlanir: kesif alt ajaninin mesajlari ana modelin fiyatiyla sayilsaydi 4-5 kat fazla yazilirdi.
+    /// </summary>
+    public IReadOnlyList<(string? Model, RuntimeUsage Usage)> UsageByModel(string token)
+    {
+        if (!_live.TryGetValue(token, out var l))
+        {
+            return [];
+        }
+
+        lock (l.Gate)
+        {
+            return [.. l.Usage.Values.GroupBy(v => v.Model, StringComparer.Ordinal).Select(g => (g.Key, Sum(g)))];
+        }
+    }
+
+    /// <summary>
     /// Calismanin suren turlari (ayni anda birden cok ajan olabilir). UI bunu 2 s'de bir okur: akisin yalniz son
     /// <paramref name="tail"/> satiri, baglamin metni yalniz <paramref name="withContext"/> ise doner (yoksa ad ve boyut).
     /// </summary>
@@ -170,7 +188,7 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
             switch (kind)
             {
                 case "usage" when e.Usage is not null && !string.IsNullOrEmpty(e.MessageId):
-                    l.Usage[e.MessageId] = (e.Usage, e.Chars ?? 0);
+                    l.Usage[e.MessageId] = (e.Usage, e.Chars ?? 0, string.IsNullOrEmpty(e.Model) ? null : e.Model);
                     return true;
                 case "text" or "thinking" when !string.IsNullOrWhiteSpace(e.Text):
                     Push(l, new LiveEntry(now, kind, null, null, e.Text));
@@ -207,10 +225,10 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
     }
 
     /// <summary>Mesajlarin toplami; cikti mesaj basina bildirilen ile icerikten tahmin edilenin buyugudur.</summary>
-    private static RuntimeUsage Sum(IEnumerable<(RuntimeUsage Usage, int Chars)> all)
+    private static RuntimeUsage Sum(IEnumerable<(RuntimeUsage Usage, int Chars, string? Model)> all)
     {
         int input = 0, output = 0, read = 0, write = 0, shortWrite = 0, peak = 0;
-        foreach (var (u, chars) in all)
+        foreach (var (u, chars, _) in all)
         {
             input += u.InputTokens;
             output += Math.Max(u.OutputTokens, (int)Math.Ceiling(chars / OutputCharsPerToken));

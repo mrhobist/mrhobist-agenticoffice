@@ -42,6 +42,11 @@ export interface AgentDetail extends AgentListItem {
   prompt: string
   /** govde + alt md'ler: modele giden metin. Salt okunur. */
   composedPrompt: string
+  /**
+   * Kesif alt ajaninin modeli (md `explore_model`): araçli turlarda salt okunur, ucuz bir alt ajan acilir. Yalniz anthropic.
+   * PUT'ta null = korunur, '' = kapatilir.
+   */
+  exploreModel?: string | null
 }
 
 /**
@@ -136,7 +141,11 @@ export interface Turn {
   cacheWriteTokens?: number | null
   /** Tur yarida kesildi: kullanim canli bildirimden, maliyet fiyat tablosundan tahmin. */
   cutShort?: boolean | null
+  /** Turda birden cok model calistiysa (kesif alt ajani) model basina pay; ust alanlar toplamdir. */
+  modelUsage?: ModelTokens[] | null
 }
+
+export interface ModelTokens { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd: number | null }
 
 export interface RuntimeUsage { inputTokens: number; outputTokens: number; reasoningChars: number; cacheReadTokens: number; cacheWriteTokens: number }
 

@@ -592,7 +592,7 @@ async def test_canli_akis_metin_dusunce_arac_ve_kullanimi_bildirir(monkeypatch, 
     # m1 ikinci blokta ayni kullanimla gelir ama icerik buyudu (arac girdisi): yeniden bildirilir.
     assert [e["kind"] for e in sent] == ["thinking", "usage", "tool", "usage", "text", "usage"]
     assert sent[0]["text"] == "once dizine bakayim"
-    assert sent[1] == {"kind": "usage", "messageId": "m1", "chars": 19, "usage": {"inputTokens": 1002, "outputTokens": 7, "reasoningChars": 0, "cacheReadTokens": 900, "cacheWriteTokens": 100, "cacheWrite5mTokens": 0, "peakContextTokens": 0}}
+    assert sent[1] == {"kind": "usage", "messageId": "m1", "chars": 19, "usage": {"inputTokens": 1002, "outputTokens": 7, "reasoningChars": 0, "cacheReadTokens": 900, "cacheWriteTokens": 100, "cacheWrite5mTokens": 0, "peakContextTokens": 0}, "model": "m"}
     assert sent[2]["tool"] == "Read" and sent[2]["target"] == "a.cs"
     assert sent[3]["chars"] == 19 + len(json.dumps({"file_path": "a.cs"}))
     assert sent[5]["messageId"] == "m2" and sent[5]["chars"] == 5
@@ -707,3 +707,49 @@ def test_yerel_kullanim_degismeyen_kaydi_yeniden_ayristirmaz(tmp_path, monkeypat
         fh.write(line("m2"))
     assert AnthropicProvider().local_usage(since)[0].messages == 2
     assert len(reads) == 2
+
+
+async def test_alt_ajan_sdk_agents_olur_mesajlari_ana_yanita_karismaz(monkeypatch, cli_present):
+    """Kesif alt ajani (.NET karari): SDK `agents`e eslenir. Alt ajanin mesaji (parent_tool_use_id) ana yanita ve tepe
+    baglama girmez; arac cagrisi `kesif/Grep` diye kayda girer; model basina kirilim `modelUsage`da doner."""
+    from claude_agent_sdk import ToolUseBlock
+
+    captured: dict = {}
+    monkeypatch.setattr(claude_agent_sdk, "query", _fake_query(captured, messages=[
+        AssistantMessage(content=[ToolUseBlock(id="call1", name="Agent", input={"subagent_type": "kesif", "prompt": "bul"})],
+                         model="claude-opus-5-5", message_id="m1", usage={"input_tokens": 1000}),
+        AssistantMessage(content=[ToolUseBlock(id="s1", name="Grep", input={"pattern": "Login"}), TextBlock(text="alt metin")],
+                         model="claude-haiku-4-5-20251001", parent_tool_use_id="call1", message_id="m2", usage={"input_tokens": 90000}),
+        AssistantMessage(content=[TextBlock(text="bitti")], model="claude-opus-5-5", message_id="m3", usage={"input_tokens": 1200}),
+        _result(total_cost_usd=0.5, usage={"input_tokens": 2200, "output_tokens": 10}, model_usage={
+            "claude-opus-5-5": {"inputTokens": 2200, "outputTokens": 10, "cacheReadInputTokens": 100, "cacheCreationInputTokens": 50, "costUSD": 0.45},
+            "claude-haiku-4-5-20251001": {"inputTokens": 900, "outputTokens": 40, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0, "costUSD": 0.05},
+        }),
+    ]))
+    req = TurnRequest.model_validate({
+        "systemPrompt": "s", "messages": [{"role": "user", "content": "x"}], "provider": "anthropic", "model": "claude-opus-5-5",
+        "tools": ["Read", "Glob", "Grep", "Agent"], "cwd": ".",
+        "subagents": {"kesif": {"description": "d", "prompt": "p", "tools": ["Read", "Glob", "Grep"], "model": "claude-haiku-4-5-20251001", "maxTurns": 25}},
+    })
+
+    resp = await AnthropicProvider().complete(req)
+
+    agent = captured["options"].agents["kesif"]
+    assert agent.model == "claude-haiku-4-5-20251001" and agent.tools == ["Read", "Glob", "Grep"] and agent.maxTurns == 25
+    assert resp.text == "bitti", "alt ajanin metni ana yanita girmez"
+    assert [t.tool for t in resp.tool_uses] == ["Agent", "kesif/Grep"]
+    assert resp.usage.peak_context_tokens == 1200, "tepe baglam ana ajanin; alt ajanin 90K'si sayilmaz"
+    by = {m.model: m for m in resp.model_usage}
+    assert by["claude-opus-5-5"].input_tokens == 2350 and by["claude-opus-5-5"].cost_usd == 0.45
+    assert by["claude-haiku-4-5-20251001"].output_tokens == 40
+
+
+async def test_agent_araci_yalniz_verilen_alt_ajanlari_cagirir(tmp_path):
+    """Yerlesik general-purpose/Explore reddedilir: araclarini ve modelini .NET'in secmedigi bir ajan kosmasin."""
+    guard = AnthropicProvider._guard(str(tmp_path), None, None, {"kesif"})
+    ok = await guard("Agent", {"subagent_type": "kesif", "prompt": "bul"}, None)
+    gp = await guard("Agent", {"subagent_type": "general-purpose", "prompt": "yaz"}, None)
+    bare = await AnthropicProvider._guard(str(tmp_path))("Task", {"prompt": "x"}, None)
+    assert type(ok).__name__ == "PermissionResultAllow"
+    assert type(gp).__name__ == "PermissionResultDeny" and "kesif" in gp.message
+    assert type(bare).__name__ == "PermissionResultDeny", "alt ajan verilmediyse Agent/Task hic calismaz"

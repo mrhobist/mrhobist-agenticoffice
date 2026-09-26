@@ -83,6 +83,9 @@ public static class ErrorCodes
     /// <summary>MCP yetkisi verilen ajanin saglayicisi MCP desteklemiyor (bugun yalniz <c>anthropic</c>).</summary>
     public const string AgentMcpUnsupported = "agent.mcp_unsupported";
 
+    /// <summary>Kesif alt ajani (<c>explore_model</c>) verilen ajanin saglayicisi alt ajan calistiramiyor (bugun yalniz <c>anthropic</c>).</summary>
+    public const string AgentExploreUnsupported = "agent.explore_unsupported";
+
     public const string McpInvalidKey = "mcp.invalid_key";
     public const string McpInvalid = "mcp.invalid";
     public const string McpNotFound = "mcp.not_found";

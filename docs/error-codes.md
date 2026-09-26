@@ -21,6 +21,7 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `agent.unknown_sprite` | 400 | Seçilen karakter `scene.json → sprites[]` listesinde yok |
 | `agent.unknown_mcp` | 400 | `mcp` listesine kayıtlı olmayan bir MCP sunucusu eklendi |
 | `agent.mcp_unsupported` | 400 | MCP yetkisi verilen ajanın sağlayıcısı MCP çalıştıramıyor (yalnız `anthropic` / varsayılan) |
+| `agent.explore_unsupported` | 400 | Keşif alt ajanı (`explore_model`) verilen ajanın sağlayıcısı alt ajan çalıştıramıyor (yalnız `anthropic` / varsayılan) |
 | `mcp.invalid_key` | 400 | MCP anahtarı `[a-z0-9][a-z0-9_-]*` değil |
 | `mcp.invalid` | 400 | stdio'da komut yok, http/sse'de mutlak http(s) adres yok, boş ya da yinelenen değişken/başlık adı |
 | `mcp.not_found` | 404 | Böyle bir MCP sunucusu yok |

@@ -139,4 +139,84 @@ public sealed class AgentCallerTests : IDisposable
         Assert.Equal([(true, 2.04m), (false, 0.5m)], turns.Select(t => (t.CutShort == true, t.CostUsd ?? 0m)));
         Assert.Empty(progress.Snapshot(run.Id));
     }
+    private sealed class Prices(IReadOnlyDictionary<string, ModelPrice> prices) : IModelCatalog
+    {
+        public Task<IReadOnlyList<CatalogModel>> LoadAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<CatalogModel>>([]);
+
+        public Task<IReadOnlyDictionary<string, ModelPrice>> LoadPricesAsync(CancellationToken ct) => Task.FromResult(prices);
+    }
+
+    private const string Haiku = "claude-haiku-4-5-20251001";
+
+    private async Task<MarkdownAgentStore> DeveloperWithExplorerAsync()
+    {
+        var store = new MarkdownAgentStore(_fx.Paths);
+        var team = await store.LoadTeamAsync(Ct);
+        await store.SaveAgentAsync(team.Agents["developer"] with { ExploreModel = Haiku }, Ct);
+        return store;
+    }
+
+    /// <summary>
+    /// Kesif alt ajani (2026-09-26): karar .NET'te. md'de <c>explore_model</c> olan ajanin ARACLI turuna salt okunur alt ajan ve
+    /// <c>Agent</c> araci eklenir; aracsiz turda ve md istemiyorsa istek eskisi gibidir. Model basina kirilim tur kaydina girer.
+    /// </summary>
+    [Fact]
+    public async Task Kesif_alt_ajani_yalniz_aracli_turda_ve_md_isterse_acilir_kirilim_kayda_girer()
+    {
+        var store = await DeveloperWithExplorerAsync();
+        var seen = new List<RuntimeTurnRequest>();
+        var runtime = new Runtime((i, r, ct) =>
+        {
+            seen.Add(r);
+            return Task.FromResult(Ok(0.6m) with
+            {
+                ModelUsage = [new RuntimeModelUsage(RunDefaults.Model, 100, 5, 0, 0, 0.5m), new RuntimeModelUsage(Haiku, 900, 40, 0, 0, 0.1m)],
+            });
+        });
+        var caller = new AgentCaller(store, runtime, _fx.Runs, new NullScene(), RetryPolicy.None);
+        var run = await NewRunAsync();
+
+        await caller.CallAsync(run, "developer", [new RuntimeMessage("user", "ara")], null, null, "t1", null, Ct, Tools());
+        await caller.CallAsync(run, "developer", [new RuntimeMessage("user", "plan")], null, null, "t1", null, Ct);
+        await caller.CallAsync(run, "manager", [new RuntimeMessage("user", "incele")], null, null, "t1", null, Ct, Tools());
+
+        var sub = Assert.Single(seen[0].Subagents!);
+        Assert.Equal((Explorer.Name, Haiku, ToolAccess.ReadOnly), (sub.Key, sub.Value.Model, sub.Value.Tools));
+        Assert.Contains(Explorer.AgentTool, seen[0].Tools!);
+        Assert.DoesNotContain("Write", sub.Value.Tools);
+        Assert.Null(seen[1].Subagents); // aracsiz tur: alt ajan yok
+        Assert.Null(seen[2].Subagents); // md istemiyor
+        Assert.DoesNotContain(Explorer.AgentTool, seen[2].Tools!);
+
+        var turn = (await _fx.Runs.ReadTurnsAsync(run.Id, "developer", Ct))[0];
+        Assert.Equal(0.6m, turn.CostUsd); // toplam ustte, pay kirilimda
+        Assert.Equal([(RunDefaults.Model, 0.5m), (Haiku, 0.1m)], turn.ModelUsage!.Select(m => (m.Model, m.CostUsd ?? 0m)));
+
+        // md'ye yazilir ve geri okunur (UI'dan kaydetmede korunur: Compose `with` kullanir).
+        Assert.Equal(Haiku, (await store.LoadTeamAsync(Ct)).Agents["developer"].ExploreModel);
+    }
+
+    /// <summary>Kesilen turda alt ajanin mesajlari kendi modelinin fiyatiyla sayilir: Opus fiyatiyla sayilsaydi 4 kat yazilirdi.</summary>
+    [Fact]
+    public async Task Kesilen_turda_alt_ajanin_harcamasi_kendi_fiyatiyla_sayilir()
+    {
+        var store = await DeveloperWithExplorerAsync();
+        var progress = new ProgressRegistry(new NullScene()) { BaseUrl = "http://127.0.0.1:5080/api/v1/progress" };
+        var runtime = new Runtime((i, r, ct) =>
+        {
+            progress.Report(TokenOf(r), new ProgressEvent(Kind: "usage", MessageId: "m1", Usage: new RuntimeUsage(1_000_000, 0, 0), Model: RunDefaults.Model));
+            progress.Report(TokenOf(r), new ProgressEvent(Kind: "usage", MessageId: "m2", Usage: new RuntimeUsage(1_000_000, 0, 0), Model: Haiku));
+            throw new InvalidOperationException("saglayici hatasi");
+        });
+        var prices = new Dictionary<string, ModelPrice> { [RunDefaults.Model] = new(4m, 20m, 0.2m, 8m), [Haiku] = new(1m, 5m, 0.1m, 2m) };
+        var caller = new AgentCaller(store, runtime, _fx.Runs, new NullScene(), RetryPolicy.None, progress: progress, catalog: new Prices(prices));
+        var run = await NewRunAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => caller.CallAsync(run, "developer", [new RuntimeMessage("user", "yap")], null, null, "t1", null, Ct, Tools()));
+
+        var turn = Assert.Single(await _fx.Runs.ReadTurnsAsync(run.Id, "developer", Ct));
+        Assert.True(turn.CutShort);
+        Assert.Equal(5m, turn.CostUsd); // 1M girdi × 4 $ + 1M girdi × 1 $ (tek fiyatla 8 $ olurdu)
+        Assert.Equal(2, turn.ModelUsage!.Count);
+    }
 }

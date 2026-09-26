@@ -61,7 +61,13 @@ public sealed record Agent(
     /// veritabanindadir; anahtarin kayitli oldugu ajan KAYDEDILIRKEN denetlenir, calisma aninda silinmis/kapali olan atlanir.
     /// Sona eklendi (CLAUDE.md §5); null = yok.
     /// </summary>
-    IReadOnlyList<string>? Mcp = null)
+    IReadOnlyList<string>? Mcp = null,
+    /// <summary>
+    /// Kesif alt ajaninin modeli (md frontmatter <c>explore_model</c>; docs/DOMAIN.md → Kesif alt ajani). Doluysa aracli turlarda
+    /// ajana salt okunur, ucuz bir alt ajan acilir: genis aramayi o yapar, ana model yalniz sonucu okur. Yalniz anthropic
+    /// (Agent SDK <c>agents</c>). Sona eklendi (CLAUDE.md §5); null = yok.
+    /// </summary>
+    string? ExploreModel = null)
 {
     /// <summary><see cref="Mcp"/>, bos liste olarak.</summary>
     public IReadOnlyList<string> McpServers => Mcp ?? [];
@@ -96,6 +102,11 @@ public sealed record Agent(
         if (McpServers.Count > 0 && Provider is { } p && !McpSupport.Supports(p))
         {
             throw new DomainException(ErrorCodes.AgentMcpUnsupported, $"{Key}: '{Providers.Wire(p)}' saglayicisi MCP araclarini calistiramiyor (yalniz anthropic).");
+        }
+
+        if (ExploreModel is not null && Provider is { } ep && ep != Domain.Agents.Provider.Anthropic)
+        {
+            throw new DomainException(ErrorCodes.AgentExploreUnsupported, $"{Key}: '{Providers.Wire(ep)}' saglayicisi alt ajan calistiramiyor (explore_model yalniz anthropic).");
         }
     }
 

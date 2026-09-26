@@ -18,6 +18,7 @@ const MESSAGES: Record<string, string> = {
   'agent.unknown_sprite': 'Seçilen karakter sahnenin karakter listesinde yok.',
   'agent.unknown_mcp': 'Seçilen MCP sunucularından biri kayıtlı değil.',
   'agent.mcp_unsupported': 'Bu ajanın sağlayıcısı MCP araçlarını çalıştıramıyor; MCP yetkisi yalnız Anthropic (Claude) ajanlarına verilebilir.',
+  'agent.explore_unsupported': 'Keşif alt ajanı yalnız Anthropic (Claude) ajanlarında çalışır; sağlayıcıyı değiştir ya da keşif modelini kaldır.',
 
   'mcp.invalid_key': 'MCP anahtarı geçersiz: yalnız küçük harf, rakam, tire ve alt çizgi kullanılabilir.',
   'mcp.invalid': 'MCP tanımı eksik: stdio için komut, http/sse için http(s) adresi gerekli; değişken/başlık adları boş olamaz.',

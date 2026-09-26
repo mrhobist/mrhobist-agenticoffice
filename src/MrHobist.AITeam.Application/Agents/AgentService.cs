@@ -36,7 +36,9 @@ public sealed record AgentDetail(
     /// <summary>Yetkili MCP sunuculari. Sona eklendi (CLAUDE.md §5).</summary>
     IReadOnlyList<string>? Mcp = null,
     /// <summary>Sahnedeki karakteri. Sona eklendi.</summary>
-    string? Sprite = null);
+    string? Sprite = null,
+    /// <summary>Kesif alt ajaninin modeli (<c>explore_model</c>); null = yok. Sona eklendi.</summary>
+    string? ExploreModel = null);
 
 /// <summary>
 /// PUT govdesi; anahtar yoldan gelir. TUM alanlar tasinir: eksik/null liste ya da metin 400 <c>request.invalid</c>
@@ -46,6 +48,7 @@ public sealed record AgentDetail(
 /// <see cref="Mcp"/> sonradan eklendi: null = mevcut yetkiler KORUNUR (alani bilmeyen istemci yetkiyi silmesin), [] = hepsi kalkar.
 /// <see cref="Sprite"/>: sahnedeki karakter (<c>scene.json → sprites[]</c>'ten biri); null = korunur, yeni ajanda bos ilk karakter.
 /// Md'ye degil sahne yerlesimine yazilir.
+/// <see cref="ExploreModel"/>: kesif alt ajaninin modeli; null = korunur (alani bilmeyen istemci kapatmasin), bos metin = kapatilir.
 /// </summary>
 public sealed record UpdateAgentRequest(
     string Name,
@@ -58,7 +61,8 @@ public sealed record UpdateAgentRequest(
     string Prompt,
     string? Effort = null,
     IReadOnlyList<string>? Mcp = null,
-    string? Sprite = null);
+    string? Sprite = null,
+    string? ExploreModel = null);
 
 /// <summary>POST govdesi: <see cref="UpdateAgentRequest"/> + anahtar.</summary>
 public sealed record CreateAgentRequest(
@@ -73,7 +77,8 @@ public sealed record CreateAgentRequest(
     string Prompt,
     string? Effort = null,
     IReadOnlyList<string>? Mcp = null,
-    string? Sprite = null);
+    string? Sprite = null,
+    string? ExploreModel = null);
 
 public sealed record KnowledgeItem(string Key, string Title, string Body);
 
@@ -145,7 +150,7 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
 
         var agent = Compose(
             new Agent(key, key, "", [], null, null, [], null, ""),
-            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort, request.Mcp));
+            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort, request.Mcp, ExploreModel: request.ExploreModel));
         // Karakter once denetlenir: bilinmeyen sprite md yazilmadan reddedilsin (yarim ajan kalmasin).
         await RequireKnownSpriteAsync(request.Sprite, ct).ConfigureAwait(false);
         var detail = await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
@@ -276,6 +281,7 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         CanAsk = string.IsNullOrWhiteSpace(request.CanAsk) ? null : request.CanAsk.Trim(),
         Prompt = request.Prompt,
         Mcp = request.Mcp is null ? current.Mcp : request.Mcp.Select(m => m.Trim()).Distinct(StringComparer.Ordinal).ToList() is { Count: > 0 } list ? list : null,
+        ExploreModel = request.ExploreModel is null ? current.ExploreModel : string.IsNullOrWhiteSpace(request.ExploreModel) ? null : request.ExploreModel.Trim(),
     };
 
     /// <summary>Once ekip butunu dogrulanir: yazilan dosya bir sonraki yuklemede patlamamali.</summary>
@@ -355,5 +361,5 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.McpServers, sprite);
 
     private static AgentDetail ToDetail(Agent a, Team team, string? sprite = null)
-        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge), a.McpServers, sprite);
+        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge), a.McpServers, sprite, a.ExploreModel);
 }

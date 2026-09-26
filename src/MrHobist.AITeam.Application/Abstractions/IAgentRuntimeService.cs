@@ -43,7 +43,15 @@ public sealed record RuntimeTurnRequest(
     /// Istem onbelleginin omru (<see cref="Domain.Settings.CacheTtls"/>): Ayarlar'dan, yalniz Anthropic'e. null = CLI varsayilani (2026-09-24
     /// olcumu: 1 sa). Runtime yalniz CLI degiskenine esler. Sona eklendi (CLAUDE.md §5).
     /// </summary>
-    string? CacheTtl = null);
+    string? CacheTtl = null,
+    /// <summary>
+    /// Ajanin cagirabilecegi alt ajanlar (ad → tanim; SDK <c>agents</c>, <c>Agent</c> araci <see cref="Tools"/>'ta olmali). Hangi ajanin
+    /// hangi alt ajani aldigi .NET'in karari (<see cref="Runs.Explorer"/>); runtime yalniz esler. Sona eklendi; null = yok.
+    /// </summary>
+    IReadOnlyDictionary<string, RuntimeSubagent>? Subagents = null);
+
+/// <summary>Runtime'a giden alt ajan tanimi (SDK <c>AgentDefinition</c>): ana ajana gorunen aciklama, kendi istemi, araclari, modeli.</summary>
+public sealed record RuntimeSubagent(string Description, string Prompt, IReadOnlyList<string> Tools, string Model, int? MaxTurns = null);
 
 /// <summary>Runtime'a giden MCP baglantisi (SDK bicimi): <c>stdio</c> komut/args/env · <c>http</c>|<c>sse</c> url/basliklar.</summary>
 public sealed record RuntimeMcpServer(
@@ -102,7 +110,12 @@ public sealed record RuntimeTurnResponse(
     double DurationS,
     int Attempts,
     IReadOnlyList<RuntimeToolUse>? ToolUses = null,
-    int Turns = 1);
+    int Turns = 1,
+    /// <summary>Model basina kullanim (ana model + alt ajanlar; SDK <c>model_usage</c>). Tek model ya da bildirilmediyse null. Sona eklendi.</summary>
+    IReadOnlyList<RuntimeModelUsage>? ModelUsage = null);
+
+/// <summary>Turdaki tek modelin kullanimi. <paramref name="InputTokens"/> TOPLAMDIR (dogrudan + onbellek okuma + yazma), <see cref="RuntimeUsage"/> gibi.</summary>
+public sealed record RuntimeModelUsage(string Model, int InputTokens, int OutputTokens, int CacheReadTokens, int CacheWriteTokens, decimal? CostUsd);
 
 /// <summary>Katalogda gorunmek erisilebilir olmak DEGILDIR; <see cref="Reachable"/> fiilen cagirarak dogrulanir.</summary>
 public sealed record RuntimeModelInfo(Provider Provider, string Model, bool Reachable, string Detail);

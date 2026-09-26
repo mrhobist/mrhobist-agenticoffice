@@ -35,7 +35,12 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         IReadOnlyDictionary<string, McpServerDto>? McpServers,
         IReadOnlyList<string>? ReadDirs,
         IReadOnlyList<string>? DisallowedTools,
-        string? CacheTtl);
+        string? CacheTtl,
+        IReadOnlyDictionary<string, SubagentDto>? Subagents);
+
+    private sealed record SubagentDto(string Description, string Prompt, IReadOnlyList<string> Tools, string Model, int? MaxTurns);
+
+    private sealed record ModelUsageDto(string Model, int InputTokens, int OutputTokens, int CacheReadTokens, int CacheWriteTokens, decimal? CostUsd);
 
     /// <summary>SDK bicimi (<c>McpStdioServerConfig</c> / <c>McpHttpServerConfig</c> / <c>McpSSEServerConfig</c>); bos alan yazilmaz.</summary>
     private sealed record McpServerDto(
@@ -68,7 +73,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         double DurationS,
         int Attempts,
         IReadOnlyList<ToolUseDto>? ToolUses,
-        int? Turns);
+        int? Turns,
+        IReadOnlyList<ModelUsageDto>? ModelUsage = null);
 
     private sealed record ModelDto(string Provider, string Model, bool Reachable, string? Detail);
 
@@ -224,7 +230,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             request.McpServers is { Count: > 0 } mcp ? mcp.ToDictionary(kv => kv.Key, kv => ToDto(kv.Value), StringComparer.Ordinal) : null,
             request.ReadDirs is { Count: > 0 } dirs ? dirs : null,
             request.DisallowedTools is { Count: > 0 } denied ? denied : null,
-            request.CacheTtl);
+            request.CacheTtl,
+            request.Subagents is { Count: > 0 } subs ? subs.ToDictionary(kv => kv.Key, kv => new SubagentDto(kv.Value.Description, kv.Value.Prompt, kv.Value.Tools, kv.Value.Model, kv.Value.MaxTurns), StringComparer.Ordinal) : null);
 
         HttpResponseMessage response;
         try
@@ -273,7 +280,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             result.DurationS,
             result.Attempts,
             result.ToolUses?.Select(t => new RuntimeToolUse(t.Tool, t.Target)).ToList(),
-            result.Turns ?? 1);
+            result.Turns ?? 1,
+            result.ModelUsage is { Count: > 0 } mu ? mu.Select(m => new RuntimeModelUsage(m.Model, m.InputTokens, m.OutputTokens, m.CacheReadTokens, m.CacheWriteTokens, m.CostUsd)).ToList() : null);
     }
 
     public async Task<IReadOnlyList<RuntimeModelInfo>> ListModelsAsync(Provider? provider, CancellationToken ct)

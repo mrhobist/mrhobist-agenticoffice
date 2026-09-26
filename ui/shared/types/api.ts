@@ -1285,7 +1285,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    tail?: number | string;
+                    context?: boolean;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -2288,6 +2291,7 @@ export interface components {
             composedPrompt: string;
             mcp?: null | string[];
             sprite?: null | string;
+            exploreModel?: null | string;
         };
         AgentListItem: {
             key: string;
@@ -2352,6 +2356,7 @@ export interface components {
             effort?: null | string;
             mcp?: null | string[];
             sprite?: null | string;
+            exploreModel?: null | string;
         };
         CreateProjectRequest: {
             key: string;
@@ -2406,7 +2411,7 @@ export interface components {
             role: string;
             /** Format: int32 */
             chars: number | string;
-            text: string;
+            text: null | string;
         };
         LiveEntry: {
             /** Format: date-time */
@@ -2431,6 +2436,11 @@ export interface components {
             context: components["schemas"]["LiveContextPart"][];
             /** Format: int32 */
             idleLimitS: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            streamTotal: number | string;
         };
         LoginRequest: {
             username: string;
@@ -2627,6 +2637,19 @@ export interface components {
         };
         /** @enum {unknown} */
         MessageKind: "ask" | "answer" | "handoff" | "note";
+        ModelTokens: {
+            model: string;
+            /** Format: int32 */
+            inputTokens: number | string;
+            /** Format: int32 */
+            outputTokens: number | string;
+            /** Format: int32 */
+            cacheReadTokens: number | string;
+            /** Format: int32 */
+            cacheWriteTokens: number | string;
+            /** Format: double */
+            costUsd: null | number | string;
+        };
         Phase: {
             /** Format: date-time */
             ts: string;
@@ -2659,6 +2682,7 @@ export interface components {
             usage?: null | components["schemas"]["RuntimeUsage"];
             /** Format: int32 */
             chars?: null | number | string;
+            model?: null | string;
         };
         ProjectCard: {
             key: string;
@@ -3096,6 +3120,7 @@ export interface components {
             /** Format: int32 */
             peakContextTokens?: null | number | string;
             cacheTtl?: null | string;
+            modelUsage?: null | components["schemas"]["ModelTokens"][];
         };
         UpdateAgentRequest: {
             name: string;
@@ -3109,6 +3134,7 @@ export interface components {
             effort?: null | string;
             mcp?: null | string[];
             sprite?: null | string;
+            exploreModel?: null | string;
         };
         UsageItem: {
             provider: string;
