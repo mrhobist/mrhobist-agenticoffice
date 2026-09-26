@@ -1128,4 +1128,6 @@ keşifsiz sonra (aynı ajan, tek iş kuralı). Hepsi bağımsız doğrulandı: t
 - **Keşif alt ajanı yine hiç çağrılmadı:** 29 dosyalık projede ana ajan analizde 21 dosyayı kendisi okudu. Açık/kapalı farkı
   (−0,19 $, −1:14) alt ajandan değil koşu değişkenliğinden. Şart 2 bu boyutta ölçülemez; büyük bir kod tabanı gerekir.
   Açık kalması bedava sayılır (çağrılmadıkça yalnız `Agent` aracının şeması).
-- Kopyalama `node_modules`'ı bozdu (`@nuxt/cli/bin` eksik); üç ajan da `npm ci` ile onardı — hepsine eşit.
+- Kopyalamadaki `*/bin` hariç tutma deseni (.NET çıktısı için) `node_modules` içindeki paketlerin `bin/` klasörlerini de
+  sildi; üç ajan da `MODULE_NOT_FOUND` görüp `npm ci` ile onardı ve raporladı — hepsine eşit ek süre. Kopyada
+  `node_modules` hiç taşınmamalı.
