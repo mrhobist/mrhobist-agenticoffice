@@ -1109,3 +1109,23 @@ build, curl 401/401/200, kalkışta anahtarsız durma).
 - Playwright: `browser_find` ile okudu, `browser_snapshot` hiç çağırmadı; tur kaydında tıklama/doldurma hedefi boş kalıyordu
   → runtime artık `element` alanını yazar (test var, runtime yeniden başlayınca). Sınırlar DOMAIN → Gerçek tarayıcıda test.
 - Sıradaki (kullanıcı onayıyla): aynı projeye ikinci iş, keşif alt ajanı açık/kapalı.
+
+### İkinci iş: kayıt olma + keşif alt ajanı açık/kapalı (2026-09-26, kullanıcı isteği) 🔶 keşif ölçülemedi
+
+Başlangıç: ikinci denemenin kodu, üç ayrı kopya (`karsilastirma-2026-09-26-3`). Ofis keşifli ve Claude Code aynı anda, ofis
+keşifsiz sonra (aynı ajan, tek iş kuralı). Hepsi bağımsız doğrulandı: test, typecheck, build, curl 201/409/409/400/400/200/hello.
+
+| | Ofis, keşif açık | Ofis, keşif kapalı | Claude Code |
+|---|---|---|---|
+| Süre | **7:36** | 8:50 | 8:36 |
+| Maliyet (eşdeğer) | **2,40 $** | 2,59 $ | ~2,49 $ |
+| Girdi / çıktı | 2,89 M / 44 K | 3,12 M / 46 K | 5,25 M / 38 K |
+| Tepe bağlam | 89 K | 85 K | 140 K |
+| Test (eski + yeni) | 30 | 29 | 34 |
+| Tarayıcı çağrısı | 36 (Playwright) | 33 (Playwright) | 22 (pane) |
+| Keşif alt ajanı çağrısı | **0** | — | — |
+
+- **Keşif alt ajanı yine hiç çağrılmadı:** 29 dosyalık projede ana ajan analizde 21 dosyayı kendisi okudu. Açık/kapalı farkı
+  (−0,19 $, −1:14) alt ajandan değil koşu değişkenliğinden. Şart 2 bu boyutta ölçülemez; büyük bir kod tabanı gerekir.
+  Açık kalması bedava sayılır (çağrılmadıkça yalnız `Agent` aracının şeması).
+- Kopyalama `node_modules`'ı bozdu (`@nuxt/cli/bin` eksik); üç ajan da `npm ci` ile onardı — hepsine eşit.
