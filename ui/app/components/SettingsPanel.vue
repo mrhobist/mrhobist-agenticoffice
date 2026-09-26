@@ -175,7 +175,8 @@ onMounted(() => { void load(); void loadUsage(); void loadSettings() })
 onBeforeUnmount(() => clearInterval(watchTimer))
 
 const totalCost = computed(() => (usage.value ?? []).reduce((s, u) => s + u.costUsd, 0))
-function fmtCost(v: number): string { return fmtCostLabel(v, 4) }
+/** Kucuk tutarda kurus alti anlamli (4 hane); 1 $ ustunde 2 hane yeter ("≈$600.0200" okunmuyordu). */
+function fmtCost(v: number): string { return fmtCostLabel(v, Math.abs(v) >= 1 ? 2 : 4) }
 function fmtNum(v: number): string { return v.toLocaleString('tr-TR') }
 function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '—' }
 </script>
@@ -289,10 +290,12 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
         <p v-if="spendError" class="err">{{ spendError }}</p>
         <p v-else-if="!spend" class="sub">Yükleniyor…</p>
         <template v-else>
-          <p class="sub">Pencere: {{ fmtWhen(spend.since) }} →<template v-if="spend.weeklyResetsAt"> sıfırlanma {{ fmtWhen(spend.weeklyResetsAt) }}</template><template v-if="spend.weeklyPercent !== null"> · haftalık <strong>%{{ Math.round(spend.weeklyPercent) }}</strong></template></p>
+          <p class="sub">Pencere: {{ fmtWhen(spend.since) }} → {{ spend.until ? fmtWhen(spend.until) : 'şimdi' }}<template v-if="spend.weeklyResetsAt"> · sıfırlanma {{ fmtWhen(spend.weeklyResetsAt) }}</template><template v-if="spend.weeklyPercent !== null"> · haftalık <strong>%{{ Math.round(spend.weeklyPercent) }}</strong></template></p>
           <div class="spendbar" role="img" :aria-label="spend.sources.map(s => `${s.label} ${s.quotaPoints ?? '?'} puan`).join(', ')">
             <span v-for="s in spend.sources" :key="s.key" :class="s.key" :style="{ flexGrow: s.costUsd ?? 0 }" :title="s.label" />
           </div>
+          <!-- Genis sayilar (1.104.887.867 tk) panelden tasiyordu: son sutun kirpiliyordu. Tablo kendi icinde kayar. -->
+          <div class="tablewrap">
           <table class="usage">
             <thead><tr><th>Kaynak</th><th class="num">Mesaj</th><th class="num">Giriş tk</th><th class="num">Çıkış tk</th><th class="num" :title="COST_TITLE">≈ Maliyet</th><th class="num">Kota payı</th></tr></thead>
             <tbody>
@@ -300,7 +303,7 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
                 <tr class="src" @click="spendOpen = spendOpen === s.key ? null : s.key">
                   <td><span class="dot" :class="s.key" /> {{ s.label }} <span class="sub">{{ spendOpen === s.key ? '▾' : '▸' }}</span></td>
                   <td class="num">{{ fmtNum(s.messages) }}</td><td class="num">{{ fmtNum(s.inputTokens) }}</td><td class="num">{{ fmtNum(s.outputTokens) }}</td>
-                  <td class="num" :title="s.unpricedModels?.length ? `Fiyatsız: ${s.unpricedModels.join(', ')} (hariç)` : undefined">{{ s.costUsd === null ? 'ölçülemedi' : (s.unpricedModels?.length ? '≥ ' : '') + fmtCost(s.costUsd) }}</td>
+                  <td class="num" :title="s.unpricedModels?.length ? `Fiyatsız: ${s.unpricedModels.join(', ')} (hariç)` : undefined">{{ s.costUsd === null ? 'ölçülemedi' : s.unpricedModels?.length ? '≥ ' + fmtCost(s.costUsd).replace('≈', '') : fmtCost(s.costUsd) }}</td>
                   <td class="num">{{ s.quotaPoints === null ? '—' : `${s.unpricedModels?.length ? '≥' : '~'}${s.quotaPoints} puan` }}</td>
                 </tr>
                 <template v-if="spendOpen === s.key">
@@ -314,6 +317,7 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
             </tbody>
             <tfoot><tr><td colspan="4">Toplam</td><td class="num">{{ fmtCost(spendTotal) }}</td><td class="num">{{ spend.weeklyPercent === null ? '' : `%${Math.round(spend.weeklyPercent)}` }}</td></tr></tfoot>
           </table>
+          </div>
           <p class="sub">Ofisin kendi tur kaydı aynı pencerede: {{ spend.officeRecordedTurns }} tur · {{ fmtCost(spend.officeRecordedUsd) }} (kesilen turlar dahil).</p>
           <p v-for="(n, i) in spend.notes" :key="i" class="sub note">{{ n }}</p>
         </template>
@@ -395,6 +399,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .models summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #4a5068; }
 .models ul { margin: 4px 0 0; padding-left: 16px; font-size: 12px; }
 code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
+.tablewrap { overflow-x: auto; }
 .usage { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; }
 .usage th, .usage td { padding: 5px 8px; border-bottom: 1px solid rgba(0,0,0,0.08); text-align: left; }
 .usage th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7285; }

@@ -625,7 +625,7 @@ public sealed class RunService(
             busy.UnionWith(AgentCaller.BusyAgents);
 
             var assignments = Dispatcher.Plan(wf, spec, phasesByTask, busy);
-            if (assignments.Count == 0 && busy.Count == 0 && Dispatcher.Plan(wf, spec, phasesByTask, new HashSet<string>()).Count == 0)
+            if (assignments.Count == 0 && busy.Count == 0)
             {
                 // Kimse dolu degil ve yine de hazir gorev yok: bekleme degil TAKILMA. Once "ajan bekleniyor" diye sessizce
                 // asili kaliyordu (2026-09-23, Skipped sayilmayinca). Gorunur dus; karar kullanicinin ("Yeniden dene").
@@ -706,10 +706,12 @@ public sealed class RunService(
                 {
                     // Yazmadan ONCEKI hal: red tavaninda kullanici "geri al" derse donulecek nokta (ornek: opencode snapshot).
                     var before = await (snapshots ?? new NoWorkspaceSnapshot()).TrackAsync(root, ct).ConfigureAwait(false);
+                    // Tek sorgu: hem bu gorevin son denemesi hem calismanin ilk anlik goruntusu ayni faz listesinden okunur.
+                    var runPhases = await runs.ReadRunPhasesAsync(run.Id, ct).ConfigureAwait(false);
                     // Onceki deneme yarida kesildiyse (zaman asimi, yeniden baslatma) dizinde onun isi var: ajan bastan yazmasin, devam etsin.
-                    var cutShort = (await runs.ReadPhasesAsync(run.Id, a.Task.Id, ct).ConfigureAwait(false))
-                        .LastOrDefault(p => p.Stage == a.Stage.Id && p.Status != PhaseStatus.Started) is { IsCutShort: true };
-                    var written = await WrittenSoFarAsync(run.Id, root, before, a.Task, ct).ConfigureAwait(false);
+                    var cutShort = runPhases
+                        .LastOrDefault(p => p.Task == a.Task.Id && p.Stage == a.Stage.Id && p.Status != PhaseStatus.Started) is { IsCutShort: true };
+                    var written = await WrittenSoFarAsync(runPhases, root, before, a.Task, ct).ConfigureAwait(false);
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort, prior, att, written), ct).ConfigureAwait(false);
                     var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
@@ -887,11 +889,11 @@ public sealed class RunService(
             : (next?.Id ?? closed.Stage, "blocked");
     }
 
-    /// <summary>Turun maliyeti ve token'lari calismaya eklenir (proje butcesi bu toplami okur).</summary>
     /// <summary>Kesilen turun kaydedilmis harcamasi (<see cref="AgentCaller.PartialReplyKey"/>) calismanin toplamina girer: butce onu da gorur.</summary>
     private static Run AccruePartial(Run run, Exception ex)
         => ex.Data[AgentCaller.PartialReplyKey] is AgentReply partial ? Accrue(run, partial) : run;
 
+    /// <summary>Turun maliyeti ve token'lari calismaya eklenir (proje butcesi bu toplami okur).</summary>
     private static Run Accrue(Run run, AgentReply reply) => run with
     {
         TotalCostUsd = run.TotalCostUsd + reply.CostUsd,
@@ -1000,7 +1002,6 @@ public sealed class RunService(
         }
     }
 
-    /// <summary>Akis takildi: calisma <c>AwaitingInput</c>, soru calisma satirinda, kayit mesajlarda (ask, ref). Bildirim zili bunu gosterir.</summary>
     /// <summary>
     /// Geri alma secenegini yalniz DONULECEK BIR HAL varsa ekler: uretici adimin kaydedilmis anlik goruntusu yoksa
     /// (git kurulu degil, ilk tur, kayit basarisiz) kullaniciya tutmayacagi bir soz verilmez. Seceneğin yeri iptalden
@@ -1024,25 +1025,14 @@ public sealed class RunService(
     /// ve bu gorevin onceki denemeleri. Ilk hal, kapanmis fazlarin en eskisinin anlik goruntusudur (uretici adim yazmadan onceki hal).
     /// Ilk gorevin ilk denemesinde ya da git yoksa bos: bolum istemde hic acilmaz.
     /// </summary>
-    private async Task<IReadOnlyList<WrittenFile>> WrittenSoFarAsync(string runId, string root, string? now, RunTask task, CancellationToken ct)
+    private async Task<IReadOnlyList<WrittenFile>> WrittenSoFarAsync(IReadOnlyList<Phase> runPhases, string root, string? now, RunTask task, CancellationToken ct)
     {
         if (snapshots is null || string.IsNullOrWhiteSpace(now))
         {
             return [];
         }
 
-        Phase? first = null;
-        foreach (var id in await runs.ListTasksAsync(runId, ct).ConfigureAwait(false))
-        {
-            foreach (var p in await runs.ReadPhasesAsync(runId, id, ct).ConfigureAwait(false))
-            {
-                if (!string.IsNullOrWhiteSpace(p.Snapshot) && (first is null || p.Ts < first.Ts))
-                {
-                    first = p;
-                }
-            }
-        }
-
+        var first = runPhases.Where(p => !string.IsNullOrWhiteSpace(p.Snapshot)).MinBy(p => p.Ts);
         return first is null ? [] : await CodeDigest.CollectAsync(snapshots, root, first.Snapshot!, now, task, ct).ConfigureAwait(false);
     }
 
@@ -1051,6 +1041,7 @@ public sealed class RunService(
         => (await runs.ReadPhasesAsync(runId, taskId, ct).ConfigureAwait(false))
             .LastOrDefault(p => p.Stage == stageId && !string.IsNullOrWhiteSpace(p.Snapshot))?.Snapshot;
 
+    /// <summary>Akis takildi: calisma <c>AwaitingInput</c>, soru calisma satirinda, kayit mesajlarda (ask, ref). Bildirim zili bunu gosterir.</summary>
     private async Task<Run> AskUserAsync(Run run, string agent, string text, IReadOnlyList<QuestionOption> options, Assignment a, string? context, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;

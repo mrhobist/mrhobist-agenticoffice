@@ -24,13 +24,20 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// <c>add</c> icin: ilk goruntu node_modules dahil her dosyayi hash'ler (canli projede ~20 bin dosya, ~260 MB) ve 30 sn'yi
-    /// asabilir. Sonrakiler artimlidir (degismeyen dosya stat'la gecer). Oldurulen add'in biraktigi kilit bundan eskiyse sahipsizdir.
+    /// <c>add</c> icin: ilk goruntu projenin tum kaynak dosyalarini hash'ler ve 30 sn'yi asabilir. Sonrakiler artimlidir
+    /// (degismeyen dosya stat'la gecer). Oldurulen add'in biraktigi kilit bundan eskiyse sahipsizdir.
     /// </summary>
     private static readonly TimeSpan AddTimeout = TimeSpan.FromMinutes(3);
 
-    /// <summary>Goruntuye alinmayan ve geri donuste silinmeyen dizinler: IDE durumu (acik IDE dosyalari kilitler), kod degil.</summary>
-    private static readonly string[] NeverTracked = [".vs"];
+    /// <summary>
+    /// Goruntuye alinmayan ve geri donuste SILINMEYEN dizinler (her derinlikte, ada gore): IDE durumu (acik IDE dosyalari
+    /// kilitler) ve yeniden uretilebilen paket/derleme ciktilari. 2026-09-25'e kadar yalniz <c>.vs</c> vardi: node_modules,
+    /// bin ve obj her Implement adimindan once hash'lenip saklaniyordu (ilk goruntu ~20 bin dosya/~260 MB; her derleme
+    /// yeni blob) -- adim baslangici dakikalar suruyor, <c>data/snapshots</c> is basina yuzlerce MB buyuyordu.
+    /// Bedeli (varsayimla ilerlenir): geri donus kaynagi dondurur, bu dizinleri oldugu gibi birakir -- ajanin o turda
+    /// kurdugu paket node_modules'ta kalir, bin/obj bir sonraki derlemede yenilenir. Alternatif (hepsini izlemek) yukarida.
+    /// </summary>
+    private static readonly string[] NeverTracked = [".vs", ".idea", "node_modules", "bin", "obj", ".nuxt", ".output", ".venv", "__pycache__"];
 
     private readonly ILogger _log = logger ?? NullLogger<GitWorkspaceSnapshot>.Instance;
 
@@ -60,11 +67,14 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
                 File.Delete(indexLock);
             }
 
-            // -A: silmeler de girsin. --force: projenin .gitignore'u anlik goruntuyu delmesin (bin/obj disarida kalirsa
-            // geri donus yarim olur). Bos degisiklikte bile commit uretilsin diye --allow-empty. IDE durum dizinleri HARIC:
-            // proje Visual Studio'da acikken .vs/…/*.vsidx kilitli, git add "Permission denied" ile TAMAMEN duser
+            // -A: silmeler de girsin. --force: projenin .gitignore'u anlik goruntuyu delmesin (ornegin gitignore'daki bir
+            // appsettings.Local.json da geri donsun). Bos degisiklikte bile commit uretilsin diye --allow-empty. NeverTracked
+            // HARIC: proje Visual Studio'da acikken .vs/…/*.vsidx kilitli, git add "Permission denied" ile TAMAMEN duser
             // (2026-09-24: canli projede 23 Eylul'den beri hic goruntu alinamamisti; geri al secenegi hic sunulmadi).
-            if (await RunGitAsync(gitDir, workDir, AddTimeout, ct, ["add", "-A", "--force", "--", ".", .. NeverTracked.Select(d => $":(exclude,glob)**/{d}/**")]).ConfigureAwait(false) is null)
+            // Onceki surumun golge deposu bu dizinleri izliyordu: index'ten dusmezlerse eski halleriyle orada kalir, sonraki her
+            // goruntuye girer ve geri donus onlari o eski hale ceker. Eslesme yoksa bir sey yapmaz.
+            if (await GitOutputAsync(gitDir, workDir, ct, ["rm", "-r", "--cached", "--quiet", "--ignore-unmatch", "--", .. NeverTracked.Select(d => $":(glob)**/{d}/**")]).ConfigureAwait(false) is null
+                || await RunGitAsync(gitDir, workDir, AddTimeout, ct, ["add", "-A", "--force", "--", ".", .. NeverTracked.Select(d => $":(exclude,glob)**/{d}/**")]).ConfigureAwait(false) is null)
             {
                 return null;
             }
@@ -101,7 +111,7 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
             }
 
             // Once izlenen dosyalari o haline getir, sonra o gorunturde olmayanlari sil (-x: gitignore'dakiler de). Goruntuye
-            // hic girmeyen IDE dizinleri (-e) silinmez: izlenmedikleri icin "goruntude yok" sayilirlardi.
+            // hic girmeyen dizinler (NeverTracked, -e) silinmez: izlenmedikleri icin "goruntude yok" sayilirlardi.
             return await GitAsync(gitDir, workDir, ct, "reset", "--hard", "--quiet", snapshot).ConfigureAwait(false)
                 && await GitAsync(gitDir, workDir, ct, ["clean", "-fdx", "--quiet", .. NeverTracked.SelectMany(d => new[] { "-e", d + "/" })]).ConfigureAwait(false);
         }
@@ -130,7 +140,7 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
             }
 
             // --raw durumu (A/M/D), --numstat satir sayilarini verir; ikisi ayni yol sirasiyla gelir. Desenler pathspec glob'u:
-            // disarida birakilanlar (node_modules, bin, obj) git'e hic yuklenmez -- golge depo onlari da izliyor (--force).
+            // disarida birakilanlar git'e hic yuklenmez (golge depo NeverTracked disinda gitignore'dakileri de izler: --force).
             var args = new List<string> { "diff", "--no-renames", "--raw", "--numstat", fromSnapshot, toSnapshot, "--" };
             args.AddRange(include.Count == 0 ? [":(glob)**"] : include.Select(p => ":(glob)" + p));
             args.AddRange(exclude.Select(p => ":(exclude,glob)" + p));
@@ -266,9 +276,16 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
         {
             await proc.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
+            // Iptalde de oldurulur: yoksa sahipsiz git (ornegin uzun bir add) index.lock'u tutar ve hemen ardindan
+            // "Yeniden dene" ile alinan goruntu kilide takilip duser.
             TryKill(proc);
+            if (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+
             SnapshotLog.GitTimedOut(_log, string.Join(' ', args), limit.TotalSeconds);
             return null;
         }

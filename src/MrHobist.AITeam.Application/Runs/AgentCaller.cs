@@ -135,23 +135,10 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
         var parts = agent.PromptParts(team.Knowledge, knowledge);
         var system = string.Concat(parts.Select(p => p.Text));
-        var resolvedMcp = await McpForAsync(run, agent, target, tools, stage, task, ct).ConfigureAwait(false);
-        var mcpServers = resolvedMcp?.Servers;
-        // Canli akis: yalniz aracli turda; belirtec tur boyunca yasar. Baglam (sistem parcalari + mesajlar) ekranda gorunsun diye kayda girer.
-        var progressToken = tools is not null && progress?.BaseUrl is { } baseUrl
-            ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage), LiveContext(parts, messages, mcpServers))
-            : null;
-        var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
-        var cacheTtl = await CacheTtlForAsync(target.Provider, ct).ConfigureAwait(false);
-        var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
-            Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
-            SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace,
-            McpServers: mcpServers, ReadDirs: tools?.ReadDirs,
-            DisallowedTools: resolvedMcp is { Disallowed.Count: > 0 } ? resolvedMcp.Disallowed : null,
-            CacheTtl: cacheTtl);
 
         var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
+        string? progressToken = null;
         try
         {
             // Limit korumasi cagridan ONCE: esik asildiysa LimitReachedException; RunService calismayi bekletir.
@@ -160,18 +147,54 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 await limits.CheckAsync(target.Provider, target.Model, ct).ConfigureAwait(false);
             }
 
+            // Kilit ALINDIKTAN sonra: ajan baska bir iste mesgulken beklenen sure turun parcasi degildir. Belirtec once
+            // kaydedilseydi bekci o bekleyisi hareketsizlik sayip turu ilk yoklamada keserdi; OAuth belirteci de beklerken eskirdi.
+            var resolvedMcp = await McpForAsync(run, agent, target, tools, stage, task, ct).ConfigureAwait(false);
+            var mcpServers = resolvedMcp?.Servers;
+            // Canli akis: yalniz aracli turda; belirtec tur boyunca yasar. Baglam (sistem parcalari + mesajlar) ekranda gorunsun diye kayda girer.
+            progressToken = tools is not null && progress?.BaseUrl is not null
+                ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage), LiveContext(parts, messages, mcpServers))
+                : null;
+            var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
+            var cacheTtl = await CacheTtlForAsync(target.Provider, ct).ConfigureAwait(false);
+            var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
+                Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
+                SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace,
+                McpServers: mcpServers, ReadDirs: tools?.ReadDirs,
+                DisallowedTools: resolvedMcp is { Disallowed.Count: > 0 } ? resolvedMcp.Disallowed : null,
+                CacheTtl: cacheTtl);
+
+            // Yarida kalan her deneme (tekrar edilen gecici hata dahil) kendi turu olarak kaydedilir ve maliyeti calismaya
+            // tasinir (CLAUDE.md §4). Once yalniz SON hata kaydediliyordu: tekrar basarili olursa dusen denemenin harcamasi kayboluyordu.
+            AgentReply? carried = null;
+            var attemptStarted = DateTimeOffset.UtcNow;
+            async Task<AgentReply?> RecordAttemptAsync(Exception ex)
+            {
+                if (progressToken is null || progress!.UsageOf(progressToken) is not { } spent)
+                {
+                    return null;
+                }
+
+                // 2026-09-23'te kesilen ilk t1 ~3 $ harcamis, run_turn'e hic yazilmamisti.
+                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, ex, attemptStarted, tools is not null, context, cacheTtl).ConfigureAwait(false);
+                progress.ResetUsage(progressToken); // sonraki deneme sifirdan sayilir: ayni harcama iki kez yazilmasin
+                attemptStarted = DateTimeOffset.UtcNow;
+                return partial;
+            }
+
             Attempted response;
-            var callStarted = DateTimeOffset.UtcNow;
             try
             {
-                response = await CallWatchedAsync(run, agentKey, request, progressToken, ct).ConfigureAwait(false);
+                response = await CallWatchedAsync(run, agentKey, request, progressToken, async ex => carried = Plus(carried, await RecordAttemptAsync(ex).ConfigureAwait(false)), ct).ConfigureAwait(false);
             }
-            catch (Exception ex) when (progressToken is not null && progress!.UsageOf(progressToken) is { } spent)
+            catch (Exception ex) when (progressToken is not null)
             {
-                // Tur yarida kesildi (zaman asimi, iptal, saglayici hatasi) ama token harcandi: kayda gecmeden kaybolmasin
-                // (CLAUDE.md §4). 2026-09-23'te kesilen ilk t1 ~3 $ harcamis, run_turn'e hic yazilmamisti.
-                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, ex, callStarted, tools is not null, context, cacheTtl).ConfigureAwait(false);
-                ex.Data[PartialReplyKey] = partial;
+                // Tur yarida kesildi (zaman asimi, iptal, saglayici hatasi) ama token harcandi: kayda gecmeden kaybolmasin.
+                if (Plus(carried, await RecordAttemptAsync(ex).ConfigureAwait(false)) is { } spentSoFar)
+                {
+                    ex.Data[PartialReplyKey] = spentSoFar;
+                }
+
                 throw;
             }
 
@@ -215,7 +238,9 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 CacheTtl: cacheTtl);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
-            return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m, turn.ToolUses ?? [], r.Usage.InputTokens, r.Usage.OutputTokens);
+            // Dusen denemeler ayri tur olarak zaten kayitta; calismanin toplamina bu yanitla birlikte girer.
+            return new AgentReply(r.Text, r.StructuredJson, (r.CostUsd ?? 0m) + (carried?.CostUsd ?? 0m), turn.ToolUses ?? [],
+                r.Usage.InputTokens + (carried?.InputTokens ?? 0), r.Usage.OutputTokens + (carried?.OutputTokens ?? 0));
         }
         finally
         {
@@ -229,6 +254,10 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     }
 
     private sealed record Attempted(RuntimeTurnResponse Response, TimeSpan Elapsed);
+
+    /// <summary>Iki kismi harcamanin toplami; ikisi de yoksa null.</summary>
+    private static AgentReply? Plus(AgentReply? a, AgentReply? b)
+        => a is null ? b : b is null ? a : a with { CostUsd = a.CostUsd + b.CostUsd, InputTokens = a.InputTokens + b.InputTokens, OutputTokens = a.OutputTokens + b.OutputTokens };
 
     /// <summary>
     /// Istem onbellegi omru (Ayarlar): yalniz Anthropic'e gider, onbellek omrunu baska saglayici tanimiyor. Ayar okunamazsa
@@ -363,7 +392,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     /// Turu bekci altinda kosar (<see cref="TurnWatch"/>). Bekci keserse <see cref="RuntimeTimeoutException"/>: is kanalinin
     /// "kullanici iptali" yoluna (OperationCanceled) DUSMEZ -- dusseydi calisma sessizce Running'de asili kalirdi.
     /// </summary>
-    private async Task<Attempted> CallWatchedAsync(Run run, string agentKey, RuntimeTurnRequest request, string? progressToken, CancellationToken ct)
+    private async Task<Attempted> CallWatchedAsync(Run run, string agentKey, RuntimeTurnRequest request, string? progressToken, Func<Exception, Task> onAttemptFailed, CancellationToken ct)
     {
         using var turn = CancellationTokenSource.CreateLinkedTokenSource(ct);
         using var stopDog = new CancellationTokenSource();
@@ -378,7 +407,9 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                     {
                         await Task.Delay(_watch.Poll, stopDog.Token).ConfigureAwait(false);
                         var now = DateTimeOffset.UtcNow;
-                        var last = progressToken is null ? started : progress?.LastSeen(progressToken) ?? started;
+                        // Hareketsizlik turun basindan once sayilmaz (kayit ile cagri arasi da turun parcasi degil).
+                        var seen = progressToken is null ? null : progress?.LastSeen(progressToken);
+                        var last = seen is { } s && s > started ? s : started;
                         if (now - started > _watch.HardCap)
                         {
                             reason = $"tur {_watch.HardCap.TotalMinutes:0} dk üst sınırına dayandı";
@@ -402,7 +433,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
         try
         {
-            return await CallWithRetryAsync(run, agentKey, request, turn.Token).ConfigureAwait(false);
+            return await CallWithRetryAsync(run, agentKey, request, onAttemptFailed, turn.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (reason is not null && !ct.IsCancellationRequested)
         {
@@ -415,7 +446,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         }
     }
 
-    private async Task<Attempted> CallWithRetryAsync(Run run, string agentKey, RuntimeTurnRequest request, CancellationToken ct)
+    /// <summary><paramref name="onAttemptFailed"/>: tekrar edilecek bir deneme dustu (harcamasi kaydedilsin), bekleme ONCESI.</summary>
+    private async Task<Attempted> CallWithRetryAsync(Run run, string agentKey, RuntimeTurnRequest request, Func<Exception, Task> onAttemptFailed, CancellationToken ct)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -435,6 +467,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             }
             catch (Exception ex) when (attempt < _retry.Attempts && IsTransient(ex))
             {
+                await onAttemptFailed(ex).ConfigureAwait(false);
                 var wait = _retry.DelayFor(attempt);
                 await runs.AppendMessageAsync(
                     run.Id,

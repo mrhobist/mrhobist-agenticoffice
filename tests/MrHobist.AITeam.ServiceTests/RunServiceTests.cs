@@ -15,6 +15,7 @@ namespace MrHobist.AITeam.ServiceTests;
 /// Faz 4a "biten sayilir": Python calismadan, sahte runtime ile analiz → onay/revize → dagitim → Paused akisi
 /// ve runs/ dosyalari (docs/DOMAIN.md, docs/PHASES.md).
 /// </summary>
+[Collection(AgentCallerTests.Collection)]
 public sealed class RunServiceTests : IDisposable
 {
     private readonly StorageFixture _fx = new();

@@ -28,6 +28,9 @@ public static partial class CodeDigest
 
     public const int MaxSignaturesPerFile = 12;
 
+    /// <summary>Ayni anda en fazla bu kadar <c>git show</c>.</summary>
+    private const int ReadParallelism = 4;
+
     private const int MaxSignatureChars = 160;
 
     /// <summary>Bundan buyuk metin taranmaz (uretilmis ya da paketlenmis dosya).</summary>
@@ -70,25 +73,26 @@ public static partial class CodeDigest
             .ThenBy(c => c.Status == 'D' ? 1 : 0)
             .ThenBy(c => c.Path, StringComparer.Ordinal);
 
-        var list = new List<WrittenFile>(changes.Count);
-        var read = 0;
-        foreach (var c in ordered)
+        var files = ordered.ToList();
+        var toRead = files.Where(c => c.Status != 'D' && HasSignatures(c.Path)).Take(MaxFilesRead).ToList();
+
+        // Her okuma ayri bir git sureci (Windows'ta dosya basina onlarca ms) ve adimin kritik yolunda: sirayla degil
+        // birkac paralel okunur. Golge depo salt okunur kullanilir; eszamanli `git show` guvenlidir.
+        var signatures = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        await Parallel.ForEachAsync(toRead, new ParallelOptions { MaxDegreeOfParallelism = ReadParallelism, CancellationToken = ct }, async (c, token) =>
         {
-            IReadOnlyList<string> signatures = [];
-            if (c.Status != 'D' && HasSignatures(c.Path) && read < MaxFilesRead)
+            var text = await snapshots.ReadAsync(root, to, c.Path, token).ConfigureAwait(false);
+            if (text is { Length: > 0 and <= MaxFileChars })
             {
-                read++;
-                var text = await snapshots.ReadAsync(root, to, c.Path, ct).ConfigureAwait(false);
-                if (text is { Length: > 0 and <= MaxFileChars })
+                var found = Signatures(c.Path, text);
+                lock (signatures)
                 {
-                    signatures = Signatures(c.Path, text);
+                    signatures[c.Path] = found;
                 }
             }
+        }).ConfigureAwait(false);
 
-            list.Add(new WrittenFile(c.Path, c.Status, c.Added, c.Deleted, signatures));
-        }
-
-        return list;
+        return [.. files.Select(c => new WrittenFile(c.Path, c.Status, c.Added, c.Deleted, signatures.GetValueOrDefault(c.Path) ?? []))];
     }
 
     /// <summary>Imza cikarilan uzantilar. Digerleri yalniz yol ve satir sayisiyla listelenir.</summary>

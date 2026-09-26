@@ -258,7 +258,7 @@ defineExpose({ canLeave })
 
 <template>
   <div class="wrap" @click.self="emit('close')">
-    <section class="panel" role="dialog" aria-labelledby="agent-title">
+    <section class="panel" :class="{ wide: tab === 'props' }" role="dialog" aria-labelledby="agent-title">
       <header>
         <h2 id="agent-title">Ekip · {{ form?.name || sceneName }}</h2>
         <code class="key">{{ agentKey }}</code>
@@ -460,6 +460,8 @@ defineExpose({ canLeave })
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   display: flex; flex-direction: column; gap: 12px;
 }
+/* Ozellikler: sistem promptu ve modele giden metin (~25 bin kr) 560 px'te okunmuyordu (2026-09-25). Isler sekmesi dar kalir: sahne gorunsun. */
+.panel.wide { width: min(960px, 100%); }
 .panel > header { display: flex; align-items: center; gap: 10px; }
 h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; }
 
@@ -521,7 +523,7 @@ input[type="text"], select, textarea {
   border: 1px solid #c9c3b3; border-radius: 4px; padding: 6px 8px; width: 100%;
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid #4f8ef7; outline-offset: 0; }
-.prompt { min-height: 280px; resize: vertical; font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; line-height: 1.45; }
+.prompt { min-height: 280px; height: 45vh; resize: vertical; font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; line-height: 1.45; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-height: 30px; }
 .tag { background: rgba(0,0,0,0.06); border-radius: 999px; padding: 2px 8px; font-size: 11px; }
@@ -533,8 +535,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #4f8ef7; outline-
 
 .composed summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #4a5068; }
 .composed pre {
-  margin: 6px 0 0; white-space: pre-wrap; font-size: 11px; line-height: 1.45;
-  background: #fff; border: 1px solid #c9c3b3; padding: 8px; border-radius: 4px; max-height: 320px; overflow: auto;
+  margin: 6px 0 0; white-space: pre-wrap; font: 12px/1.5 Consolas, "Cascadia Mono", monospace;
+  background: #fff; border: 1px solid #c9c3b3; padding: 8px 10px; border-radius: 4px;
+  height: 60vh; min-height: 200px; overflow: auto; resize: vertical;
 }
 
 .actions {

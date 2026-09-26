@@ -288,6 +288,32 @@ def _usage_of(raw: dict[str, Any] | None) -> Usage:
     )
 
 
+#: `local_usage` dosya onbellegi: yol -> (mtime, boyut, [(mesaj kimligi, zaman, (kaynak, klasor, model, kullanim))]).
+_USAGE_FILE_CACHE: dict[str, tuple[float, int, list[tuple[str, float, tuple[str, str, str, dict[str, Any]]]]]] = {}
+
+
+def _read_usage_entries(f: Path, project: str) -> list[tuple[str, float, tuple[str, str, str, dict[str, Any]]]]:
+    """Tek oturum kaydindaki asistan kullanim satirlari (araliktan bagimsiz: suzme cagiranda). Okunamayan satir atlanir."""
+    out: list[tuple[str, float, tuple[str, str, str, dict[str, Any]]]] = []
+    with f.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if '"assistant"' not in line or '"usage"' not in line:
+                continue
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            msg = o.get("message") if o.get("type") == "assistant" else None
+            if not isinstance(msg, dict) or not isinstance(msg.get("usage"), dict):
+                continue
+            ts = _parse_ts(o.get("timestamp"))
+            if ts is None:
+                continue
+            key = str(msg.get("id") or o.get("requestId") or o.get("uuid"))
+            out.append((key, ts, (str(o.get("entrypoint") or "bilinmiyor"), project, str(msg.get("model") or "?"), msg["usage"])))
+    return out
+
+
 class AnthropicProvider:
     name = PROVIDER_NAME
 
@@ -808,36 +834,37 @@ class AnthropicProvider:
         """Kim ne harcadi: CLI'nin makinedeki oturum kayitlari (`~/.claude/projects/**/*.jsonl`) taranir, `[since, until)`
         araligindaki asistan mesajlarinin kullanimi (kaynak, klasor, model) basina toplanir. Her cagri (ofis ajani da,
         etkilesimli oturum da) buraya yazilir; `entrypoint` kaynagi soyler. Ayni mesaj blok basina tekrar yazilir: mesaj
-        kimligiyle tekillenir. Durum tutulmaz, dosya yazilmaz; kayit okunamazsa o satir atlanir."""
+        kimligiyle tekillenir. Dosya yazilmaz; kayit okunamazsa o satir atlanir.
+
+        Dosya basina ayristirma onbellegi (`_USAGE_FILE_CACHE`, anahtar yol + mtime + boyut): her istekte yuzlerce MB'lik
+        kaydi bastan JSON'a cevirmek harcama ekranini saniyelerce bekletiyordu. Durum degil (CLAUDE.md §1): diskteki dosyadan
+        turer, sonucu degistirmez, dosya degisince kendiliginden gecersizlesir; kota onbellegi gibi yalniz hiz icindir."""
         base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")) / "projects"
         if not base.is_dir():
             return []
         lo = since.timestamp()
         hi = until.timestamp() if until else None
         seen: dict[str, tuple[str, str, str, dict[str, Any]]] = {}
+        alive: set[str] = set()
         for f in base.rglob("*.jsonl"):
             try:
-                if f.stat().st_mtime < lo:
+                st = f.stat()
+                if st.st_mtime < lo:
                     continue
-                project = f.relative_to(base).parts[0]
-                with f.open(encoding="utf-8", errors="replace") as fh:
-                    for line in fh:
-                        if '"assistant"' not in line or '"usage"' not in line:
-                            continue
-                        try:
-                            o = json.loads(line)
-                        except ValueError:
-                            continue
-                        msg = o.get("message") if o.get("type") == "assistant" else None
-                        if not isinstance(msg, dict) or not isinstance(msg.get("usage"), dict):
-                            continue
-                        ts = _parse_ts(o.get("timestamp"))
-                        if ts is None or ts < lo or (hi is not None and ts >= hi):
-                            continue
-                        key = str(msg.get("id") or o.get("requestId") or o.get("uuid"))
-                        seen[key] = (str(o.get("entrypoint") or "bilinmiyor"), project, str(msg.get("model") or "?"), msg["usage"])
+                path = str(f)
+                alive.add(path)
+                cached = _USAGE_FILE_CACHE.get(path)
+                if cached is None or cached[0] != st.st_mtime or cached[1] != st.st_size:
+                    cached = (st.st_mtime, st.st_size, _read_usage_entries(f, f.relative_to(base).parts[0]))
+                    _USAGE_FILE_CACHE[path] = cached
+                for key, ts, entry in cached[2]:
+                    if ts >= lo and (hi is None or ts < hi):
+                        seen[key] = entry
             except OSError:
                 continue
+        # Silinen/araligin disina dusen dosyalarin girdisi tutulmaz: onbellek yalniz son taramanin dosyalari kadardir.
+        for stale in _USAGE_FILE_CACHE.keys() - alive:
+            _USAGE_FILE_CACHE.pop(stale, None)  # eszamanli bir istek ayni anahtari silmis olabilir
 
         groups: dict[tuple[str, str, str], LocalUsage] = {}
         for source, project, model, raw in seen.values():

@@ -217,6 +217,22 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<TurnUsage>> ReadUsageBetweenAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        // ts UTC ve sabit genislikli metin (UtcTextConverter): metin karsilastirmasi zaman sirasidir.
+        var query = db.Turns.AsNoTracking().Where(t => t.Ts >= since);
+        if (until is { } end)
+        {
+            query = query.Where(t => t.Ts < end);
+        }
+
+        return await query
+            .OrderBy(t => t.Id)
+            .Select(t => new TurnUsage(t.RunId, t.Provider, t.Model, t.InputTokens, t.OutputTokens, t.CostUsd, t.Ts))
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// MCP'li turlar: <c>data</c>'dan yalniz <c>mcpServers</c> ve <c>toolUses</c> (json_extract), prompt/cikti okunmaz. Sunucu acilmamis
     /// ama arac adinda <c>mcp__</c> gecen eski turlar da girer (alan eklenmeden once kaydedilenler).
@@ -317,6 +333,17 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
         await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var rows = await db.Phases.AsNoTracking()
             .Where(x => x.RunId == runId && x.Task == task)
+            .OrderBy(x => x.Id)
+            .Select(x => x.Data)
+            .ToListAsync(ct).ConfigureAwait(false);
+        return Revive<Phase>(rows);
+    }
+
+    public async Task<IReadOnlyList<Phase>> ReadRunPhasesAsync(string runId, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var rows = await db.Phases.AsNoTracking()
+            .Where(x => x.RunId == runId)
             .OrderBy(x => x.Id)
             .Select(x => x.Data)
             .ToListAsync(ct).ConfigureAwait(false);

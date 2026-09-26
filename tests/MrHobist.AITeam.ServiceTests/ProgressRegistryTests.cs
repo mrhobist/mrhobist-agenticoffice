@@ -58,7 +58,9 @@ public class ProgressRegistryTests
         // Tepe baglam toplam degil en buyuk tek mesajdir (m2: 2000).
         Assert.Equal(new RuntimeUsage(3000, 55, 0, 2800, 140, 0, 2000), live.Usage);
         Assert.Equal(new RuntimeUsage(3000, 55, 0, 2800, 140, 0, 2000), reg.UsageOf(token));
-        Assert.Equal("abc", Assert.Single(live.Context).Text);
+        Assert.Null(Assert.Single(live.Context).Text); // yoklamada metin yok: yalniz ad ve boyut
+        Assert.Equal(3, live.Context[0].Chars);
+        Assert.Equal("abc", Assert.Single(Assert.Single(reg.Snapshot("r1", withContext: true)).Context).Text);
         Assert.Equal([SceneEventTypes.AgentTool], scene.Types); // sahneye yalniz arac gider
 
         reg.Release(token);
@@ -76,9 +78,15 @@ public class ProgressRegistryTests
             reg.Report(token, new ProgressEvent(null, null, "text", $"satir {i}"));
         }
 
-        var stream = Assert.Single(reg.Snapshot("r1")).Stream;
+        var stream = Assert.Single(reg.Snapshot("r1", ProgressRegistry.StreamCap)).Stream;
         Assert.Equal(ProgressRegistry.StreamCap, stream.Count);
         Assert.Equal("satir 10", stream[0].Text);
+
+        // Varsayilan yoklama yalniz sonu tasir; toplam sayac dusen satirlari da sayar.
+        var tail = Assert.Single(reg.Snapshot("r1"));
+        Assert.Equal(ProgressRegistry.DefaultTail, tail.Stream.Count);
+        Assert.Equal($"satir {ProgressRegistry.StreamCap + 9}", tail.Stream[^1].Text);
+        Assert.Equal(ProgressRegistry.StreamCap + 10, tail.StreamTotal);
     }
 
     [Fact]

@@ -94,6 +94,33 @@ public sealed class WorkspaceSnapshotTests : IDisposable
     }
 
     /// <summary>
+    /// Paket/derleme ciktilari (node_modules, bin, obj) her adimda hash'lenip saklaniyordu (ilk goruntu ~260 MB). Artik
+    /// goruntuye girmez; geri donus kaynagi dondurur, bu dizinlere dokunmaz (silmez, eski hale de cekmez).
+    /// </summary>
+    [Fact]
+    public async Task Paket_ve_derleme_dizinleri_izlenmez_geri_donus_onlara_dokunmaz()
+    {
+        var pkg = Path.Combine(_work, "ui", "node_modules", "paket", "index.js");
+        Directory.CreateDirectory(Path.GetDirectoryName(pkg)!);
+        await File.WriteAllTextAsync(pkg, "v1", Ct);
+        await File.WriteAllTextAsync(Path.Combine(_work, "Program.cs"), "ilk hali", Ct);
+        var point = await _snap.TrackAsync(_work, Ct);
+        Assert.NotNull(point);
+        Assert.Null(await _snap.ReadAsync(_work, point!, "ui/node_modules/paket/index.js", Ct));
+
+        await File.WriteAllTextAsync(pkg, "v2", Ct);
+        var obj = Path.Combine(_work, "src", "obj", "Debug", "cikti.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(obj)!);
+        await File.WriteAllTextAsync(obj, "derleme", Ct);
+        await File.WriteAllTextAsync(Path.Combine(_work, "Program.cs"), "developer bozdu", Ct);
+
+        Assert.True(await _snap.RestoreAsync(_work, point!, Ct));
+        Assert.Equal("ilk hali", await File.ReadAllTextAsync(Path.Combine(_work, "Program.cs"), Ct));
+        Assert.Equal("v2", await File.ReadAllTextAsync(pkg, Ct));
+        Assert.True(File.Exists(obj), "derleme ciktisi geri donuste silinmemeli");
+    }
+
+    /// <summary>
     /// Iki goruntu arasi fark (gorev basinda yazilan kodun ozeti): durum + satir sayisi, Turkce harfli yol bozulmaz,
     /// disarida birakilan dizin (node_modules) listeye girmez, dosya metni goruntudeki haliyle okunur (diskteki sonraki hali degil).
     /// </summary>

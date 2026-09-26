@@ -99,9 +99,7 @@ public sealed class SpendReader(IAgentRuntimeService runtime, IRunStore runs, IM
             notes.Add("Özel aralıkta kota payı verilmez: haftalık yüzde yalnız pencerenin tamamına aittir.");
         }
 
-        var recorded = (await runs.ReadUsageAsync(1000, ct).ConfigureAwait(false))
-            .Where(t => t.Ts >= from && (until is null || t.Ts < until))
-            .ToList();
+        var recorded = await runs.ReadUsageBetweenAsync(from, until, ct).ConfigureAwait(false);
 
         return new SpendReport(from, until, weekly?.Percent, weekly?.ResetsAt, recorded.Sum(t => t.CostUsd ?? 0m), recorded.Count, sources, notes);
     }

@@ -96,6 +96,12 @@ public interface IRunStore
     Task<IReadOnlyList<TurnUsage>> ReadUsageAsync(int runLimit, CancellationToken ct);
 
     /// <summary>
+    /// <c>[since, until)</c> araligindaki turlarin toplama alanlari (zaman araligi sorguda; calisma sayisi siniri yok).
+    /// Harcama raporu icin: "son N calisma" + bellekte suzme hem gereksiz satir okur hem de aralik N'i asarsa eksik sayar.
+    /// </summary>
+    Task<IReadOnlyList<TurnUsage>> ReadUsageBetweenAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct);
+
+    /// <summary>
     /// Karakter/token kalibrasyon ornekleri (<see cref="Runs.TokenCalibration"/>): saglayici+model icin en yeni
     /// <paramref name="limit"/> ARACSIZ tur (<see cref="Turn.ToolsOffered"/> = false), yeniden eskiye. Prompt/cikti metni okunmaz.
     /// </summary>
@@ -113,6 +119,9 @@ public interface IRunStore
     Task<IReadOnlyList<Message>> ReadMessagesAsync(string runId, CancellationToken ct);
 
     Task<IReadOnlyList<Phase>> ReadPhasesAsync(string runId, string task, CancellationToken ct);
+
+    /// <summary>Calismanin TUM fazlari (gorevler karisik), ekleme sirasiyla: gorev basina ayri sorgu atmamak icin.</summary>
+    Task<IReadOnlyList<Phase>> ReadRunPhasesAsync(string runId, CancellationToken ct);
 
     Task<IReadOnlyList<string>> ListTasksAsync(string runId, CancellationToken ct);
 

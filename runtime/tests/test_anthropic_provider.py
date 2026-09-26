@@ -676,3 +676,34 @@ def test_yerel_kullanim_kaynak_ve_klasore_gore_toplanir_mesaj_tekillenir(tmp_pat
     assert office.cache_read_tokens == 200 and office.cache_write_tokens == 20
     assert office.cache_write_5m_tokens == 0, "kirilimsiz kayit 1 sa sayilir"
     assert by[("claude-desktop", "C--Ofis")].messages == 1
+
+
+def test_yerel_kullanim_degismeyen_kaydi_yeniden_ayristirmaz(tmp_path, monkeypatch):
+    """Dosya basina onbellek: ayni kayit ikinci istekte okunmaz; dosya buyuyunce yeniden okunur ve yeni satir sayilir."""
+    from datetime import datetime, timezone
+
+    from app.providers import anthropic as mod
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_USAGE_FILE_CACHE", {})
+    (tmp_path / "projects" / "C--P").mkdir(parents=True)
+    f = tmp_path / "projects" / "C--P" / "a.jsonl"
+    u = {"input_tokens": 1, "output_tokens": 1}
+
+    def line(mid):
+        return json.dumps({"type": "assistant", "timestamp": "2026-09-23T10:00:00Z", "entrypoint": "cli", "message": {"id": mid, "model": "m", "usage": u}}) + "\n"
+
+    f.write_text(line("m1"), encoding="utf-8")
+    reads = []
+    real = mod._read_usage_entries
+    monkeypatch.setattr(mod, "_read_usage_entries", lambda p, proj: reads.append(p) or real(p, proj))
+    since = datetime(2026, 9, 23, tzinfo=timezone.utc)
+
+    assert AnthropicProvider().local_usage(since)[0].messages == 1
+    assert AnthropicProvider().local_usage(since)[0].messages == 1
+    assert len(reads) == 1, "degismeyen dosya yeniden ayristirildi"
+
+    with f.open("a", encoding="utf-8") as fh:
+        fh.write(line("m2"))
+    assert AnthropicProvider().local_usage(since)[0].messages == 2
+    assert len(reads) == 2

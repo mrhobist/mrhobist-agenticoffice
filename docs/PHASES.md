@@ -1013,3 +1013,28 @@ brief'le önce/sonra karşılaştırması şartıyla.
   dosyası, sahte görüntüyle uçtan uca istem); Api `-warnaserror` temiz (canlı Api kilitli olduğu için geçici klasöre).
   **Görülmedi:** gerçek bir koşuda ilk görüntünün süresi ve bölümün istemdeki hâli; canlı Api yeniden başlatılmadı.
 - **Açık:** görüntü alınamadığında hâlâ yalnız konsol loguna yazılıyor (dosya logu yok); kayda/ekrana düşmüyor.
+
+## İnceleme bulguları: kesilen denemenin harcaması, yenileme kilidi, hafif canlı akış (2026-09-25) ✅
+
+Kod incelemesinin bulguları; davranış değişikliği yalnız doğruluk ve hız için.
+
+- **Tekrar edilen denemenin harcaması (CLAUDE.md §4):** geçici hatayla düşüp tekrar edilen her deneme kendi turu olarak
+  (`cutShort`) kaydedilir ve maliyeti çalışmaya taşınır. Önce yalnız son hata kaydediliyordu: tekrar başarılı olursa düşen
+  denemenin harcaması kayboluyordu. Sayaç deneme başına sıfırlanır (`ProgressRegistry.ResetUsage`), aynı harcama iki kez yazılmaz.
+- **Bekçi, ajan kilidini beklerken turu kesebiliyordu:** canlı belirteç kilitten ÖNCE kaydediliyordu; ajan başka
+  işte meşgulken geçen bekleme "hareketsizlik" sayılıp tur ilk yoklamada kesilebiliyordu, OAuth belirteci de beklerken eskiyordu.
+  Belirteç, MCP çözümü ve istek artık kilit alındıktan sonra kurulur; hareketsizlik turun başından önce sayılmaz.
+- **MCP OAuth yenilemesi sunucu başına kilitli:** iki tur aynı yenileme belirtecini harcarsa dönen belirteçli sağlayıcı ikinciyi
+  reddeder, yeniden kullanım tespiti belirteç ailesini iptal edebilir. Kilidi alan kaydı yeniden okur.
+- **Anlık görüntü dışında kalanlar genişledi:** `.vs`'e ek olarak `.idea`, `node_modules`, `bin`, `obj`, `.nuxt`, `.output`,
+  `.venv`, `__pycache__` görüntüye girmez ve geri dönüşte silinmez. Her `implement` adımından önce ~20 bin dosya hash'leniyor,
+  `data/snapshots` iş başına yüzlerce MB büyüyordu. Bedeli (varsayımla ilerlenir): geri dönüş yalnız kaynağı döndürür.
+- **Hız:** kod özetinde `git show` okumaları 4'lü paralel; faz listesi görev başına değil tek sorguyla (`ReadRunPhasesAsync`);
+  harcama raporu zaman aralığını sorguda süzer (`ReadUsageBetweenAsync`; "son 1000 tur" aralığı aşınca eksik sayıyordu);
+  `GET /runs/{id}/live` akışın son 80 satırını ve bağlam metnini yalnız `?context=true` ile döner (`streamTotal` artar, düşmez);
+  runtime `local_usage` değişmeyen dosyayı yeniden ayrıştırmaz.
+- **UI:** Özellikler paneli genişledi, dar ekranda sağlayıcı çipi ve geniş token sayıları taşmıyor, küçük tutarlarda 4 hane.
+- **Sahne:** kedinin mama/su kapları (sol alt köşe), acıktıkça yer ve içer (`cat` olayı `eat`; `docs/SCENE.md`).
+- **Doğrulama:** 50 birim + 170 servis + 67 Python testi. Yeni `AgentCallerTests` `RunServiceTests` ile paralel koşunca 4 test
+  `Running`'de kalıyordu: ajan kilitleri statik, biri "developer" kilidini tutarken diğerinin dağıtımı "ajan meşgul" sanıyordu.
+  İki sınıf aynı xUnit koleksiyonunda (`agent-locks`), sırayla koşar. Kod hatası değil.

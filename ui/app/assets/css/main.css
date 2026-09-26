@@ -20,3 +20,7 @@ body {
 }
 
 * { box-sizing: border-box; }
+
+/* Yer tutucu gercek degerden ayirt edilsin: koyu renk semasinda beyaz kutudaki yer tutucu dolu alan gibi okunuyordu
+   ("Hello World Console" yazili sanildi, 2026-09-25). */
+input::placeholder, textarea::placeholder { color: #9aa0ae; opacity: 1; }

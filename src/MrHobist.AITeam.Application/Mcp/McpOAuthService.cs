@@ -77,6 +77,13 @@ public sealed class McpOAuthService(IMcpStore store, IMcpOAuthClient client, Mcp
     /// <summary>Bu kadar sure icinde dolacak belirtec tur oncesi yenilenir.</summary>
     public static readonly TimeSpan RefreshMargin = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// Sunucu basina tek yenileme. Iki ajan ayni sunucuyla ayni anda tura girerse ikisi de ayni yenileme belirtecini
+    /// harcamasin: donen (rotating) belirtec kullanan saglayicida ikinci istek reddedilir, yeniden kullanim tespiti
+    /// belirtec ailesini iptal edip kullaniciyi yeniden girise zorlayabilir. Kilidi alan kaydi YENIDEN okur.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> RefreshLocks = new(StringComparer.Ordinal);
+
     public async Task<McpOAuthStart> StartAsync(string key, McpOAuthStartRequest request, string redirectUri, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -201,37 +208,59 @@ public sealed class McpOAuthService(IMcpStore store, IMcpOAuthClient client, Mcp
         var result = servers.ToList();
         for (var i = 0; i < result.Count; i++)
         {
-            var s = result[i];
-            if (!keys.Contains(s.Key, StringComparer.Ordinal) || s.OAuth is not { } o || !o.NeedsRefresh(now, RefreshMargin) || s.Url is null)
+            if (!keys.Contains(result[i].Key, StringComparer.Ordinal) || result[i].OAuth is not { } seen || !seen.NeedsRefresh(now, RefreshMargin) || result[i].Url is null)
             {
                 continue;
             }
 
-            var form = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["grant_type"] = "refresh_token",
-                ["refresh_token"] = o.RefreshToken!,
-                ["client_id"] = o.ClientId,
-                ["resource"] = s.Url,
-            };
-            if (o.ClientSecret is { } secret)
-            {
-                form["client_secret"] = secret;
-            }
-
+            var gate = RefreshLocks.GetOrAdd(result[i].Key, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                var tokens = await client.TokenAsync(o.TokenEndpoint, form, ct).ConfigureAwait(false);
-                result[i] = s with { OAuth = Apply(o, tokens) };
-                await store.SaveAsync(result[i], ct).ConfigureAwait(false);
+                result[i] = await RefreshLockedAsync(result[i], ct).ConfigureAwait(false);
             }
-            catch (DomainException)
+            finally
             {
-                // Yenilenemedi (belirtec iptal/sure bitti): sunucu oldugu gibi kalir; Resolve "giris yok" diye atlar, calisma durmaz.
+                gate.Release();
             }
         }
 
         return result;
+    }
+
+    /// <summary>Kilit altinda: kayit baska bir tur tarafindan az once yenilendiyse onu kullanir, degilse yeniler.</summary>
+    private async Task<McpServer> RefreshLockedAsync(McpServer listed, CancellationToken ct)
+    {
+        var s = await store.GetAsync(listed.Key, ct).ConfigureAwait(false) ?? listed;
+        if (s.OAuth is not { } o || !o.NeedsRefresh(DateTimeOffset.UtcNow, RefreshMargin) || s.Url is null)
+        {
+            return s;
+        }
+
+        var form = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = o.RefreshToken!,
+            ["client_id"] = o.ClientId,
+            ["resource"] = s.Url,
+        };
+        if (o.ClientSecret is { } secret)
+        {
+            form["client_secret"] = secret;
+        }
+
+        try
+        {
+            var tokens = await client.TokenAsync(o.TokenEndpoint, form, ct).ConfigureAwait(false);
+            var fresh = s with { OAuth = Apply(o, tokens) };
+            await store.SaveAsync(fresh, ct).ConfigureAwait(false);
+            return fresh;
+        }
+        catch (DomainException)
+        {
+            // Yenilenemedi (belirtec iptal/sure bitti): sunucu oldugu gibi kalir; Resolve "giris yok" diye atlar, calisma durmaz.
+            return s;
+        }
     }
 
     /// <summary>Yeni belirtecler; sunucu yenileme belirteci dondurmediyse eskisi korunur (RFC 6749 §6).</summary>

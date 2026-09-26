@@ -212,14 +212,24 @@ function liveKey(t: LiveTurn): string { return t.agent + (t.task ?? '') + t.star
 async function loadLive() {
   if (!props.runId) return
   try {
-    const next = await api.get<LiveTurn[]>(`/api/v1/runs/${encodeURIComponent(props.runId)}/live`)
-    const grew = next.some((t, i) => t.stream.length !== (live.value[i]?.stream.length ?? -1))
+    // Baglam metni tur boyunca degismez ve buyuktur: yalniz biri acikken istenir (yoksa ad + boyut gelir).
+    const q = openContext.value ? '?context=true' : ''
+    const next = await api.get<LiveTurn[]>(`/api/v1/runs/${encodeURIComponent(props.runId)}/live${q}`)
+    // streamTotal yoksa (eski Api) satir sayisina dusulur: yeni UI eski Api'yle de asagi kaymayi surdurur.
+    const total = (t?: LiveTurn) => t ? (t.streamTotal ?? t.stream.length) : -1
+    const grew = next.some((t, i) => total(t) !== total(live.value[i]))
     live.value = next
     if (grew) {
       await nextTick()
       for (const el of streamBox.values()) if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight
     }
   } catch { /* canli gorunum yardimcidir; hata calisma panelini bozmaz */ }
+}
+/** Baglam acilinca metni hemen cekilir (sonraki yoklamayi beklemeden); kapaninca yoklama yine hafifler. */
+function onContextToggle(t: LiveTurn, open: boolean) {
+  const key = t.agent + t.startedAt
+  if (open && openContext.value !== key) { openContext.value = key; void loadLive() }
+  else if (!open && openContext.value === key) openContext.value = null
 }
 /** Odak: panodan gelen gorev once; yoksa hepsi. */
 const liveShown = computed(() => {
@@ -604,11 +614,11 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
                 <span v-else class="txt">{{ e.kind === 'thinking' ? '💭 ' : '' }}{{ e.text }}</span>
               </div>
             </div>
-            <details class="ctx" :open="openContext === t.agent + t.startedAt" @toggle="(ev) => { if ((ev.target as HTMLDetailsElement).open) openContext = t.agent + t.startedAt }">
+            <details class="ctx" :open="openContext === t.agent + t.startedAt" @toggle="(ev) => onContextToggle(t, (ev.target as HTMLDetailsElement).open)">
               <summary>Ajanın bağlamı · {{ t.context.length }} parça · ~{{ estTokens(t.context.reduce((s, c) => s + c.chars, 0)) }} tk</summary>
               <details v-for="(c, i) in t.context" :key="i" class="part">
                 <summary><span class="role" :class="c.role">{{ c.role }}</span> {{ c.name }} <span class="sub">{{ c.chars.toLocaleString('tr-TR') }} kr · ~{{ estTokens(c.chars) }} tk</span></summary>
-                <pre>{{ c.text }}</pre>
+                <pre>{{ c.text ?? 'yükleniyor…' }}</pre>
               </details>
               <p class="sub">Claude Code'un kendi kılavuzu ve araç tanımları bu listeye dahil değil; ajan turda okuduğu dosyaları da bağlamına ekler (kullanım satırında görünür).</p>
             </details>

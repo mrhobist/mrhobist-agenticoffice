@@ -150,9 +150,12 @@ export interface LiveTurn {
   toolCount: number
   usage: RuntimeUsage
   stream: Array<{ ts: string; kind: 'tool' | 'text' | 'thinking'; tool: string | null; target: string | null; text: string | null }>
-  context: Array<{ name: string; role: string; chars: number; text: string }>
+  /** `text` yalniz `?context=true` ile gelir; yoklamada null (ad ve boyut yeter). */
+  context: Array<{ name: string; role: string; chars: number; text: string | null }>
   /** Hareketsizlik esigi (s): bu kadar hareket olmazsa tur kesilir. */
   idleLimitS: number
+  /** Tur boyunca bildirilen akis satiri sayisi (artar); `stream` yalniz son satirlardir. */
+  streamTotal: number
 }
 
 /** GET /api/v1/usage/split — kim ne harcadi (ofis ajani / Claude Code oturumlari). */

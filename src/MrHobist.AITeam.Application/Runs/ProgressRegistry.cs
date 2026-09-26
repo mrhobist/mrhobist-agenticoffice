@@ -19,15 +19,19 @@ public sealed record ProgressContext(string RunId, string Agent, string? Task, s
 /// </summary>
 public sealed record ProgressEvent(string? Tool = null, string? Target = null, string? Kind = null, string? Text = null, string? MessageId = null, RuntimeUsage? Usage = null, int? Chars = null);
 
-/// <summary>Ajanin o anki baglaminin bir parcasi (sistem istemi, bilgi dosyasi, gorev istemi, tasinan gecmis).</summary>
-public sealed record LiveContextPart(string Name, string Role, int Chars, string Text);
+/// <summary>
+/// Ajanin o anki baglaminin bir parcasi (sistem istemi, bilgi dosyasi, gorev istemi, tasinan gecmis). <see cref="Text"/> yalniz
+/// istenince doner (<c>?context=true</c>): tur boyunca degismez, her yoklamada tasinmasi bosa bant genisligidir.
+/// </summary>
+public sealed record LiveContextPart(string Name, string Role, int Chars, string? Text);
 
 /// <summary>Canli akisin tek satiri: arac, metin ya da dusunce.</summary>
 public sealed record LiveEntry(DateTimeOffset Ts, string Kind, string? Tool, string? Target, string? Text);
 
 /// <summary>
 /// Suren bir turun anlik gorunumu (<c>GET /runs/{id}/live</c>): canlilik (son hareket), akis, o ana kadarki kullanim ve
-/// ajanin elindeki baglam. Tur bitince duser; kalici kayit <c>run_turn</c>'dedir.
+/// ajanin elindeki baglam. Tur bitince duser; kalici kayit <c>run_turn</c>'dedir. <see cref="Stream"/> akisin yalniz SONUDUR;
+/// <see cref="StreamTotal"/> tur boyunca bildirilen satir sayisi (artar, dusmez): istemci "yeni satir geldi mi"yi buna bakar.
 /// </summary>
 public sealed record LiveTurnView(
     string Agent,
@@ -39,7 +43,8 @@ public sealed record LiveTurnView(
     RuntimeUsage Usage,
     IReadOnlyList<LiveEntry> Stream,
     IReadOnlyList<LiveContextPart> Context,
-    int IdleLimitS);
+    int IdleLimitS,
+    int StreamTotal = 0);
 
 /// <summary>
 /// Canli akis (kullanici istekleri 2026-09-20 ve 2026-09-23: developer calisirken ne yaptigi, ne dusundugu, elindeki
@@ -53,6 +58,9 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
 {
     /// <summary>Tur basina akista tutulan en fazla satir (eski satirlar duser; tam metin tur sonunda gunlukte).</summary>
     public const int StreamCap = 400;
+
+    /// <summary><c>GET /live</c>'in varsayilan olarak dondurdugu son satir sayisi (UI de bu kadarini gosterir).</summary>
+    public const int DefaultTail = 80;
 
     /// <summary>Cikti tahmini: karakter / token. Kod ve Turkce metinde ~3-3,5; dusuk tutuldu ki kesilen tur eksik sayilmasin.</summary>
     public const double OutputCharsPerToken = 3.0;
@@ -68,6 +76,8 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
         public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
 
         public int ToolCount { get; set; }
+
+        public int StreamTotal { get; set; }
 
         public Queue<LiveEntry> Stream { get; } = new();
 
@@ -96,6 +106,21 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
     /// <summary>Turun son hareketi (kayit ani ya da son bildirim); belirtec yoksa (tur bitti) null. Hareketsizlik bekcisi buna bakar.</summary>
     public DateTimeOffset? LastSeen(string token) => _live.TryGetValue(token, out var l) ? l.LastSeenAt : null;
 
+    /// <summary>
+    /// Bildirilen kullanimi siler: yarida kalan deneme ayri tur olarak kaydedildikten sonra, sonraki deneme sifirdan sayilsin
+    /// (ayni harcama iki kez yazilmasin). Akis ve canlilik korunur.
+    /// </summary>
+    public void ResetUsage(string token)
+    {
+        if (_live.TryGetValue(token, out var l))
+        {
+            lock (l.Gate)
+            {
+                l.Usage.Clear();
+            }
+        }
+    }
+
     /// <summary>O ana kadar bildirilen kullanim (mesaj basina son deger, toplanmis); bildirim yoksa null.</summary>
     public RuntimeUsage? UsageOf(string token)
     {
@@ -110,16 +135,23 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
         }
     }
 
-    /// <summary>Calismanin suren turlari (ayni anda birden cok ajan olabilir).</summary>
-    public IReadOnlyList<LiveTurnView> Snapshot(string runId)
-        => _live.Values.Where(l => l.Ctx.RunId == runId).Select(l =>
+    /// <summary>
+    /// Calismanin suren turlari (ayni anda birden cok ajan olabilir). UI bunu 2 s'de bir okur: akisin yalniz son
+    /// <paramref name="tail"/> satiri, baglamin metni yalniz <paramref name="withContext"/> ise doner (yoksa ad ve boyut).
+    /// </summary>
+    public IReadOnlyList<LiveTurnView> Snapshot(string runId, int tail = DefaultTail, bool withContext = false)
+    {
+        var take = Math.Clamp(tail, 1, StreamCap);
+        return _live.Values.Where(l => l.Ctx.RunId == runId).Select(l =>
         {
+            var context = withContext ? l.Context : [.. l.Context.Select(c => c with { Text = null })];
             lock (l.Gate)
             {
                 return new LiveTurnView(l.Ctx.Agent, l.Ctx.Task, l.Ctx.Stage, l.StartedAt, l.LastSeenAt, l.ToolCount,
-                    Sum(l.Usage.Values), l.Stream.ToList(), l.Context, IdleLimitS);
+                    Sum(l.Usage.Values), [.. l.Stream.Skip(Math.Max(0, l.Stream.Count - take))], context, IdleLimitS, l.StreamTotal);
             }
         }).OrderBy(v => v.StartedAt).ToList();
+    }
 
     /// <summary>Runtime bildirdi. Bilinmeyen belirtec sessizce yutulur (tur bitmis). Arac olayi sahneye <c>agent.tool</c> olarak gider.</summary>
     public bool Report(string token, ProgressEvent e)
@@ -166,6 +198,7 @@ public sealed class ProgressRegistry(ISceneEventPublisher scene)
 
     private static void Push(Live l, LiveEntry entry)
     {
+        l.StreamTotal++;
         l.Stream.Enqueue(entry);
         while (l.Stream.Count > StreamCap)
         {
