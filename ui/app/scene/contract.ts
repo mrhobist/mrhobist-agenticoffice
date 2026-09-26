@@ -92,7 +92,7 @@ export interface SceneConfig {
   spots: Record<string, SpotDef>
   blocked: [number, number, number, number][]
   agents: AgentDef[]
-  cat: { bed: Pt; spots: Pt[] }
+  cat: { bed: Pt; spots: Pt[]; bowls?: CatBowlsDef }
   /**
    * Dinlenme koltuklari (kanepe). `seats`'ten AYRI: Api ajanlara ev koltugunu `seats`'ten atar, kanepe kimsenin evi olmasin.
    * Bosta olan ajanlar ve misafirler ara sira burada oturur (on kareler: yuzu kameraya donuk).
@@ -108,6 +108,13 @@ export interface SceneConfig {
 }
 
 export interface Rect { x: number; y: number; w: number; h: number }
+
+/** Kedinin mama/su kaplari (2026-09-25): kap noktalari zemine degen orta nokta; `mat` altindaki paspas [x, y, w, h]. */
+export interface CatBowlsDef {
+  food: Pt
+  water: Pt
+  mat: [number, number, number, number]
+}
 
 export interface BalconyDef {
   /** Cam kapi (arka planda cizili): kanatlar buradan kesilip kayar. */
@@ -141,7 +148,7 @@ export type TaskState = 'queued' | 'active' | 'blocked' | 'done'
 export type BubbleKind = 'talk' | 'ask' | 'alert'
 export type MeetKind = 'handoff' | 'ask' | 'reject'
 export type DoorState = 'closed' | 'open'
-export type CatAction = 'sleep' | 'wander' | 'sit'
+export type CatAction = 'sleep' | 'wander' | 'sit' | 'eat'
 
 export interface BoardTask {
   id: string

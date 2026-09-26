@@ -5,6 +5,7 @@ import { Agent, Cat, Door, drawDrink, type Action, type Drink } from './entities
 import { Board } from './board'
 import { drawFerry, drawSky } from './sky'
 import { Balcony } from './balcony'
+import { CatBowls } from './bowls'
 import { authHeaders } from '~/composables/useAuth'
 import { deriveCards, HIDDEN_RUN_STATUS } from '~/api/board'
 import type { RunDetail, RunSummary } from '~/api/types'
@@ -34,6 +35,8 @@ export class World {
   readonly door = new Door()
   /** Alt duvardaki cam surgulu kapi + korkuluk (`cfg.balcony` yoksa null). */
   readonly balcony: Balcony | null
+  /** Kedinin mama/su kaplari, sol alt kose (`cfg.cat.bowls` yoksa null). */
+  readonly bowls: CatBowls | null
   readonly board: Board
   /** Tiklanabilir isiklar (mudur odasinin sarkiti): id -> tanim + durum. */
   readonly lights = new Map<string, { def: LightDef; on: boolean }>()
@@ -79,7 +82,8 @@ export class World {
     for (const l of cfg.lights ?? []) this.lights.set(l.id, { def: l, on: l.on !== false })
     this.board = new Board(cfg.board)
     this.board.setWorkflow(wf)
-    this.cat = new Cat(cfg.cat.bed, cfg.cat.spots)
+    this.cat = new Cat(cfg.cat.bed, cfg.cat.spots, cfg.cat.bowls)
+    this.bowls = cfg.cat.bowls ? new CatBowls(cfg.cat.bowls) : null
     this.balcony = cfg.balcony ? new Balcony(cfg.balcony) : null
 
     for (const def of cfg.agents) {
@@ -148,7 +152,8 @@ export class World {
     this.guestSeq = old.guestSeq
     this.nextGuestAt = old.nextGuestAt
     this.cat.pos = { ...old.cat.pos }
-    this.cat.mode = old.cat.mode === 'walk' ? 'sit' : old.cat.mode
+    this.cat.mode = old.cat.mode === 'walk' || old.cat.eating ? 'sit' : old.cat.mode
+    if (this.bowls && old.bowls) { this.bowls.food = old.bowls.food; this.bowls.water = old.bowls.water }
     this.door.state = old.door.state
     if (this.balcony && old.balcony) { this.balcony.open = old.balcony.open; this.balcony.held = old.balcony.held }
   }
@@ -453,6 +458,7 @@ export class World {
     for (const a of this.agents.values()) a.update(dt, now, this.nav)
     for (const g of this.guests) g.update(dt, now, this.nav)
     this.cat.update(dt, now, this.nav)
+    this.bowls?.update(dt, now, this.cat.mode)
     this.guestLife(now)
     this.door.update(now)
     if (this.balcony) {
@@ -728,7 +734,7 @@ export class World {
 
   /** Kedi uyanik ve bossa (kimse sevmiyor, tutulmuyor). */
   private catFree(): boolean {
-    return this.cat.awake && this.cat.mode !== 'walk' && performance.now() > this.cat.holdUntil && !(this.catVisitor?.busy)
+    return this.cat.awake && this.cat.mode !== 'walk' && !this.cat.eating && performance.now() > this.cat.holdUntil && !(this.catVisitor?.busy)
   }
 
   /** Kapi acilinca ara sira kedi karsilamaya gelir: kapi onune yurur, "miyav". */
@@ -1030,6 +1036,7 @@ export class World {
     this.drawCafeSpecial(ctx, now)
     if (this.cfg.door) this.door.draw(ctx, this.sprites, this.cfg.door.x, this.cfg.door.y, this.cfg.door.h, this.cfg.door.w)
     this.balcony?.drawDoor(ctx, bgImg, sx, sy)
+    this.bowls?.drawMat(ctx)
 
     // Nesneler + varliklar alt kenara gore siralanir.
     type Item = { y: number; draw: () => void }
@@ -1061,6 +1068,11 @@ export class World {
       }
     }
     items.push({ y: this.cat.pos.y, draw: () => this.cat.draw(ctx, this.sprites, now) })
+    const bowls = this.bowls
+    if (bowls) {
+      items.push({ y: bowls.sortY('food'), draw: () => bowls.drawBowl(ctx, 'food', now) })
+      items.push({ y: bowls.sortY('water'), draw: () => bowls.drawBowl(ctx, 'water', now) })
+    }
     // Pano zeminde bir nesnedir: ajanlar onunden ve arkasindan gecer.
     items.push({ y: this.cfg.board.y + this.cfg.board.h, draw: () => this.board.draw(ctx, now) })
     // Balkon korkulugu: balkonda duranlarin onunde.

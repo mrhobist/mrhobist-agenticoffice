@@ -1,7 +1,8 @@
-import type { AgentDef, AgentState, BubbleKind, CatAction, DoorState, Facing, Pt, SeatDef } from './contract'
+import type { AgentDef, AgentState, BubbleKind, CatAction, CatBowlsDef, DoorState, Facing, Pt, SeatDef } from './contract'
 import { ROLE_HEX, STATE_HEX } from './contract'
 import type { CharacterSheets, Sprites } from './atlas'
 import type { NavGrid } from './nav'
+import { bowlStand } from './bowls'
 
 /** Sirali eylem kuyrugu: yonetmen (director) bunlari ekler, update tuketir. */
 export type Action =
@@ -406,7 +407,7 @@ export class Agent {
 
 // --------------------------------------------------------------------------- //
 
-type CatMode = 'sleep' | 'walk' | 'sit' | 'lie'
+type CatMode = 'sleep' | 'walk' | 'sit' | 'lie' | 'eat' | 'drink'
 
 /**
  * Kedinin yuruyus sayfasi 4 yonlu (asagi/sol/sag/yukari). 8 yonlu bakis dogrudan kullanilinca capraz yuruyuste satir
@@ -437,10 +438,42 @@ export class Cat {
   /** Kisa soz balonu ("miyav"). */
   private sayText = ''
   private sayUntil = 0
+  /** Son ogun: aciktikca mama kabina gitme olasiligi artar. Ilk ogun acilistan birkac dakika icinde. */
+  private lastMealAt: number
 
-  constructor(readonly bed: Pt, readonly spots: Pt[]) {
+  constructor(readonly bed: Pt, readonly spots: Pt[], readonly bowls?: CatBowlsDef) {
     this.pos = { ...bed }
     this.nextAt = performance.now() + 45_000 + Math.random() * 60_000
+    this.lastMealAt = performance.now() - 150_000 - Math.random() * 60_000
+  }
+
+  /** Yiyor ya da iciyor: ogun bitene kadar dilenme/karsilama gibi davetlere gitmez. */
+  get eating(): boolean { return this.mode === 'eat' || this.mode === 'drink' }
+
+  /**
+   * Mama kabina gider, yer (6-9 s), yandaki su kabina gecer, icer (4-7 s), sonra oturup "mirr" der (kullanici istegi
+   * 2026-09-25). Kap tanimi yoksa hicbir sey yapmaz.
+   */
+  goEat(nav: NavGrid): boolean {
+    if (!this.bowls) return false
+    const food = bowlStand(this.bowls, 'food')
+    this.holdUntil = 0
+    this.goto(food.pos, nav, () => {
+      this.mode = 'eat'
+      this.facing = food.facing
+      this.lastMealAt = performance.now()
+      this.meow(performance.now(), 'nom nom')
+      this.nextAt = performance.now() + 6000 + Math.random() * 3000
+    })
+    return true
+  }
+
+  /** Acikma: son ogunden bu yana gecen sureye gore kabina gitme olasiligi (4 dk'dan sonra cok yuksek). */
+  private wantsMeal(now: number): boolean {
+    if (!this.bowls) return false
+    const since = now - this.lastMealAt
+    const p = since > 240_000 ? 0.75 : since > 90_000 ? 0.2 : 0
+    return Math.random() < p
   }
 
   /**
@@ -462,6 +495,7 @@ export class Cat {
     this.plan = []
     if (action === 'sleep') { this.goto(this.bed, nav, () => { this.mode = 'sleep'; this.nextAt = performance.now() + 120_000 }) }
     else if (action === 'sit') { this.mode = 'sit'; this.nextAt = now + 15_000 }
+    else if (action === 'eat' && this.goEat(nav)) { /* goEat plani kurdu */ }
     else {
       const s = this.spots[spotIdx ?? Math.floor(Math.random() * this.spots.length)] ?? this.bed
       this.goto(s, nav, () => { this.mode = 'sit'; this.nextAt = now + 8_000 })
@@ -530,7 +564,25 @@ export class Cat {
       return
     }
     if (now < this.nextAt || now < this.holdUntil) return
-    // Kendi ritmi: uyu -> gez -> otur -> (bazen uzan) -> yataga don.
+    // Ogun: yedi -> suya gec; icti -> oturup yalanir.
+    if (this.mode === 'eat' && this.bowls) {
+      const water = bowlStand(this.bowls, 'water')
+      this.goto(water.pos, nav, () => {
+        this.mode = 'drink'
+        this.facing = water.facing
+        this.nextAt = performance.now() + 4000 + Math.random() * 3000
+      })
+      return
+    }
+    if (this.mode === 'drink') {
+      this.mode = 'sit'
+      this.facing = 'down'
+      this.meow(now, 'mırr')
+      this.nextAt = now + 5000 + Math.random() * 5000
+      return
+    }
+    // Kendi ritmi: uyu -> (acikinca ye/ic) -> gez -> otur -> (bazen uzan) -> yataga don.
+    if (this.wantsMeal(now)) { this.goEat(nav); return }
     if (this.mode === 'sleep') {
       const s = this.spots[Math.floor(Math.random() * this.spots.length)] ?? this.bed
       this.goto(s, nav, () => { this.mode = Math.random() < 0.3 ? 'lie' : 'sit'; this.nextAt = now + 8000 + Math.random() * 10_000 })
@@ -567,9 +619,33 @@ export class Cat {
     ctx.fill()
     if (this.mode === 'sit') { sprites.drawSingle(ctx, cat.sit, this.pos.x, this.pos.y); return }
     if (this.mode === 'lie') { sprites.drawSingle(ctx, cat.lie, this.pos.x, this.pos.y); return }
+    if (this.eating) { this.drawEating(ctx, sprites, now); return }
     const row = cat.walk.dirRows?.[catDir(this.facing)] ?? 0
     const frame = Math.floor(this.walkT * 6) % cat.walk.cols
     sprites.drawFrame(ctx, cat.walk, frame, row, this.pos.x, this.pos.y)
+  }
+
+  /**
+   * Yeme/icme pozu: sayfada ayri kare yok. Yan profil kare arka ayaklar etrafinda one ~15-20 derece egilir, bas kabin
+   * icine iner (kap kedinin onune cizilir). Egim yeme ritmiyle salinir; icerken daha hizli ve sig (dil sapirtisi).
+   */
+  private drawEating(ctx: CanvasRenderingContext2D, sprites: Sprites, now: number): void {
+    const walk = sprites.atlas.cat.walk
+    const right = this.facing === 'right'
+    const row = walk.dirRows?.[right ? 'right' : 'left'] ?? 1
+    const sign = right ? 1 : -1
+    const dw = walk.frameW / sprites.worldScale
+    const drink = this.mode === 'drink'
+    const bob = Math.sin(now / (drink ? 110 : 190)) * 0.5 + 0.5
+    const deg = drink ? 16 + bob * 2.5 : 15 + bob * 5
+    const px = this.pos.x - sign * dw * 0.3
+    const py = this.pos.y
+    ctx.save()
+    ctx.translate(px, py)
+    ctx.rotate(sign * deg * Math.PI / 180)
+    ctx.translate(-px, -py)
+    sprites.drawFrame(ctx, walk, 1, row, this.pos.x, this.pos.y)
+    ctx.restore()
   }
 
   /** Kisa soz balonu: kedinin basinin ustunde kucuk beyaz kutu. */

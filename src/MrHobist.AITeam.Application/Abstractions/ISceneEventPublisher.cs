@@ -23,7 +23,7 @@ public static class SceneEventTypes
     public const string BoardSet = "board.set";       // { tasks: [{ id, title, stage, state: queued|active|blocked|done }] }
     public const string BoardMove = "board.move";     // { task, stage, state }
     public const string RunStage = "run.stage";       // { stage, task, round }
-    public const string Cat = "cat";                  // { action: sleep|wander|sit, spot? }
+    public const string Cat = "cat";                  // { action: sleep|wander|sit|eat, spot? }
     public const string Door = "door";                // { state: closed|open }  iki kare; acilan kapi 1.4 s sonra kapanir
     public const string AgentLeave = "agent.leave";   // { agent }  kapiya yurur, disari cikar
     public const string AgentEnter = "agent.enter";   // { agent }  kapidan girer, evine yurur

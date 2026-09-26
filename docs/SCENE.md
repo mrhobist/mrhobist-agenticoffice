@@ -102,7 +102,7 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Bugün altı ajan: `analyst · designer · developer · tester · manager · organizer` (`intern`/`devops` Faz 2b'de çıkarıldı). Ekipte olup burada yeri olmayan ajan UI'da boş masaya ve kullanılmayan sprite'a otomatik yerleşir; olay almayan ajan ambient davranır |
 | `lounge` | dinlenme koltukları (kanepe): `seats: [{x, y, facing}]`. `seats`'ten **ayrı** tutulur: Api ajana ev koltuğunu `seats`'ten atar, kanepe kimsenin evi olmasın. Boştaki ajanlar ve misafirler burada oturur (öne bakan yazma kareleri: sandalye gövdenin arkasında kalır). Koltuk sırası gelince tutulur, kalkınca bırakılır; sol minder kedinin yatağı olduğu için koltuklar sağda |
 | `guests` | misafirler (2026-09-24, kullanıcı: "çalışmayanlar da gelsin gitsin, kahve/su alsın, kanepede otursun, kapıdan gitsin"): `max` (aynı anda, varsayılan 2), `firstMs`, `everyMs: [min,max]`, `sprites` (boş = ekibin ve sahnedeki misafirlerin kullanmadığı karakterler). Misafir kapıdan girer, 2–3 durak gezer (kahve/su önce alınır; kanepe, pencere, pano, masada oturan birine uğrama), kapıdan çıkar ve sahneden silinir. Durak sırası ve kapasiteleri ajanlarla ortaktır; tıklanmaz, iş almaz, sunucu olayı üretmez (yalnız UI). Gece (21–07) üç kat seyrek |
-| `cat` | yatak ve gezinti noktaları. Yatak **açık alandadır** (koltuğun minderi): kedi oraya yürüyerek çıkar |
+| `cat` | yatak ve gezinti noktaları. Yatak **açık alandadır** (koltuğun minderi): kedi oraya yürüyerek çıkar. `bowls` (2026-09-25): mama/su kapları `food`, `water` (kabın zemine değen ortası) ve altındaki paspas `mat [x,y,w,h]`; sol alt köşede, alanı `blocked`'da. Kaplar ve paspas prosedürel çizilir (`bowls.ts`) |
 | `lights[]` | tıklanınca açılıp kapanan ışık: `hit` (tıklama dikdörtgeni), `on` (varsayılan açık) ve iki kullanımdan biri — **oda ışığı**: `room` sönünce karartılır, `glow` açıkken hale düşer (müdür odasının sarkıtı); **abajur**: yalnız `bulb`, sönünce sadece başlık koyulaşır (`multiply`), çevresi etkilenmez (kanepenin yanındaki abajur) |
 
 `object` katmanı varlıklarla birlikte **alt kenara göre** sıralanır; oturan ajan, masasının
@@ -151,7 +151,7 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `meet` | `from, to, kind: handoff/ask/reject, ms?` | `from` gider, karşılıklı balon, döner; oturan `to` arkasına döner |
 | `board.set` / `board.move` | `tasks[]`, `run?` / `task, stage, state, run?` | not eklenir, sütun değişimi zıplayarak animasyonlanır. Görev kimliği **çalışmayla** anahtarlanır (`run:task`): iki çalışmanın aynı görev kimliği çarpışmaz |
 | `run.stage` | `stage, task, round` | üst şerit |
-| `cat` | `action: sleep/wander/sit, spot?` | kedi |
+| `cat` | `action: sleep/wander/sit/eat, spot?` | kedi (`eat`: mama kabına gider, yer, içer) |
 | `door` | `state` | kapı; 6 s sonra kapanır |
 | `agent.leave` / `agent.enter` | `agent` | sağ üstteki kapıya yürür ve sahneden çıkar / kapıdan girip evine yürür. Dışarıdaki ajan çizilmez, ambient almaz, `meet` hedefi olamaz |
 | `clock.set` | `hour: 0-24 \| null` | pencere manzarasının saati; `null` gerçek yerel saat |
@@ -216,6 +216,7 @@ duvar saatinden hesaplanır, gece pencereleri ve feneri yanar.
 | **Karşılama** | kapıdan biri girince (~%30, kedi uyanık ve boşsa) kapı önüne yürür, "miyav" |
 | **Dilenme** | kahve/su dolarken (~%30) tezgâhın yanına gelir, "miyav?" |
 | **Kanepe** | biri kanepeye oturunca (~%45) minderine yürüyüp kıvrılır |
+| **Öğün** (2026-09-25) | kendi ritminde acıktıkça (son öğünden 90 s sonra ~%20, 4 dk sonra ~%75): mama kabına yürür, yan profilde öne eğilip yer ("nom nom", 6–9 s), su kabına geçer, içer (halkalar, 4–7 s), oturup "mırr" der. Sayfada yeme karesi yok: yürüyüş karesi arka ayaklar etrafında ~15–20° eğilir, kap kedinin önüne çizilir. Doluluk yalnız UI'da: öğünde azalır, ~4 dk'da kendiliğinden dolar. Öğün sürerken dilenme/karşılama/sevmeye gitmez (kullanıcının tıklaması hariç) |
 
 **Küçük pano iki kaynaktan beslenir.** SSE (`board.set`/`board.move`) yalnız bu oturumda olan biteni
 taşır; sahne ayrıca 6 saniyede bir `GET /runs` + `GET /runs/{id}` ile panoyu **sunucudan eşitler**
