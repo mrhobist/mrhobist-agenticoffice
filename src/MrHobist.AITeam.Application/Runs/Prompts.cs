@@ -310,6 +310,13 @@ public static class Prompts
     }
 
     /// <summary>Gorev baglami: plan + gorev + kurallar + dizin. Uc yurutucu de bunu kullanir.</summary>
+    /// <summary>Kopyanin dogrulama port araligi: 5200'den itibaren kopya basina 20 port (kopya 2 → 5220–5239).</summary>
+    public static (int From, int To) PortRange(string worker)
+    {
+        var start = 5200 + (20 * (Workers.InstanceOf(worker) - 1));
+        return (start, start + 19);
+    }
+
     private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null, IReadOnlyList<WrittenFile>? written = null)
     {
         var sb = new StringBuilder();
@@ -317,7 +324,15 @@ public static class Prompts
         sb.AppendLine("## Kabul ölçütleri").AppendJoin('\n', a.Task.Acceptance.Select(x => "- " + x)).AppendLine();
         sb.AppendLine("## Dosyalar").AppendJoin('\n', a.Task.Files.Select(x => "- " + x)).AppendLine().AppendLine();
         sb.AppendLine("# Çalışma dizini");
-        sb.AppendLine($"`{projectRoot}` — araçların bu dizinde açıldı; yollar buna göre görelidir. Bu dizinin DIŞINA yazma (engellenir).").AppendLine();
+        sb.AppendLine($"`{projectRoot}` — araçların bu dizinde açıldı; yollar buna göre görelidir. Bu dizinin DIŞINA yazma (engellenir).");
+        if (a.Worker is not null)
+        {
+            // Kopya (docs/DOMAIN.md → Kopyalar): ayni anda baska kopyalar baska projelerde calisir; dogrulama sunuculari carpismasin.
+            var (from, to) = PortRange(a.WorkerId);
+            sb.AppendLine($"Sen bu ajanın {Workers.InstanceOf(a.WorkerId)}. kopyasısın; aynı anda başka kopyalar da çalışıyor. Brief port vermediyse doğrulama için yalnız {from}–{to} portlarını kullan; başka bir süreci durdurma.");
+        }
+
+        sb.AppendLine();
         sb.AppendLine("# Plan").AppendLine("## Özet").AppendLine(spec.Summary).AppendLine("## Mimari").AppendLine(spec.Architecture).AppendLine();
         var refs = a.Task.RuleRefs?.Where(i => i >= 0 && i < spec.Rules.Count).Distinct().Order().ToList();
         var rules = refs is { Count: > 0 } ? refs.Select(i => spec.Rules[i]).ToList() : spec.Rules;

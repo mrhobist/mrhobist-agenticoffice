@@ -54,6 +54,7 @@ function toUpdate(d: AgentDetail): AgentUpdate {
     sprite: d.sprite ?? null,
     // '' = kapali (null sunucuda "korunur" demek; secim kaldirilinca md'den silinsin)
     exploreModel: d.exploreModel?.trim() ?? '',
+    maxInstances: d.maxInstances ?? 1,
   }
 }
 
@@ -171,6 +172,10 @@ const exploreModel = computed<string>({
   set: (v) => { if (form.value) form.value.exploreModel = v || '' },
 })
 const canExplore = computed(() => (form.value?.provider ?? 'anthropic') === 'anthropic')
+const instancesModel = computed<number>({
+  get: () => form.value?.maxInstances ?? 1,
+  set: (v) => { if (form.value) form.value.maxInstances = Math.min(8, Math.max(1, Math.round(Number(v) || 1))) },
+})
 
 const effortModel = computed<Effort | ''>({
   get: () => form.value?.effort ?? '',
@@ -417,6 +422,10 @@ defineExpose({ canLeave })
               <option v-for="m in models" :key="m.model" :value="m.model">{{ m.model }}</option>
             </select>
             <input v-else id="agent-explore" v-model="exploreModel" type="text" autocomplete="off" spellcheck="false" placeholder="yok (ör. claude-haiku-4-5-20251001)">
+          </div>
+          <div class="field">
+            <label class="lbl" for="agent-instances" title="İş geldikçe kopya açılır; her kopya sahnede ayrı bir karakterdir, işi bitince ofisten çıkar. Aynı projenin iki işi sıraya girer.">Aynı anda en fazla kopya</label>
+            <input id="agent-instances" v-model.number="instancesModel" type="number" min="1" max="8" step="1">
           </div>
         </div>
         <span class="sub" :class="{ warn: modelsState === 'runtime-down' || modelsState === 'error' }">{{ modelsHint }}</span>

@@ -219,4 +219,47 @@ public sealed class AgentCallerTests : IDisposable
         Assert.Equal(5m, turn.CostUsd); // 1M girdi × 4 $ + 1M girdi × 1 $ (tek fiyatla 8 $ olurdu)
         Assert.Equal(2, turn.ModelUsage!.Count);
     }
+
+    /// <summary>
+    /// Kopyalar (docs/DOMAIN.md → Kopyalar): kilit kopya basinadir; ayni ajanin iki kopyasi ayni anda LLM cagrisinda olur. Tur kaydinda
+    /// ajan md anahtari kalir, kopya ayri alanda. Baska ajanin kopya kimligi reddedilir.
+    /// </summary>
+    [Fact]
+    public async Task Ayni_ajanin_iki_kopyasi_ayni_anda_calisir_kayitta_kopya_ayri()
+    {
+        var bothIn = new TaskCompletionSource();
+        var entered = 0;
+        var runtime = new Runtime(async (i, r, ct) =>
+        {
+            if (Interlocked.Increment(ref entered) == 2)
+            {
+                bothIn.SetResult();
+            }
+
+            // Ikisi de iceride olmadan kimse cikmaz: kilit ajan basina olsaydi ikinci hic giremez, test zaman asimina duserdi.
+            await bothIn.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            return Ok(0.1m);
+        });
+        var caller = new AgentCaller(new MarkdownAgentStore(_fx.Paths), runtime, _fx.Runs, new NullScene(), RetryPolicy.None);
+        var run = await NewRunAsync();
+
+        var a = caller.CallAsync(run, "developer", [new RuntimeMessage("user", "bir")], null, null, "t1", null, Ct, Tools());
+        var b = caller.CallAsync(run, "developer", [new RuntimeMessage("user", "iki")], null, null, "t2", null, Ct, Tools(), worker: "developer~2");
+        await Task.WhenAll(a, b);
+
+        var turns = await _fx.Runs.ReadTurnsAsync(run.Id, "developer", Ct);
+        Assert.Equal([null, "developer~2"], turns.Select(t => t.Worker).Order());
+        await Assert.ThrowsAsync<ArgumentException>(() => caller.CallAsync(run, "developer", [new RuntimeMessage("user", "x")], null, null, "t3", null, Ct, worker: "manager~2"));
+    }
+
+    [Fact]
+    public void Kopya_ayirma_atomik_ayni_kopya_iki_kez_ayrilmaz()
+    {
+        var w = $"ayirma-{Guid.NewGuid():N}~2";
+        Assert.True(AgentCaller.TryReserve(w));
+        Assert.False(AgentCaller.TryReserve(w));
+        Assert.Contains(w, AgentCaller.BusyAgents);
+        AgentCaller.Unreserve(w);
+        Assert.DoesNotContain(w, AgentCaller.BusyAgents);
+    }
 }

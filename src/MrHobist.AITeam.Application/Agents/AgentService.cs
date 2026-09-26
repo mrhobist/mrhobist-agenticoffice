@@ -38,7 +38,9 @@ public sealed record AgentDetail(
     /// <summary>Sahnedeki karakteri. Sona eklendi.</summary>
     string? Sprite = null,
     /// <summary>Kesif alt ajaninin modeli (<c>explore_model</c>); null = yok. Sona eklendi.</summary>
-    string? ExploreModel = null);
+    string? ExploreModel = null,
+    /// <summary>Ayni anda en fazla kopya (<c>max_instances</c>; docs/DOMAIN.md → Kopyalar); 1 = tek. Sona eklendi.</summary>
+    int MaxInstances = 1);
 
 /// <summary>
 /// PUT govdesi; anahtar yoldan gelir. TUM alanlar tasinir: eksik/null liste ya da metin 400 <c>request.invalid</c>
@@ -49,6 +51,7 @@ public sealed record AgentDetail(
 /// <see cref="Sprite"/>: sahnedeki karakter (<c>scene.json → sprites[]</c>'ten biri); null = korunur, yeni ajanda bos ilk karakter.
 /// Md'ye degil sahne yerlesimine yazilir.
 /// <see cref="ExploreModel"/>: kesif alt ajaninin modeli; null = korunur (alani bilmeyen istemci kapatmasin), bos metin = kapatilir.
+/// <see cref="MaxInstances"/>: ayni anda en fazla kopya; null = korunur, 1 = tek.
 /// </summary>
 public sealed record UpdateAgentRequest(
     string Name,
@@ -62,7 +65,8 @@ public sealed record UpdateAgentRequest(
     string? Effort = null,
     IReadOnlyList<string>? Mcp = null,
     string? Sprite = null,
-    string? ExploreModel = null);
+    string? ExploreModel = null,
+    int? MaxInstances = null);
 
 /// <summary>POST govdesi: <see cref="UpdateAgentRequest"/> + anahtar.</summary>
 public sealed record CreateAgentRequest(
@@ -78,7 +82,8 @@ public sealed record CreateAgentRequest(
     string? Effort = null,
     IReadOnlyList<string>? Mcp = null,
     string? Sprite = null,
-    string? ExploreModel = null);
+    string? ExploreModel = null,
+    int? MaxInstances = null);
 
 public sealed record KnowledgeItem(string Key, string Title, string Body);
 
@@ -152,7 +157,7 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         var grants = request.Mcp ?? await Mcp.McpDefaults.NewAgentGrantsAsync(catalog, mcp, Providers.Parse(request.Provider), ct).ConfigureAwait(false);
         var agent = Compose(
             new Agent(key, key, "", [], null, null, [], null, ""),
-            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort, grants, ExploreModel: request.ExploreModel));
+            new UpdateAgentRequest(request.Name, request.Summary, request.OfficeRoles, request.Provider, request.Model, request.Includes, request.CanAsk, request.Prompt, request.Effort, grants, ExploreModel: request.ExploreModel, MaxInstances: request.MaxInstances));
         // Karakter once denetlenir: bilinmeyen sprite md yazilmadan reddedilsin (yarim ajan kalmasin).
         await RequireKnownSpriteAsync(request.Sprite, ct).ConfigureAwait(false);
         var detail = await SaveValidatedAsync(team, agent, ct).ConfigureAwait(false);
@@ -284,6 +289,7 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         Prompt = request.Prompt,
         Mcp = request.Mcp is null ? current.Mcp : request.Mcp.Select(m => m.Trim()).Distinct(StringComparer.Ordinal).ToList() is { Count: > 0 } list ? list : null,
         ExploreModel = request.ExploreModel is null ? current.ExploreModel : string.IsNullOrWhiteSpace(request.ExploreModel) ? null : request.ExploreModel.Trim(),
+        MaxInstances = request.MaxInstances is null ? current.MaxInstances : request.MaxInstances > 1 ? request.MaxInstances : null,
     };
 
     /// <summary>Once ekip butunu dogrulanir: yazilan dosya bir sonraki yuklemede patlamamali.</summary>
@@ -363,5 +369,5 @@ public sealed class AgentService(IAgentStore store, IWorkflowStore workflows, IS
         => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.McpServers, sprite);
 
     private static AgentDetail ToDetail(Agent a, Team team, string? sprite = null)
-        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge), a.McpServers, sprite, a.ExploreModel);
+        => new(a.Key, a.Name, a.Summary, a.OfficeRoles, a.Provider, a.Model, a.Effort, a.Includes, a.CanAsk, a.Prompt, a.ComposePrompt(team.Knowledge), a.McpServers, sprite, a.ExploreModel, a.Instances);
 }

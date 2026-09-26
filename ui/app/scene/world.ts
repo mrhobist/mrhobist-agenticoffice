@@ -25,12 +25,21 @@ interface PlacedProp extends PropDef { h: number }
 /** Arac adi → tek karakter: balon dar, hedef onemli. */
 const TOOL_GLYPH: Record<string, string> = { Write: '✎', Edit: '✎', MultiEdit: '✎', Read: '👁', Glob: '🔍', Grep: '🔍', Bash: '>_' }
 
+/** Isi biten kopyanin cikmadan once bekledigi sure: ayni calismanin sonraki gorevi gelirse masasinda kalir. */
+const CLONE_LINGER_MS = 20_000
+
 export class World {
   readonly nav: NavGrid
   readonly props: PlacedProp[]
   readonly agents = new Map<string, Agent>()
   /** Misafirler: ekipte olmayan, gelip giden karakterler (`cfg.guests`). Tiklanmaz, olay almaz; duraklari ajanlarla paylasir. */
   readonly guests: Agent[] = []
+  /**
+   * Ajan kopyalari (docs/DOMAIN.md → Kopyalar): ekipte (`cfg.agents`) yoklar. `anahtar~n` kimlikli ilk is olayiyla dogar (kapidan
+   * girer, bos masaya oturur), isi bitince {@link CLONE_LINGER_MS} bekleyip cikar: ayni calismanin gorevleri arasinda gidip gelmesin.
+   */
+  private readonly clones = new Map<string, AgentDef>()
+  private readonly cloneLeaveAt = new Map<string, number>()
   readonly cat: Cat
   readonly door = new Door()
   /** Alt duvardaki cam surgulu kapi + korkuluk (`cfg.balcony` yoksa null). */
@@ -115,6 +124,14 @@ export class World {
    */
   adopt(old: World): void {
     const now = performance.now()
+    // Kopyalar yeniden kurulumda kaybolmasin (ekip md'si degisti diye calisan kopya kapidan cikmasin); ana ajani silindiyse birakilir.
+    for (const [key, def] of old.clones) {
+      const o = old.agents.get(key)
+      if (!o || !this.cfg.agents.some(a => a.key === World.cloneBase(key))) continue
+      this.clones.set(key, def)
+      this.agents.set(key, o)
+    }
+    for (const [key, at] of old.cloneLeaveAt) if (this.clones.has(key)) this.cloneLeaveAt.set(key, at)
     const seatAt = (p: { x: number; y: number } | null) => p
       ? [...Object.values(this.cfg.seats), ...(this.cfg.lounge?.seats ?? [])].find(s => s.x === p.x && s.y === p.y) ?? null
       : null
@@ -180,6 +197,9 @@ export class World {
 
   apply(e: SceneEvent): void {
     const now = performance.now()
+    // Kopya ilk isiyle dogar: durum olayi (is) ya da arac cagrisi. Bos/bitti olayi yeni kopya dogurmaz.
+    if (e.type === 'agent.state' && e.data.state !== 'idle' && e.data.state !== 'done') this.ensureClone(e.data.agent, now)
+    else if (e.type === 'agent.tool') this.ensureClone(e.data.agent, now)
     switch (e.type) {
       case 'agent.state': {
         const a = this.agents.get(e.data.agent)
@@ -197,6 +217,10 @@ export class World {
         if (e.data.state === 'blocked') a.bubble = { kind: 'alert', until: now + 2500 }
         if (e.data.state === 'waiting' && !a.busy) a.bubble = { kind: 'ask', until: now + 4000 }
         if (a.visitor) this.visitorState(a, e.data.state, now)
+        if (this.clones.has(a.key)) {
+          if (onDuty) this.cloneLeaveAt.delete(a.key)
+          else this.cloneLeaveAt.set(a.key, now + CLONE_LINGER_MS)
+        }
         break
       }
       case 'agent.say': {
@@ -381,8 +405,49 @@ export class World {
     return []
   }
 
+  /** `anahtar~n` → ana ajan anahtari; kopya degilse null. */
+  private static cloneBase(key: string): string | null {
+    const m = /^(.+)~(\d+)$/.exec(key)
+    return m ? m[1]! : null
+  }
+
+  /**
+   * Kopya karakteri kurar: ana ajanin adi + numara, kullanilmayan bir karakter sayfasi, bos bir masa (yoksa pano onu).
+   * Ana ajan sahnede yoksa (ekipte degil) ya da zaten varsa bir sey yapmaz.
+   */
+  private ensureClone(key: string | undefined, now: number): void {
+    if (!key || this.agents.has(key)) return
+    const baseKey = World.cloneBase(key)
+    const base = baseKey ? this.cfg.agents.find(a => a.key === baseKey) : undefined
+    if (!base) return
+    const defs = [...this.cfg.agents, ...this.clones.values()]
+    const usedSprites = new Set(defs.map(d => d.sprite))
+    const sprite = Object.keys(this.sprites.atlas.characters).find(s => !usedSprites.has(s)) ?? base.sprite
+    const takenSeats = new Set(defs.map(d => d.home.seat).filter(Boolean))
+    const seat = Object.keys(this.cfg.seats).find(s => s !== 'meeting' && !takenSeats.has(s))
+    const def: AgentDef = { key, name: `${base.name} ${key.slice(key.lastIndexOf('~') + 1)}`, sprite, home: seat ? { seat } : {} }
+    this.clones.set(key, def)
+    const a = new Agent(def, this.sprites.atlas.characters[sprite]!, this.homeOf(key).pos)
+    a.offstage = true
+    this.agents.set(key, a)
+    this.enter(a, now, this.goHome(a))
+  }
+
+  /** Isi biten kopya kapidan cikar: ajan listesinden duser, cikisi misafir gibi tamamlanir (cikinca silinir). */
+  private releaseClone(key: string, now: number): void {
+    this.cloneLeaveAt.delete(key)
+    const a = this.agents.get(key)
+    this.agents.delete(key)
+    this.clones.delete(key)
+    if (!a) return
+    a.frozen = false
+    if (a.offstage) return
+    a.command(this.leaveActions(a, null), now)
+    this.guests.push(a)
+  }
+
   private homeOf(key: string): { pos: Pt; seat?: SeatDef; facing?: Facing; look?: Pt } {
-    const def = this.cfg.agents.find(a => a.key === key)
+    const def = this.cfg.agents.find(a => a.key === key) ?? this.clones.get(key)
     if (def?.home.seat) {
       const seat = this.cfg.seats[def.home.seat]
       if (seat) return { pos: { x: seat.x, y: seat.y }, seat }
@@ -455,6 +520,7 @@ export class World {
   // ------------------------------------------------------------------ yasam
 
   update(dt: number, now: number): void {
+    for (const [key, at] of this.cloneLeaveAt) if (now >= at) this.releaseClone(key, now)
     for (const a of this.agents.values()) a.update(dt, now, this.nav)
     for (const g of this.guests) g.update(dt, now, this.nav)
     this.cat.update(dt, now, this.nav)

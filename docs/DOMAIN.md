@@ -289,7 +289,23 @@ Kod (`Application/Runs/Dispatcher`), her tetiklemede (onay, bir adımın bitişi
 
 ## Paralellik, tekrar, iptal, bütçe (2026-09-19, kullanıcı kararları)
 
-- **Birden fazla çalışma aynı anda.** İş kanalı bir havuzdur (`AITeam:MaxParallelJobs`, varsayılan 3; 1 =
+- **Kopyalar (2026-09-26, kullanıcı: "iş verildikçe çoğalsınlar, ekip listesinde görünmesin"; ayrıntılar varsayımla
+  ilerlenir).** Ajan md'sinde `max_instances: N` (1..8): ekipte ve md'de TEK ajan kalır; iş geldikçe kopya açılır.
+  Kopya 1 ajan anahtarının kendisidir, sonrakiler `anahtar~2`, `anahtar~3`… (`~` anahtarda geçersiz, çarpışmaz;
+  `Domain/Agents/Workers`). **Kilit ve "boş" hesabı kopya başınadır**: `AgentCaller` kilidi kopya kimliğiyle, dağıtıcı
+  rolün boş kopyasını seçer (önce bu çalışmada son kullanılan — aynı karakter sürer — sonra en küçük numara); analiz de
+  boş kopyada koşar. Seçim ile çağrı arasında başka iş aynı kopyayı almasın diye **atomik ayırma** (`TryReserve`, 2 dk).
+  Kayıtlarda `Agent` hep md anahtarıdır (geçmiş, İşler, istatistik bozulmaz); kopya `Phase.Worker` / `Turn.Worker`'da.
+  Sahne olayları kopya kimliğiyle gider: kopya ilk işiyle kapıdan girer, boş masaya oturur, bitince 20 s bekleyip çıkar
+  (docs/SCENE.md → Kopyalar). İstem kopyaya port aralığı verir (kopya n: `5200+20(n−1)`'den 20 port).
+  - **Aynı proje sıra bekler:** aynı proje aynı klasör ve aynı gölge depodur. Bir çalışma yazarken (`Started` faz)
+    aynı projenin ikinci çalışması `WaitingSince` ile bekler ("proje başka bir çalışmada"), adım kapanınca uyanır.
+    Kopyalardan önce bunu ajan kilidi dolaylı sağlıyordu. Analiz (salt okunur) beklemez.
+  - **Bir çalışmanın görevleri hâlâ sırayla koşar** (kanal kilidi): kopyalar FARKLI işleri paralel yapar. Aynı işi bölüp
+    aynı projede birlikte çalışmak ayrı klasör (git worktree) + birleştirme ister; açık.
+  - İş havuzu varsayılanı 3 → **6** (5 kopya + devir payı). Kota: kopyalar aynı hesaptan harcar; limit koruması her
+    çağrıda ayrı bakar.
+- **Birden fazla çalışma aynı anda.** İş kanalı bir havuzdur (`AITeam:MaxParallelJobs`, varsayılan 6; 1 =
   eski sıralı davranış). İki kilit: **çalışma başına tek iş** (aynı `run.json`'a iki yazıcı olmaz; kanal kilidi)
   ve **ajan başına tek LLM çağrısı** (`AgentCaller` kilidi: analist A'da konuşurken B'nin analizi bekler).
   Dağıtımda "boş ajan" çalışmalar arası hesaplanır: başka bir **Running** çalışmada `Started` fazı olan ya da

@@ -100,9 +100,66 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
     private readonly RetryPolicy _retry = retry ?? RetryPolicy.Default;
 
-    /// <summary>Su anda LLM cagrisi icinde olan ajanlar (calismalar arasi "ajan basina tek is" icin).</summary>
+    /// <summary>
+    /// Secilmis ama cagrisi henuz baslamamis kopyalar: iki is ayni anda "kopya 1 bos" deyip ayni kopyayi secmesin (ikincisi
+    /// kilitte sessizce beklerdi, paralellik kaybolurdu). Cagri kilidi alinca duser; cagri hic gelmezse <see cref="ReservationTtl"/> sonra.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, DateTimeOffset> Reserved = new(StringComparer.Ordinal);
+
+    private static readonly TimeSpan ReservationTtl = TimeSpan.FromMinutes(2);
+
+    /// <summary>Su anda LLM cagrisi icinde olan ya da yeni ayrilmis KOPYALAR (calismalar arasi "kopya basina tek is"; docs/DOMAIN.md → Kopyalar).</summary>
     public static IReadOnlySet<string> BusyAgents
-        => AgentLocks.Where(kv => kv.Value.CurrentCount == 0).Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
+    {
+        get
+        {
+            var fresh = DateTimeOffset.UtcNow - ReservationTtl;
+            var busy = AgentLocks.Where(kv => kv.Value.CurrentCount == 0).Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
+            busy.UnionWith(Reserved.Where(kv => kv.Value > fresh).Select(kv => kv.Key));
+            return busy;
+        }
+    }
+
+    /// <summary>
+    /// Kopyayi atomik ayirir: kilidi tutulmuyor ve taze ayrilmamissa true. Ayirma, ayni kopyanin <see cref="CallAsync"/>'u kilidi
+    /// alinca duser; cagriya donusmeyen yol <see cref="Unreserve"/> ile birakir (yoksa sure dolunca kendiliginden).
+    /// </summary>
+    public static bool TryReserve(string worker)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(worker);
+        if (AgentLocks.TryGetValue(worker, out var gate) && gate.CurrentCount == 0)
+        {
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var added = false;
+        Reserved.AddOrUpdate(worker, _ => { added = true; return now; }, (_, at) =>
+        {
+            if (at > now - ReservationTtl)
+            {
+                return at;
+            }
+
+            added = true;
+            return now;
+        });
+        return added;
+    }
+
+    public static void Unreserve(string worker) => Reserved.TryRemove(worker, out _);
+
+    /// <summary>
+    /// Ajanin bos bir kopyasini secip ayirir: once <paramref name="preferred"/>, sonra en kucuk numarali. <paramref name="busy"/> kayitlardan
+    /// gelen mesgul kopyalar (baska calismada Started faz). Hepsi doluysa kopya 1 (cagri kilitte bekler; eski davranis).
+    /// </summary>
+    public static string ReserveWorker(string agentKey, int instances, IReadOnlySet<string> busy, string? preferred = null)
+    {
+        ArgumentNullException.ThrowIfNull(busy);
+        var all = Workers.All(agentKey, instances).ToList();
+        List<string> order = preferred is not null && all.Contains(preferred, StringComparer.Ordinal) ? [preferred, .. all.Where(w => w != preferred)] : all;
+        return order.FirstOrDefault(w => !busy.Contains(w) && TryReserve(w)) ?? agentKey;
+    }
 
     public async Task<AgentReply> CallAsync(
         Run run,
@@ -115,10 +172,18 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         CancellationToken ct,
         ToolAccess? tools = null,
         ContextStats? context = null,
-        IReadOnlyCollection<string>? knowledge = null)
+        IReadOnlyCollection<string>? knowledge = null,
+        string? worker = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(messages);
+        // Kopya (docs/DOMAIN.md → Kopyalar): kilit ve sahne kopya kimligiyle, kayit ajan anahtariyla. null = kopya 1.
+        var workerId = worker ?? agentKey;
+        if (Workers.BaseOf(workerId) != agentKey)
+        {
+            throw new ArgumentException($"'{workerId}' kopyasi '{agentKey}' ajanina ait degil.", nameof(worker));
+        }
+
         var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
         if (!team.Agents.TryGetValue(agentKey, out var agent))
         {
@@ -136,8 +201,9 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         var parts = agent.PromptParts(team.Knowledge, knowledge);
         var system = string.Concat(parts.Select(p => p.Text));
 
-        var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
+        var gate = AgentLocks.GetOrAdd(workerId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
+        Reserved.TryRemove(workerId, out _); // ayirma kilide donustu
         string? progressToken = null;
         try
         {
@@ -153,7 +219,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             var mcpServers = resolvedMcp?.Servers;
             // Canli akis: yalniz aracli turda; belirtec tur boyunca yasar. Baglam (sistem parcalari + mesajlar) ekranda gorunsun diye kayda girer.
             progressToken = tools is not null && progress?.BaseUrl is not null
-                ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage), LiveContext(parts, messages, mcpServers))
+                ? progress.Register(new ProgressContext(run.Id, workerId, task, stage), LiveContext(parts, messages, mcpServers))
                 : null;
             var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
             var cacheTtl = await CacheTtlForAsync(target.Provider, ct).ConfigureAwait(false);
@@ -178,7 +244,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 }
 
                 // 2026-09-23'te kesilen ilk t1 ~3 $ harcamis, run_turn'e hic yazilmamisti.
-                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, progress.UsageByModel(progressToken), ex, attemptStarted, tools is not null, context, cacheTtl).ConfigureAwait(false);
+                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, progress.UsageByModel(progressToken), ex, attemptStarted, tools is not null, context, cacheTtl, workerId == agentKey ? null : workerId).ConfigureAwait(false);
                 progress.ResetUsage(progressToken); // sonraki deneme sifirdan sayilir: ayni harcama iki kez yazilmasin
                 attemptStarted = DateTimeOffset.UtcNow;
                 return partial;
@@ -187,7 +253,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             Attempted response;
             try
             {
-                response = await CallWatchedAsync(run, agentKey, request, progressToken, async ex => carried = Plus(carried, await RecordAttemptAsync(ex).ConfigureAwait(false)), ct).ConfigureAwait(false);
+                response = await CallWatchedAsync(run, agentKey, workerId, request, progressToken, async ex => carried = Plus(carried, await RecordAttemptAsync(ex).ConfigureAwait(false)), ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (progressToken is not null)
             {
@@ -238,7 +304,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 CacheWrite5mTokens: r.Usage.CacheWrite5mTokens > 0 ? r.Usage.CacheWrite5mTokens : null,
                 PeakContextTokens: r.Usage.PeakContextTokens > 0 ? r.Usage.PeakContextTokens : null,
                 CacheTtl: cacheTtl,
-                ModelUsage: r.ModelUsage is { Count: > 1 } mu ? [.. mu.Select(m => new ModelTokens(m.Model, m.InputTokens, m.OutputTokens, m.CacheReadTokens, m.CacheWriteTokens, m.CostUsd))] : null);
+                ModelUsage: r.ModelUsage is { Count: > 1 } mu ? [.. mu.Select(m => new ModelTokens(m.Model, m.InputTokens, m.OutputTokens, m.CacheReadTokens, m.CacheWriteTokens, m.CostUsd))] : null,
+                Worker: workerId == agentKey ? null : workerId);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
             // Dusen denemeler ayri tur olarak zaten kayitta; calismanin toplamina bu yanitla birlikte girer.
@@ -339,7 +406,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     /// Bu yol hicbir zaman asil hatayi ortmemeli: kayit basarisizsa yutulur. Iptal belirteci kullanilmaz -- iptal edilmis
     /// calismanin da harcamasi yazilmalidir.
     /// </summary>
-    private async Task<AgentReply> RecordCutShortAsync(Run run, string agentKey, string? stage, string? task, int? round, AgentTarget target, string system, IReadOnlyList<RuntimeMessage> messages, RuntimeUsage spent, IReadOnlyList<(string? Model, RuntimeUsage Usage)> byModel, Exception ex, DateTimeOffset started, bool toolsOffered, ContextStats? context, string? cacheTtl)
+    private async Task<AgentReply> RecordCutShortAsync(Run run, string agentKey, string? stage, string? task, int? round, AgentTarget target, string system, IReadOnlyList<RuntimeMessage> messages, RuntimeUsage spent, IReadOnlyList<(string? Model, RuntimeUsage Usage)> byModel, Exception ex, DateTimeOffset started, bool toolsOffered, ContextStats? context, string? cacheTtl, string? worker)
     {
         decimal? cost = null;
         var parts = (byModel.Count > 0 ? byModel : [(target.Model, spent)])
@@ -391,7 +458,8 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             CacheWrite5mTokens: spent.CacheWrite5mTokens > 0 ? spent.CacheWrite5mTokens : null,
             PeakContextTokens: spent.PeakContextTokens > 0 ? spent.PeakContextTokens : null,
             CacheTtl: cacheTtl,
-            ModelUsage: modelUsage is { Count: > 1 } ? modelUsage : null);
+            ModelUsage: modelUsage is { Count: > 1 } ? modelUsage : null,
+            Worker: worker);
         try
         {
             await runs.AppendTurnAsync(run.Id, turn, CancellationToken.None).ConfigureAwait(false);
@@ -410,7 +478,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     /// Turu bekci altinda kosar (<see cref="TurnWatch"/>). Bekci keserse <see cref="RuntimeTimeoutException"/>: is kanalinin
     /// "kullanici iptali" yoluna (OperationCanceled) DUSMEZ -- dusseydi calisma sessizce Running'de asili kalirdi.
     /// </summary>
-    private async Task<Attempted> CallWatchedAsync(Run run, string agentKey, RuntimeTurnRequest request, string? progressToken, Func<Exception, Task> onAttemptFailed, CancellationToken ct)
+    private async Task<Attempted> CallWatchedAsync(Run run, string agentKey, string workerId, RuntimeTurnRequest request, string? progressToken, Func<Exception, Task> onAttemptFailed, CancellationToken ct)
     {
         using var turn = CancellationTokenSource.CreateLinkedTokenSource(ct);
         using var stopDog = new CancellationTokenSource();
@@ -451,7 +519,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
         try
         {
-            return await CallWithRetryAsync(run, agentKey, request, onAttemptFailed, turn.Token).ConfigureAwait(false);
+            return await CallWithRetryAsync(run, agentKey, workerId, request, onAttemptFailed, turn.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (reason is not null && !ct.IsCancellationRequested)
         {
@@ -465,7 +533,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
     }
 
     /// <summary><paramref name="onAttemptFailed"/>: tekrar edilecek bir deneme dustu (harcamasi kaydedilsin), bekleme ONCESI.</summary>
-    private async Task<Attempted> CallWithRetryAsync(Run run, string agentKey, RuntimeTurnRequest request, Func<Exception, Task> onAttemptFailed, CancellationToken ct)
+    private async Task<Attempted> CallWithRetryAsync(Run run, string agentKey, string workerId, RuntimeTurnRequest request, Func<Exception, Task> onAttemptFailed, CancellationToken ct)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -491,7 +559,7 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                     run.Id,
                     new Message(DateTimeOffset.UtcNow, MessageKind.Note, agentKey, "user", $"geçici hata, tekrar {attempt + 1}/{_retry.Attempts} ({wait.TotalSeconds:0} s sonra): {ex.Message}", Subject: "retry"),
                     ct).ConfigureAwait(false);
-                scene.Publish(SceneEventTypes.AgentState, $$"""{"agent":"{{agentKey}}","state":"waiting","note":"yeniden deneniyor {{attempt + 1}}/{{_retry.Attempts}}","run":"{{run.Id}}"}""");
+                scene.Publish(SceneEventTypes.AgentState, $$"""{"agent":"{{workerId}}","state":"waiting","note":"yeniden deneniyor {{attempt + 1}}/{{_retry.Attempts}}","run":"{{run.Id}}"}""");
                 if (wait > TimeSpan.Zero)
                 {
                     await Task.Delay(wait, ct).ConfigureAwait(false);

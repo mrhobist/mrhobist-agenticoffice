@@ -67,8 +67,16 @@ public sealed record Agent(
     /// ajana salt okunur, ucuz bir alt ajan acilir: genis aramayi o yapar, ana model yalniz sonucu okur. Yalniz anthropic
     /// (Agent SDK <c>agents</c>). Sona eklendi (CLAUDE.md §5); null = yok.
     /// </summary>
-    string? ExploreModel = null)
+    string? ExploreModel = null,
+    /// <summary>
+    /// Ayni anda en fazla kac kopyasi calisir (md frontmatter <c>max_instances</c>; docs/DOMAIN.md → Kopyalar). Ekipte tek ajandir;
+    /// is geldikce kopya acilir (<see cref="Workers"/>), sahnede kapidan girer, bitince cikar. null/1 = tek. Sona eklendi.
+    /// </summary>
+    int? MaxInstances = null)
 {
+    /// <summary>Kopya siniri, 1..<see cref="Workers.MaxInstances"/>.</summary>
+    public int Instances => Math.Clamp(MaxInstances ?? 1, 1, Workers.MaxInstances);
+
     /// <summary><see cref="Mcp"/>, bos liste olarak.</summary>
     public IReadOnlyList<string> McpServers => Mcp ?? [];
 
@@ -102,6 +110,11 @@ public sealed record Agent(
         if (McpServers.Count > 0 && Provider is { } p && !McpSupport.Supports(p))
         {
             throw new DomainException(ErrorCodes.AgentMcpUnsupported, $"{Key}: '{Providers.Wire(p)}' saglayicisi MCP araclarini calistiramiyor (yalniz anthropic).");
+        }
+
+        if (MaxInstances is { } mi && (mi < 1 || mi > Workers.MaxInstances))
+        {
+            throw new DomainException(ErrorCodes.AgentInvalidInstances, $"{Key}: max_instances 1..{Workers.MaxInstances} olmali ({mi}).");
         }
 
         if (ExploreModel is not null && Provider is { } ep && ep != Domain.Agents.Provider.Anthropic)

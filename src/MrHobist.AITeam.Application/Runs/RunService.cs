@@ -182,13 +182,15 @@ public sealed class RunService(
         var isRevision = notes.Count > 0;
 
         Publish(SceneEventTypes.RunStage, new { stage = analyze.Title, task = "plan", round = notes.Count + 1, run = run.Id });
-        PublishAgent(run, analyze.Role, "working", isRevision ? "plan revize ediliyor" : "brief çözümleniyor", "plan");
+        // Kopya (docs/DOMAIN.md → Kopyalar): analiz de bos kopyada kosar; bes calismanin analizi sirayla beklemesin.
+        var analyst = await ReserveWorkerAsync(run, analyze.Role, ct).ConfigureAwait(false);
+        PublishAgent(run, analyst, "working", isRevision ? "plan revize ediliyor" : "brief çözümleniyor", "plan");
 
         try
         {
             var root = await RootAsync(run, ct).ConfigureAwait(false);
             var history = await AnalystHistoryAsync(run, wf, notes, root, ct).ConfigureAwait(false);
-            var reply = await caller.CallAsync(run, analyze.Role, history, SpecSchema.Json, analyze.Id, null, null, ct, WithAttachments(run, ToolAccess.ForKind(StageKind.Analyze, root))).ConfigureAwait(false);
+            var reply = await caller.CallAsync(run, analyze.Role, history, SpecSchema.Json, analyze.Id, null, null, ct, WithAttachments(run, ToolAccess.ForKind(StageKind.Analyze, root)), worker: analyst).ConfigureAwait(false);
             if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
             {
                 return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -211,7 +213,7 @@ public sealed class RunService(
             // Plani kim onaylar: akis soyler (docs/DOMAIN.md -> Plan onayi).
             if (wf.PlanApproverAgent is { } approver)
             {
-                PublishAgent(run, analyze.Role, "done", $"{spec.Tasks.Count} görev · onaya gitti", "plan");
+                PublishAgent(run, analyst, "done", $"{spec.Tasks.Count} görev · onaya gitti", "plan");
                 return await ApprovePlanByAgentAsync(run, wf, approver, spec, notes.Count + 1, ct).ConfigureAwait(false);
             }
 
@@ -219,7 +221,7 @@ public sealed class RunService(
             // takilan ajanin sorusunda devreye girer (2026-09-21 karari).
             if (!wf.PlanNeedsUser)
             {
-                PublishAgent(run, analyze.Role, "done", $"{spec.Tasks.Count} görev · dağıtıma geçildi", "plan");
+                PublishAgent(run, analyst, "done", $"{spec.Tasks.Count} görev · dağıtıma geçildi", "plan");
                 run = run with { Status = RunStatus.Running, Detail = "dağıtım", Step = RunStep.Dispatch };
                 await runs.UpdateAsync(run, ct).ConfigureAwait(false);
                 // Kuyruga KOY: analiz zaten bir isin icinde kosuyor, donusu kendiliginden yeni is uretmez.
@@ -230,7 +232,7 @@ public sealed class RunService(
 
             run = run with { Status = RunStatus.AwaitingApproval, Detail = "plan onay bekliyor", Step = RunStep.Approval };
             await runs.UpdateAsync(run, ct).ConfigureAwait(false);
-            PublishAgent(run, analyze.Role, "done", $"{spec.Tasks.Count} görev · plan onay bekliyor", "plan");
+            PublishAgent(run, analyst, "done", $"{spec.Tasks.Count} görev · plan onay bekliyor", "plan");
             return run;
         }
         catch (OperationCanceledException)
@@ -526,7 +528,7 @@ public sealed class RunService(
                 var p = phases[^1];
                 // Failed (Skipped degil): "yeniden dene" ayni adimi yeniden kosar; Skipped bir sonraki adima gecirir ve kod yazilmadan test baslar.
                 await runs.AppendPhaseAsync(run.Id, p with { Ts = DateTimeOffset.UtcNow, Status = PhaseStatus.Failed, Detail = "iptal: kullanıcı durdurdu", Cause = PhaseCause.Cancelled }, ct).ConfigureAwait(false);
-                PublishAgent(run, p.Agent, "idle", null, null);
+                PublishAgent(run, p.Worker ?? p.Agent, "idle", null, null);
             }
         }
 
@@ -586,7 +588,7 @@ public sealed class RunService(
         var wf = await RequireWorkflowAsync(runId, ct).ConfigureAwait(false);
         var spec = await runs.ReadSpecAsync(runId, ct).ConfigureAwait(false)
             ?? throw new DomainException(ErrorCodes.RunPlanInvalid, "spec.json yok; dagitim plansiz yapilamaz.");
-        var team = wf.HandoffRole is null ? null : await agents.LoadTeamAsync(ct).ConfigureAwait(false);
+        var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
         var stages = wf.TaskStages;
         var root = await RootAsync(run, ct).ConfigureAwait(false);
         var ordered = TaskGraph.Order(spec.Tasks);
@@ -611,20 +613,40 @@ public sealed class RunService(
                 });
             }
 
+            var sticky = StickyWorkers(phasesByTask);
             if (stages.Count == 0 || ordered.All(t => Dispatcher.IsDone(stages, phasesByTask.GetValueOrDefault(t.Id, []))))
             {
                 run = run with { Status = RunStatus.Completed, FinishedAt = DateTimeOffset.UtcNow, Detail = "tüm görevler bitti", WaitingSince = null };
                 await runs.UpdateAsync(run, ct).ConfigureAwait(false);
                 PublishAgent(run, wf.HandoffRole ?? "organizer", "idle", null, null);
+                foreach (var clone in sticky.Values.Where(w => Workers.InstanceOf(w) > 1).Distinct(StringComparer.Ordinal))
+                {
+                    PublishAgent(run, clone, "idle", null, null); // kopya isini bitirdi: sahneden cikar
+                }
                 return run;
             }
 
-            // Ajan basina tek is, CALISMALAR ARASI: baska bir Running calismada Started fazi olan ya da su an LLM cagrisinda olan ajan bos degildir.
+            // Ayni proje = ayni klasor ve ayni golge depo: iki calisma ayni anda YAZMAZ (docs/DOMAIN.md → Kopyalar). Kopyalardan
+            // once bu kural ajan kilidinin yan etkisiydi; kopyalar paralel kosunca acikca gerekir. Ikinci calisma bekler.
+            if (await OtherRunWritingAsync(run, ct).ConfigureAwait(false) is { } writer)
+            {
+                run = run with { Detail = $"proje başka bir çalışmada ({writer}), sıra bekliyor", WaitingSince = run.WaitingSince ?? DateTimeOffset.UtcNow };
+                await runs.UpdateAsync(run, ct).ConfigureAwait(false);
+                return run;
+            }
+
+            // Kopya basina tek is, CALISMALAR ARASI: baska bir Running calismada Started fazi olan, su an LLM cagrisinda olan ya da
+            // yeni ayrilmis KOPYA bos degildir. Ajanin max_instances kadar kopyasi paralel is alir.
             var busy = new HashSet<string>(Dispatcher.BusyAgents(phasesByTask), StringComparer.Ordinal);
             busy.UnionWith(await BusyInOtherRunsAsync(run.Id, ct).ConfigureAwait(false));
             busy.UnionWith(AgentCaller.BusyAgents);
-
-            var assignments = Dispatcher.Plan(wf, spec, phasesByTask, busy);
+            var assignments = Dispatcher.Plan(wf, spec, phasesByTask, busy, InstancesOf(team), role => sticky.GetValueOrDefault(role));
+            // Secim ile Started fazi arasinda baska bir is ayni kopyayi secmesin: atomik ayir; alinamadiysa yeniden planla.
+            while (assignments.Count > 0 && !AgentCaller.TryReserve(assignments[0].WorkerId))
+            {
+                busy.Add(assignments[0].WorkerId);
+                assignments = Dispatcher.Plan(wf, spec, phasesByTask, busy, InstancesOf(team), role => sticky.GetValueOrDefault(role));
+            }
             if (assignments.Count == 0 && busy.Count == 0)
             {
                 // Kimse dolu degil ve yine de hazir gorev yok: bekleme degil TAKILMA. Once "ajan bekleniyor" diye sessizce
@@ -655,22 +677,27 @@ public sealed class RunService(
 
             // Devir notu yalniz implement adimina atamada (ilk ve red sonrasi): inceleme adimlarina not bilgi katmiyor,
             // her gecis bir organizator turu (olculdu: 14–70 s, ≈$0.02–0.05) ediyordu.
-            if (wf.HandoffRole is { } organizer && team is not null && a.Stage.Kind == StageKind.Implement)
+            if (wf.HandoffRole is { } organizer && a.Stage.Kind == StageKind.Implement)
             {
                 var handoffNotes = (await runs.ReadMessagesAsync(run.Id, ct).ConfigureAwait(false)).Where(m => m.Task == a.Task.Id).ToList();
                 run = await HandoffAsync(run, a, organizer, team, round, handoffNotes, ct).ConfigureAwait(false);
             }
 
-            await runs.AppendPhaseAsync(run.Id, new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, PhaseStatus.Started), ct).ConfigureAwait(false);
+            await runs.AppendPhaseAsync(run.Id, new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, PhaseStatus.Started, Worker: a.Worker), ct).ConfigureAwait(false);
             Publish(SceneEventTypes.BoardMove, new { task = a.Task.Id, stage = a.Stage.Id, state = "active", run = run.Id });
-            PublishAgent(run, a.Agent, "working", Ellipsis(a.Task.Title, 40), a.Task.Id);
+            PublishAgent(run, a.WorkerId, "working", Ellipsis(a.Task.Title, 40), a.Task.Id);
             Publish(SceneEventTypes.RunStage, new { stage = a.Stage.Title, task = a.Task.Id, round, run = run.Id });
-            run = run with { Detail = $"{a.Stage.Title}: {a.Task.Id} ({a.Agent}, tur {round})" };
+            run = run with { Detail = $"{a.Stage.Title}: {a.Task.Id} ({a.WorkerId}, tur {round})" };
             await runs.UpdateAsync(run, ct).ConfigureAwait(false);
 
             run = await ExecuteStepAsync(run, wf, spec, a, round, root, ct).ConfigureAwait(false);
             if (run.Status != RunStatus.Running)
             {
+                if (run.Status == RunStatus.Completed && a.Worker is not null)
+                {
+                    PublishAgent(run, a.WorkerId, "idle", null, null); // kopya isini bitirdi: sahneden cikar
+                }
+
                 return run;
             }
 
@@ -720,7 +747,7 @@ public sealed class RunService(
                         .LastOrDefault(p => p.Task == a.Task.Id && p.Stage == a.Stage.Id && p.Status != PhaseStatus.Started) is { IsCutShort: true };
                     var written = await WrittenSoFarAsync(runPhases, root, before, a.Task, ct).ConfigureAwait(false);
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.ImplementTask(spec, a, root, notes, round, cutShort, prior, att, written), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Implement, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge, a.WorkerId).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -758,7 +785,7 @@ public sealed class RunService(
                     }
 
                     await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Done, started, Ellipsis(report.Summary, 200), ct, snapshot: before).ConfigureAwait(false);
-                    PublishAgent(run, a.Agent, "done", Ellipsis(report.Summary, 40), a.Task.Id);
+                    PublishAgent(run, a.WorkerId, "done", Ellipsis(report.Summary, 40), a.Task.Id);
                     break;
                 }
 
@@ -767,7 +794,7 @@ public sealed class RunService(
                     // Kapinin beklettiği uretici adim: hem istemi sekillendirir (kod mu, tasarim mi) hem de redde geri donus hedefi.
                     var producer = wf.ProducerBefore(a.Stage);
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.ReviewTask(spec, a, root, notes, a.Stage, producer, round, wf.MaxReviewRounds, prior, att), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Review, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge, a.WorkerId).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -780,15 +807,15 @@ public sealed class RunService(
                     {
                         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, a.Agent, developer, $"Kabul ({a.Stage.Title}). {(report.TestsRun ? "Testler çalıştırıldı." : "Testler çalıştırılmadı.")} {report.Feedback}".Trim(), a.Task.Id, a.Stage.Id, Subject: "review-accept"), ct).ConfigureAwait(false);
                         await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Done, started, report.TestsRun ? "kabul · testler koşuldu" : "kabul · test koşulmadı", ct).ConfigureAwait(false);
-                        PublishAgent(run, a.Agent, "done", "kabul", a.Task.Id);
+                        PublishAgent(run, a.WorkerId, "done", "kabul", a.Task.Id);
                         break;
                     }
 
                     var feedback = report.Feedback + (report.Findings.Count == 0 ? "" : "\n\nBulgular:\n" + string.Join("\n", report.Findings.Select(f => "- " + f)));
                     await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, a.Agent, developer, feedback, a.Task.Id, a.Stage.Id, Subject: "review-feedback"), ct).ConfigureAwait(false);
                     await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Rejected, started, Ellipsis("red: " + ((report.Findings.Count > 0 ? report.Findings[0] : report.Feedback)), 200), ct).ConfigureAwait(false);
-                    Publish(SceneEventTypes.Meet, new { from = a.Agent, to = developer, kind = "reject", run = run.Id });
-                    PublishAgent(run, a.Agent, "blocked", "red → developer", a.Task.Id);
+                    Publish(SceneEventTypes.Meet, new { from = a.WorkerId, to = developer, kind = "reject", run = run.Id });
+                    PublishAgent(run, a.WorkerId, "blocked", "red → developer", a.Task.Id);
 
                     if (round >= wf.MaxReviewRounds)
                     {
@@ -804,7 +831,7 @@ public sealed class RunService(
                 case StageKind.Design:
                 {
                     var history = await AgentTaskHistoryAsync(run, a, Prompts.DesignTask(spec, a, root, notes, att), ct).ConfigureAwait(false);
-                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge).ConfigureAwait(false);
+                    var reply = await caller.CallAsync(run, a.Agent, history.Messages, StepSchemas.Design, a.Stage.Id, a.Task.Id, round, ct, tools, history.Context, spec.Knowledge, a.WorkerId).ConfigureAwait(false);
                     if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
                     {
                         return await reader.GetAsync(run.Id, ct).ConfigureAwait(false);
@@ -816,7 +843,7 @@ public sealed class RunService(
                     var body = report.Guidance + (report.Decisions.Count == 0 ? "" : "\n\nKararlar:\n" + string.Join("\n", report.Decisions.Select(d => "- " + d)));
                     await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, a.Agent, developer, body, a.Task.Id, a.Stage.Id, Subject: "design"), ct).ConfigureAwait(false);
                     await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Done, started, Ellipsis(report.Guidance, 200), ct).ConfigureAwait(false);
-                    PublishAgent(run, a.Agent, "done", "rehberlik hazır", a.Task.Id);
+                    PublishAgent(run, a.WorkerId, "done", "rehberlik hazır", a.Task.Id);
                     break;
                 }
 
@@ -830,12 +857,12 @@ public sealed class RunService(
 
             if (OverBudget(run))
             {
-                return await StopForBudgetAsync(run, a.Agent, null, ct).ConfigureAwait(false);
+                return await StopForBudgetAsync(run, a.Agent, null, ct, a.WorkerId).ConfigureAwait(false);
             }
 
             if (await ProjectOverBudgetAsync(run, ct).ConfigureAwait(false) is { } overStage)
             {
-                return await StopForBudgetAsync(run, a.Agent, overStage, ct).ConfigureAwait(false);
+                return await StopForBudgetAsync(run, a.Agent, overStage, ct, a.WorkerId).ConfigureAwait(false);
             }
 
             // Ayni adimda ust uste hata/red: bir gorev sonsuza kadar donmesin (tavan = maxReviewRounds).
@@ -855,13 +882,13 @@ public sealed class RunService(
         catch (LimitReachedException ex)
         {
             await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis("limit: " + ex.Message, 200), ct, PhaseCause.Limit).ConfigureAwait(false);
-            return await PauseForLimitAsync(run, a.Agent, $"{a.Stage.Title}: {a.Task.Id}", ex, ct).ConfigureAwait(false);
+            return await PauseForLimitAsync(run, a.Agent, $"{a.Stage.Title}: {a.Task.Id}", ex, ct, a.WorkerId).ConfigureAwait(false);
         }
         catch (RuntimeTimeoutException ex)
         {
             // Sistem kaynakli: tur sayilmaz, tavana girmez. "Yeniden dene" ayni adimi "devam et" notuyla surdurur (IsCutShort).
             await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis("zaman aşımı: " + ex.Message, 200), ct, PhaseCause.Timeout).ConfigureAwait(false);
-            return await FailAsync(run, a.Agent, a.Stage.Id, a.Task.Id, $"{a.Stage.Title} ({a.Task.Id}) zaman aşımı — yazılanlar diskte, \"Yeniden dene\" kaldığı yerden sürdürür", ex, ct).ConfigureAwait(false);
+            return await FailAsync(run, a.Agent, a.Stage.Id, a.Task.Id, $"{a.Stage.Title} ({a.Task.Id}) zaman aşımı — yazılanlar diskte, \"Yeniden dene\" kaldığı yerden sürdürür", ex, ct, a.WorkerId).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -870,13 +897,13 @@ public sealed class RunService(
                 await ClosePhaseAsync(run, wf, a, round, PhaseStatus.Failed, started, Ellipsis(ex.Message, 200), ct).ConfigureAwait(false);
             }
 
-            return await FailAsync(run, a.Agent, a.Stage.Id, a.Task.Id, $"{a.Stage.Title} ({a.Task.Id})", ex, ct).ConfigureAwait(false);
+            return await FailAsync(run, a.Agent, a.Stage.Id, a.Task.Id, $"{a.Stage.Title} ({a.Task.Id})", ex, ct, a.WorkerId).ConfigureAwait(false);
         }
     }
 
     private async Task ClosePhaseAsync(Run run, Workflow wf, Assignment a, int round, PhaseStatus status, DateTimeOffset started, string? detail, CancellationToken ct, PhaseCause? cause = null, string? snapshot = null)
     {
-        var phase = new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, status, (DateTimeOffset.UtcNow - started).TotalSeconds, detail, cause, snapshot);
+        var phase = new Phase(DateTimeOffset.UtcNow, a.Task.Id, a.Stage.Id, a.Stage.Title, a.Stage.Kind.ToString().ToLowerInvariant(), a.Agent, round, status, (DateTimeOffset.UtcNow - started).TotalSeconds, detail, cause, snapshot, Worker: a.Worker);
         await runs.AppendPhaseAsync(run.Id, phase, ct).ConfigureAwait(false);
 
         // Pano canli kalsin: faz kapaninca not hedef sutuna gecer (atamada yalniz "active" yayimlaniyordu; bitince yerinde kaliyordu).
@@ -954,8 +981,8 @@ public sealed class RunService(
         var now = DateTimeOffset.UtcNow;
         var reference = $"q-{now.UtcTicks}";
         await runs.AppendMessageAsync(run.Id, new Message(now, MessageKind.Ask, a.Agent, target, question, a.Task.Id, a.Stage.Id, Ref: reference, Subject: "ask"), ct).ConfigureAwait(false);
-        Publish(SceneEventTypes.Meet, new { from = a.Agent, to = target, kind = "ask", run = run.Id });
-        PublishAgent(run, a.Agent, "waiting", $"{colleague.Name} → soru", a.Task.Id);
+        Publish(SceneEventTypes.Meet, new { from = a.WorkerId, to = target, kind = "ask", run = run.Id });
+        PublishAgent(run, a.WorkerId, "waiting", $"{colleague.Name} → soru", a.Task.Id);
         PublishAgent(run, target, "working", $"{asker.Name} soruyor", a.Task.Id);
 
         try
@@ -982,7 +1009,7 @@ public sealed class RunService(
             if (answer.Answered)
             {
                 await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Answer, target, a.Agent, answer.Answer!.Trim(), a.Task.Id, a.Stage.Id, Ref: reference, Subject: "answer"), ct).ConfigureAwait(false);
-                Publish(SceneEventTypes.Meet, new { from = target, to = a.Agent, kind = "handoff", run = run.Id });
+                Publish(SceneEventTypes.Meet, new { from = target, to = a.WorkerId, kind = "handoff", run = run.Id });
                 PublishAgent(run, target, "done", "cevapladı", a.Task.Id);
                 return new ColleagueAsk(run, true, target, null);
             }
@@ -1056,7 +1083,7 @@ public sealed class RunService(
         run = run with { Status = RunStatus.AwaitingInput, Question = question, Detail = Ellipsis($"senden cevap bekleniyor · {a.Task.Id}: {text}", 200) };
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
         await runs.AppendMessageAsync(run.Id, new Message(now, MessageKind.Ask, agent, "user", text, a.Task.Id, a.Stage.Id, Ref: $"q-{now.UtcTicks}", Subject: "question"), ct).ConfigureAwait(false);
-        PublishAgent(run, agent, "waiting", "senden cevap bekliyor", a.Task.Id);
+        PublishAgent(run, a.WorkerId, "waiting", "senden cevap bekliyor", a.Task.Id);
         return run;
     }
 
@@ -1131,17 +1158,77 @@ public sealed class RunService(
     }
 
     /// <summary>Limit korumasi: calisma bekler (Paused + ResumeAt), pencere sifirlaninca Api surdurur; kullanici isterse hemen "yeniden dene".</summary>
-    private async Task<Run> PauseForLimitAsync(Run run, string agent, string where, LimitReachedException ex, CancellationToken ct)
+    private async Task<Run> PauseForLimitAsync(Run run, string agent, string where, LimitReachedException ex, CancellationToken ct, string? worker = null)
     {
         var resume = ex.ResumeAt ?? DateTimeOffset.UtcNow.AddMinutes(15);
         run = AccruePartial(run, ex) with { Status = RunStatus.Paused, ResumeAt = resume, Detail = Ellipsis($"{where} · limit: {ex.Message}", 300), WaitingSince = null };
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent, "user", $"{where}: {ex.Message}", Subject: "limit"), ct).ConfigureAwait(false);
-        PublishAgent(run, agent, "waiting", "limit doldu, bekliyor", null);
+        PublishAgent(run, worker ?? agent, "waiting", "limit doldu, bekliyor", null);
         return run;
     }
 
     /// <summary>Diger Running calismalarda son fazi Started olan ajanlar. Paused calismalar sayilmaz: yurutucusuz bekleme kimseyi kilitlemesin.</summary>
+    /// <summary>Ajanin kopya siniri (md <c>max_instances</c>); ekipte olmayan rol 1.</summary>
+    private static Func<string, int> InstancesOf(Team team) => role => team.Agents.TryGetValue(role, out var agent) ? agent.Instances : 1;
+
+    /// <summary>Bu calismada her rolun son kullandigi kopya: ayni calismanin adimlari ayni karakterle surer.</summary>
+    private static Dictionary<string, string> StickyWorkers(IReadOnlyDictionary<string, IReadOnlyList<Phase>> phasesByTask)
+    {
+        var sticky = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var p in phasesByTask.Values.SelectMany(x => x).OrderBy(x => x.Ts))
+        {
+            sticky[p.Agent] = p.Worker ?? p.Agent;
+        }
+
+        return sticky;
+    }
+
+    /// <summary>
+    /// Analiz gibi fazsiz bir cagri icin bos kopya ayirir: once bu calismanin daha once kullandigi kopya (plan revizyonu ayni
+    /// karakterde), sonra en kucuk numarali bos kopya. Hepsi doluysa kopya 1 (cagri kilitte bekler).
+    /// </summary>
+    private async Task<string> ReserveWorkerAsync(Run run, string role, CancellationToken ct)
+    {
+        var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
+        var instances = InstancesOf(team)(role);
+        if (instances <= 1)
+        {
+            return role;
+        }
+
+        var turns = await runs.ReadTurnsAsync(run.Id, role, ct).ConfigureAwait(false);
+        var previous = turns.Count == 0 ? null : turns[^1].Worker;
+        var busy = new HashSet<string>(await BusyInOtherRunsAsync(run.Id, ct).ConfigureAwait(false), StringComparer.Ordinal);
+        return AgentCaller.ReserveWorker(role, instances, busy, previous);
+    }
+
+    /// <summary>
+    /// Ayni projede su an YAZAN (bir fazi Started) baska bir Running calisma; yoksa null. Ayni proje ayni klasor ve ayni golge
+    /// depodur: kopyalar paralel kosunca iki calisma ayni dosyalara yazar, anlik goruntu ve kod ozeti birbirine karisirdi.
+    /// </summary>
+    private async Task<string?> OtherRunWritingAsync(Run run, CancellationToken ct)
+    {
+        foreach (var other in await runs.ListAsync(100, ct).ConfigureAwait(false))
+        {
+            if (other.Id == run.Id || other.Status != RunStatus.Running || other.Project != run.Project)
+            {
+                continue;
+            }
+
+            foreach (var id in await runs.ListTasksAsync(other.Id, ct).ConfigureAwait(false))
+            {
+                var phases = await runs.ReadPhasesAsync(other.Id, id, ct).ConfigureAwait(false);
+                if (phases.Count > 0 && phases[^1].Status == PhaseStatus.Started)
+                {
+                    return other.Label ?? other.Id;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private async Task<IReadOnlySet<string>> BusyInOtherRunsAsync(string exceptRunId, CancellationToken ct)
     {
         var busy = new HashSet<string>(StringComparer.Ordinal);
@@ -1157,7 +1244,7 @@ public sealed class RunService(
                 var phases = await runs.ReadPhasesAsync(other.Id, id, ct).ConfigureAwait(false);
                 if (phases.Count > 0 && phases[^1].Status == PhaseStatus.Started)
                 {
-                    busy.Add(phases[^1].Agent);
+                    busy.Add(phases[^1].Worker ?? phases[^1].Agent);
                 }
             }
         }
@@ -1177,7 +1264,7 @@ public sealed class RunService(
 
         var note = Prompts.HandoffNote(a, toName, round, notes);
         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Handoff, organizer, a.Agent, note, a.Task.Id, a.Stage.Id, Subject: "handoff"), ct).ConfigureAwait(false);
-        Publish(SceneEventTypes.Meet, new { from = organizer, to = a.Agent, kind = "handoff", run = run.Id });
+        Publish(SceneEventTypes.Meet, new { from = organizer, to = a.WorkerId, kind = "handoff", run = run.Id });
         PublishAgent(run, organizer, "idle", null, null);
         return run;
     }
@@ -1229,7 +1316,7 @@ public sealed class RunService(
     }
 
     /// <param name="reason">Proje butcesi sebebi; <c>null</c> ise is butcesi asilmistir.</param>
-    private async Task<Run> StopForBudgetAsync(Run run, string agent, string? reason, CancellationToken ct)
+    private async Task<Run> StopForBudgetAsync(Run run, string agent, string? reason, CancellationToken ct, string? worker = null)
     {
         run = run with
         {
@@ -1239,12 +1326,12 @@ public sealed class RunService(
         };
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent, "user", run.Detail!, Subject: "error"), ct).ConfigureAwait(false);
-        PublishAgent(run, agent, "blocked", "bütçe aşıldı", null);
+        PublishAgent(run, worker ?? agent, "blocked", "bütçe aşıldı", null);
         return run;
     }
 
     /// <summary>Hata gunluge de yazilir (mesaj kaydi, subject: error): "takildi" tek basina bilgi degildir (LESSONS).</summary>
-    private async Task<Run> FailAsync(Run run, string agent, string stage, string? task, string what, Exception ex, CancellationToken ct)
+    private async Task<Run> FailAsync(Run run, string agent, string stage, string? task, string what, Exception ex, CancellationToken ct, string? worker = null)
     {
         if (await WasCancelledAsync(run.Id, ct).ConfigureAwait(false))
         {
@@ -1254,7 +1341,7 @@ public sealed class RunService(
         run = AccruePartial(run, ex) with { Status = RunStatus.Failed, FinishedAt = DateTimeOffset.UtcNow, Detail = Ellipsis($"{what}: {ex.Message}", 300) };
         await runs.UpdateAsync(run, ct).ConfigureAwait(false);
         await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent, "user", ex.Message, task, stage, Subject: "error"), ct).ConfigureAwait(false);
-        PublishAgent(run, agent, "blocked", Ellipsis($"{what} başarısız: {ex.Message}", 60), task);
+        PublishAgent(run, worker ?? agent, "blocked", Ellipsis($"{what} başarısız: {ex.Message}", 60), task);
         return run;
     }
 

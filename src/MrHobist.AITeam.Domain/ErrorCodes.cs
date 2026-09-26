@@ -86,6 +86,9 @@ public static class ErrorCodes
     /// <summary>Kesif alt ajani (<c>explore_model</c>) verilen ajanin saglayicisi alt ajan calistiramiyor (bugun yalniz <c>anthropic</c>).</summary>
     public const string AgentExploreUnsupported = "agent.explore_unsupported";
 
+    /// <summary>Ajan md'sindeki <c>max_instances</c> 1..8 araliginda degil.</summary>
+    public const string AgentInvalidInstances = "agent.invalid_instances";
+
     public const string McpInvalidKey = "mcp.invalid_key";
     public const string McpInvalid = "mcp.invalid";
     public const string McpNotFound = "mcp.not_found";

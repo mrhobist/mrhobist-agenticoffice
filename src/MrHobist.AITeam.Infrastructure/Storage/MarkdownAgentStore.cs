@@ -6,7 +6,7 @@ using MrHobist.AITeam.Domain.Agents;
 namespace MrHobist.AITeam.Infrastructure.Storage;
 
 /// <summary>
-/// <c>config/agents/{key}.md</c>: frontmatter (<c>name, summary, office_roles, provider, model, effort, includes, can_ask, mcp, explore_model</c>)
+/// <c>config/agents/{key}.md</c>: frontmatter (<c>name, summary, office_roles, provider, model, effort, includes, can_ask, mcp, explore_model, max_instances</c>)
 /// + govde sistem promptu. <c>config/knowledge/{key}.md</c>: <c>title</c> + govde.
 /// Her yukleme diski okur; ekip butunu yuklenirken dogrulanir.
 /// </summary>
@@ -59,6 +59,7 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
             new("can_ask", agent.CanAsk),
             new("mcp", agent.McpServers.Count > 0 ? agent.McpServers : null),
             new("explore_model", agent.ExploreModel),
+            new("max_instances", agent.MaxInstances is > 1 ? agent.MaxInstances : null),
         };
         var target = Path.Combine(paths.AgentsDir, agent.Key + ".md");
         return AtomicFile.WriteAsync(target, Frontmatter.Render(meta, agent.Prompt), ct);
@@ -130,6 +131,19 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
         return new Knowledge(key, title, doc.Body);
     }
 
+    /// <summary>Bos → null (tek kopya). Sayi degilse <c>agent.invalid_instances</c>; aralik <see cref="Agent.Validate"/>'da.</summary>
+    private static int? ParseInstances(string? text, string key)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        return int.TryParse(text.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)
+            ? n
+            : throw new DomainException(ErrorCodes.AgentInvalidInstances, $"{key}: max_instances sayi olmali ('{text}').");
+    }
+
     internal static Agent ParseAgent(string key, string text)
     {
         var doc = Frontmatter.Parse(text);
@@ -146,7 +160,8 @@ public sealed class MarkdownAgentStore(StoragePaths paths) : IAgentStore
             doc.Body,
             Efforts.Parse(Frontmatter.GetString(m, "effort"), key),
             Frontmatter.GetList(m, "mcp") is { Count: > 0 } mcp ? mcp : null,
-            NullIfEmpty(Frontmatter.GetString(m, "explore_model")));
+            NullIfEmpty(Frontmatter.GetString(m, "explore_model")),
+            ParseInstances(Frontmatter.GetString(m, "max_instances"), key));
         agent.Validate();
         return agent;
     }

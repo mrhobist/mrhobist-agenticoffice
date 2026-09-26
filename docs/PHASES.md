@@ -1131,3 +1131,19 @@ keşifsiz sonra (aynı ajan, tek iş kuralı). Hepsi bağımsız doğrulandı: t
 - Kopyalamadaki `*/bin` hariç tutma deseni (.NET çıktısı için) `node_modules` içindeki paketlerin `bin/` klasörlerini de
   sildi; üç ajan da `MODULE_NOT_FOUND` görüp `npm ci` ile onardı ve raporladı — hepsine eşit ek süre. Kopyada
   `node_modules` hiç taşınmamalı.
+
+## Kopyalar: bir ajan, iş geldikçe çoğalan karakterler (2026-09-26, kullanıcı isteği) 🔶 aşama 1 bitti
+
+Kullanıcı: "ayrı ayrı iş yapabilsin ya da birbirlerini alt ajan gibi kullanabilsinler; 5'i birden ekip listesinde
+görünmesin, iş verildikçe çoğalsınlar". DOMAIN → Kopyalar, SCENE → Kopyalar.
+
+- **Aşama 1 (bitti):** md `max_instances` (tek kişilik kadroda 5). Kilit, dağıtıcı, analiz ve "başka çalışmada meşgul"
+  kopya başına; atomik ayırma; kayıtta `Agent` md anahtarı + `Worker`; sahnede kapıdan giren/çıkan klon; ajan panelinde
+  alan; iş havuzu 6; kopyaya port aralığı. **Yeni güvenlik kuralı:** aynı projenin iki çalışması aynı anda yazmaz (önce
+  ajan kilidinin yan etkisiydi).
+- **Doğrulama:** 53 birim + 181 servis testi (yeni: kopya kimliği, max_instances, boş kopya seçimi, fazdan meşgul kopya,
+  iki kopya aynı anda LLM çağrısında, atomik ayırma, aynı proje sırası; eski "ajan dolu" testi ayrı projeye alındı),
+  Api `-warnaserror`, UI typecheck. Canlı sahne: `scene/commands` ile kopya 2/3 "çalışıyor" → ekip listesinde "Tek Kişilik
+  Dev Kadro 2/3" belirdi; kopya 2 "boşta" → ~20 s sonra listeden düştü; kopyaya tıklama ana ajanın panelini açtı.
+- **Ölçülmedi:** gerçek paralel koşu (2+ projeye aynı anda iş). **Aşama 2 (açık):** kopyanın başka bir kopyayı yardımcı
+  alt ajan olarak çağırması.

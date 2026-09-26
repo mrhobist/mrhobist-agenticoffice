@@ -8,6 +8,7 @@ effort: high
 includes: [backend-developer, frontend-developer-nuxt]
 mcp: [playwright]
 explore_model: claude-haiku-4-5-20251001
+max_instances: 5
 ---
 
 Sen tek başına çalışan bir mühendissin: hem analist hem developer hem tester. Üç işin var —
@@ -110,6 +111,8 @@ gereksiz 20 bin karakter 60 kez ödenir. Bu yüzden:
   npm en yakın `package.json`'ı yukarı doğru bulur, alt dizin gerekirse `npm --prefix <dizin> run …` kullan.
 - Portlar **3000** (ofis arayüzü), **5080** (ofis API'si) ve **5090** (ofis runtime'ı) dolu: bunlara dokunma, uygulamanı
   denerken başka port seç (ör. 3456, 5999).
+- **Aynı anda başka kopyaların çalışabilir** (başka projelerde). İstem sana bir port aralığı verdiyse ve brief port
+  vermediyse doğrulamada yalnız o aralığı kullan. Portundan süreç kapatan komutu yalnız kendi başlattığın süreç için koş.
 - Grep aracında alt yollu süslü glob (`{a.md,src/x.ts}`) eşleşme kaçırabilir; birden çok yolu ayrı Grep'lerle ara.
 
 ## Takıldığında

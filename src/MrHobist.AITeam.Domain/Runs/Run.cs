@@ -219,7 +219,9 @@ public sealed record Phase(
     /// doldurulur: red tavaninda kullanici "son turu geri al" derse donulecek nokta budur. Sutun YOK -- faz
     /// govdesiyle birlikte <c>run_phase.data</c> JSON'unda tasinir, sorgulanmaz.
     /// </summary>
-    string? Snapshot = null)
+    string? Snapshot = null,
+    /// <summary>Adimi kosan kopya (<see cref="Agents.Workers"/>); null = kopya 1 (ajanin kendisi). Sona eklendi.</summary>
+    string? Worker = null)
 {
     /// <summary>Sistemden dogan faz (limit, iptal, kesinti): ajanin hatasi degil; tur sayilmaz, tavana girmez.</summary>
     public bool IsSystemFailure => Status == PhaseStatus.Failed && Cause is PhaseCause.Limit or PhaseCause.Cancelled or PhaseCause.Interrupted or PhaseCause.Timeout;
@@ -286,7 +288,9 @@ public sealed record Turn(
     /// Model basina kirilim (ana model + kesif alt ajani gibi alt ajanlar). Ust alanlar (<see cref="InputTokens"/>, <see cref="CostUsd"/>)
     /// turun TOPLAMIDIR; alt ajanin payi yalniz burada ayrisir. Tek model ya da bildirilmediyse null. Sona eklendi.
     /// </summary>
-    IReadOnlyList<ModelTokens>? ModelUsage = null);
+    IReadOnlyList<ModelTokens>? ModelUsage = null,
+    /// <summary>Turu kosan kopya (<see cref="Agents.Workers"/>); null = kopya 1. <see cref="Agent"/> hep md anahtaridir. Sona eklendi.</summary>
+    string? Worker = null);
 
 /// <summary>Turdaki tek modelin payi. <see cref="InputTokens"/> toplamdir (dogrudan + onbellek okuma + yazma).</summary>
 public sealed record ModelTokens(string Model, int InputTokens, int OutputTokens, int CacheReadTokens, int CacheWriteTokens, decimal? CostUsd);

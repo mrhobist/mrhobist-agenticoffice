@@ -489,6 +489,8 @@ function leaveAgent(): boolean {
 }
 
 function selectAgent(key: string | null) {
+  // Kopya (`anahtar~n`, docs/DOMAIN.md → Kopyalar) ekipte ayri ajan degil: paneli ana ajanin md'sini acar.
+  if (key) key = key.replace(/~\d+$/, '')
   if (key === selected.value || !leaveAgent()) return
   selected.value = key
   if (key) { board.value = null; runPanel.value = false; settings.value = false; mcpPanel.value = false; jobs.value = false; teamPanel.value = false }

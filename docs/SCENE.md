@@ -138,6 +138,14 @@ dışarı taşınmaz. Başka bir ofisten uğramış gibi görünür; oturacak ye
 (`entities.ts` → `command`). Tek kuyrukta birden çok durak gezen ajan her durağı **elle bırakmalıdır**, yoksa
 panonun önünde dururken kahve makinesini de tutar ve sıradakini kilitler.
 
+## Kopyalar (2026-09-26)
+
+Bir ajanın kopyaları (`anahtar~n`, docs/DOMAIN.md → Kopyalar) `agents[]`'e YAZILMAZ: ekipte tek ajan kalır. UI kopyayı ilk
+iş olayında (`agent.state` çalışıyor/bekliyor/engelli ya da `agent.tool`) kurar: ad = ana ajanın adı + numara, karakter
+= kullanılmayan ilk sayfa, ev = boş ilk masa (yoksa pano önü). Kapıdan girer, masasına oturur. `idle`/`done` gelince
+**20 s** bekler (aynı çalışmanın sonraki görevi gelirse masasında kalır), sonra kapıdan çıkar ve listeden düşer.
+Tıklanınca ana ajanın paneli açılır. `scene.reload`'da çalışan kopyalar korunur.
+
 ## Olaylar
 
 SSE `event:` adı = tür, `data:` = JSON. Api `EventTypes` kümesinde olmayan türü **400** ile

@@ -753,6 +753,31 @@ public sealed class RunServiceTests : IDisposable
         _runtime.SpecJson = null;
     }
 
+    /// <summary>
+    /// Kopyalar (docs/DOMAIN.md → Kopyalar): ayni proje ayni klasordur; bir calisma YAZARKEN (Started faz) ayni projenin ikinci
+    /// calismasi sira bekler ("proje baska bir calismada"), ilki bitince surer. Kopyalardan once bunu ajan kilidi dolayli sagliyordu.
+    /// </summary>
+    [Fact]
+    public async Task Ayni_projede_yazan_calisma_varken_ikincisi_sira_bekler()
+    {
+        var first = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "birinci"), Ct);
+        await _store.UpdateAsync((await _reader.GetAsync(first.Id, Ct)) with { Status = RunStatus.Running }, Ct);
+        await _store.AppendPhaseAsync(first.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Started, Worker: "developer~2"), Ct);
+
+        var second = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "ikinci"), Ct);
+        await _svc.AnalyzeAsync(second.Id, Ct);
+        await _svc.BeginApproveAsync(second.Id, Ct);
+        second = await _svc.DispatchAsync(second.Id, Ct);
+        Assert.Equal(RunStatus.Running, second.Status);
+        Assert.Contains("proje başka bir çalışmada", second.Detail, StringComparison.Ordinal);
+        Assert.NotNull(second.WaitingSince);
+
+        await _store.AppendPhaseAsync(first.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Done, Worker: "developer~2"), Ct);
+        await _store.UpdateAsync((await _reader.GetAsync(first.Id, Ct)) with { Status = RunStatus.Completed }, Ct);
+        second = await _svc.DispatchAsync(second.Id, Ct);
+        Assert.Equal(RunStatus.Completed, second.Status);
+    }
+
     /// <summary>Anlik goruntu alinamazsa neden calismanin kaydina duser (eskiden yalniz konsol logu); is durmaz.</summary>
     [Fact]
     public async Task Anlik_goruntu_alinamazsa_neden_kayda_duser_is_surer()
@@ -898,7 +923,9 @@ public sealed class RunServiceTests : IDisposable
         await _svc.BeginApproveAsync(a.Id, Ct);
         await _store.AppendPhaseAsync(a.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Started), Ct);
 
-        var b = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief b"), Ct);
+        // B ayri projede: ayni projede "proje baska bir calismada" kurali once devreye girer (kendi testi var); burada AJAN beklemesi sinanir.
+        await _projects.SaveAsync(new Project("test-b", "Test B", "", KlasikKey, "projects/test-b", Project.LocalOwner, DateTimeOffset.UtcNow), Ct);
+        var b = await _svc.CreateAsync(new RunRequest(Project: "test-b", Brief: "brief b"), Ct);
         await _svc.AnalyzeAsync(b.Id, Ct);
         await _svc.BeginApproveAsync(b.Id, Ct);
         var implementCalls = _runtime.Calls.Count(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true);

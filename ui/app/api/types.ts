@@ -47,6 +47,8 @@ export interface AgentDetail extends AgentListItem {
    * PUT'ta null = korunur, '' = kapatilir.
    */
   exploreModel?: string | null
+  /** Ayni anda en fazla kopya (md `max_instances`, 1..8): is geldikce kopya acilir, sahnede ayri karakter. PUT'ta null = korunur. */
+  maxInstances?: number | null
 }
 
 /**
