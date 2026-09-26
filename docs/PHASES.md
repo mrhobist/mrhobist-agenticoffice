@@ -1052,3 +1052,28 @@ Kod incelemesinin bulguları; davranış değişikliği yalnız doğruluk ve hı
   eklemeli). **Ölçülmedi:** gerçek koşu (şart 2, aynı brief'le önce/sonra) — sıradaki iş.
 - **Açık:** `.claude/worktrees/agent-a2dae16…` (dal `main`'e birleşmiş) içinde 19 Eylül'den kalma 15 commit'lenmemiş UI dosyası
   var; silmek geri alınamaz, kullanıcıya soruldu.
+
+### Gerçek koşu: ofis ile Claude Code, aynı iş aynı anda (2026-09-26, kullanıcı isteği)
+
+Brief: mini girişli "Merhaba Dünya" (.NET 10 API + JWT + xUnit, Nuxt 4 login/hello, README, run.cmd). İki boş klasör, aynı metin;
+yalnız portlar ayrı (5181/3181 ofis, 5182/3182 Claude Code) ki doğrulama sunucuları karışmasın. Ofis: `tek-kisilik-dev-kadro`
+(Opus 5.5 high, keşif alt ajanı açık). Claude Code: aynı md'leri talimat olarak okuyan ayrı alt ajan (Opus 5.5, efor oturumdan).
+
+| | Ofis | Claude Code |
+|---|---|---|
+| Süre | 9 dk 50 sn (analiz 2:14, backend 2:51, frontend 4:43) | 11 dk 40 sn |
+| Maliyet (eşdeğer) | 2,23 $ (CLI) | ~2,25 $ (kayıttan, fiyat tablosuyla) |
+| Girdi / çıktı | 1,66 M (okuma 1,55 M, yazma 106 K, 1 sa) / 53 K | 4,54 M (okuma 4,42 M, yazma 121 K, 5 dk) / 38 K |
+| Tepe bağlam | 57 K | 121 K |
+| Araç çağrısı | ~71 (3 tur, 74 iç tur) | 74 (5'i tarayıcı) |
+| Kabul (bağımsız doğrulandı) | build, 14 test, typecheck, build, curl, tarayıcıda giriş/çıkış ✅ | build, 12 test, typecheck, build, curl, tarayıcıda giriş/çıkış ✅ |
+
+- **Bağlam ofiste 2,7 kat yalın** (kullanıcı ortamı devralınmıyor, görevler ayrı tur) ama maliyet aynı çıktı: ofis daha çok çıktı
+  yazdı ve önbelleğe **1 saatlik** fiyatla (8 $/M) yazdı; Claude Code 5 dk (5 $/M). 5 dk ayarıyla ofis ~1,9 $ olurdu (tahmin).
+- **Kalite farkları (ikisi de brief'i karşıladı):** Claude Code çerçevenin `PasswordHasher`'ını kullandı, JWT anahtarını yalnız
+  Development'a koydu (yoksa kalkmıyor), form alanları etiketli, tarayıcıda uçtan uca denedi. Ofis PBKDF2'yi kendisi yazdı (+4 test),
+  anahtar `appsettings.json`'da, form alanlarının erişilebilir adı yok.
+- **Keşif alt ajanı hiç çağrılmadı** — boş klasörde taranacak kod yok; önce/sonra ölçümü (şart 2) hâlâ açık, mevcut bir kod
+  tabanında yapılmalı. Model kırılımı başka bir şeyi gösterdi: CLI her turda kendi iç işleri için Haiku çağırıyor (~0,014 $/iş).
+- **Sınır:** Claude Code alt ajanı bir kez depoya boş `login.out` bıraktı (kendisi sildi) ve paylaşılan tarayıcıda ofis sekmesini
+  kapattı; ofis ajanının yazması `_guard` ile cwd'de kalır. n=1; Claude Code'un eforu doğrudan ayarlanamadı.
