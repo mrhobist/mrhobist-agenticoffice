@@ -112,6 +112,11 @@ ile oku → ana akış + olumsuz yol → konsol → kapat); ajan md'si "ekran de
   belirsiz (ajanın portları projeye göre değişir): eklenmedi. Dosya erişimi varsayılan olarak çalışma köküyle sınırlı.
 - **Kurulum (2026-09-26, kullanıcı: "görünür Edge"):** `playwright` sunucusu görünür Edge ile (`--isolated --browser=msedge`),
   14 araç açık (ekran görüntüsü, `evaluate`, `run_code_unsafe`, dosya yükleme kapalı), yetki `tek-kisilik-dev-kadro`'da.
+- **Sınırlar (2026-09-26 ilk kullanım):** görsel denetim yok (ekran görüntüsü kapalı: ajan metinden okur, yerleşim/renk
+  hatası görmez); araç şeması iç tur başına ~4K token (analiz tepesi 21,6K → 26,5K; md büyümesiyle karışık tahmin); MCP her
+  araçlı turda açılır (analizde de, gereksiz); çalışma köküne `.playwright-mcp` klasörü yazar (`_guard` dışında); görünür
+  modda pencere runtime'ın Windows oturumunda açılır (masaüstü yoksa headless şart); tarayıcı `npx` önbelleğinden kalkar,
+  ilk kullanım ağ ister; yalnız anthropic ajanları.
 - **Alternatif (reddedilmedi):** ajan projeye Playwright testleri yazar (`@playwright/test`) — kalıcı e2e testi bırakır ama her
   projeye paket + tarayıcı indirmesi ekler ve brief istemeden test altyapısı kurar. Brief e2e testi isterse ajan bunu yapar.
 - Claude masaüstünün kendi tarayıcısı SDK alt sürecinden erişilebilir değil; bu yüzden kullanılmadı.

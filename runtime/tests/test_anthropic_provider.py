@@ -753,3 +753,11 @@ async def test_agent_araci_yalniz_verilen_alt_ajanlari_cagirir(tmp_path):
     assert type(ok).__name__ == "PermissionResultAllow"
     assert type(gp).__name__ == "PermissionResultDeny" and "kesif" in gp.message
     assert type(bare).__name__ == "PermissionResultDeny", "alt ajan verilmediyse Agent/Task hic calismaz"
+
+
+def test_tarayici_aracinin_hedefi_kayda_girer():
+    """Playwright MCP click/type hedefini `element` alaninda verir; kayitta bos kalmasin."""
+    from claude_agent_sdk import ToolUseBlock
+
+    block = ToolUseBlock(id="b1", name="mcp__playwright__browser_click", input={"element": "Giriş düğmesi", "target": "e12"})
+    assert AnthropicProvider._tool_target(block) == "Giriş düğmesi"

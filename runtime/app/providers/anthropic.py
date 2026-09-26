@@ -523,7 +523,8 @@ class AnthropicProvider:
     @staticmethod
     def _tool_target(block: ToolUseBlock) -> str | None:
         inp = block.input or {}
-        for key in ("file_path", "path", "command", "pattern", "notebook_path", "url"):
+        # `element`: tarayici araclarinin (Playwright MCP click/type/find) insan okunur hedefi; yoksa kayitta bos kaliyordu.
+        for key in ("file_path", "path", "command", "pattern", "notebook_path", "url", "element"):
             v = inp.get(key)
             if isinstance(v, str) and v:
                 return v[:300]

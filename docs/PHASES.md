@@ -1087,3 +1087,25 @@ yalnız portlar ayrı (5181/3181 ofis, 5182/3182 Claude Code) ki doğrulama sunu
 - **Tarayıcı:** DOMAIN → Gerçek tarayıcıda test. Playwright MCP 0.0.82 (sabit sürüm), görünür Edge, 14 araç, bağlantı denendi
   (25 araç listelendi). Sıradaki: aynı işin tekrarı; ofis tarayıcıda denerse ve kalite farkları kapanırsa aynı projeye ikinci iş
   (keşif alt ajanı açık/kapalı ölçümü).
+
+### Tekrar koşusu: kalite notları + Playwright sonrası (2026-09-26) ✅
+
+Aynı brief, yeni boş klasörler (`karsilastirma-2026-09-26-2`), aynı anda. Hepsi bağımsız doğrulandı (build, test, typecheck,
+build, curl 401/401/200, kalkışta anahtarsız durma).
+
+| | Ofis 1 | **Ofis 2** | Claude Code 1 | Claude Code 2 |
+|---|---|---|---|---|
+| Süre | 9:50 | **8:28** | 11:40 | 10:06 |
+| Maliyet (eşdeğer) | 2,23 $ | **2,13 $** | ~2,25 $ | ~2,31 $ |
+| Girdi / çıktı | 1,66 M / 53 K | 2,23 M / 43 K | 4,54 M / 38 K | 4,76 M / 38 K |
+| Tepe bağlam | 57 K | 78 K (tek görev) | 121 K | 124 K |
+| Test | 14 | 10 | 12 | 13 |
+| Tarayıcıda | yok | **Playwright, 13 çağrı, 5 akış** | pane | pane, 9 akış |
+| Framework hasher / sır Development'ta / kalkışta dur / etiketli form + başlık | ✗ | **✓** | ✓ | ✓ |
+
+- Kalite farkları kapandı; ofis hâlâ daha hızlı ve biraz ucuz. Claude Code sınama genişliğinde önde: süresi dolmuş / başka
+  anahtarla imzalanmış token testleri, sayfa yenilemede oturum, bozuk çerez, `localhost` kökeni.
+- Ofis bu kez tek görev çıkardı (ilkinde backend/frontend iki görev): tepe bağlam bu yüzden de büyüdü.
+- Playwright: `browser_find` ile okudu, `browser_snapshot` hiç çağırmadı; tur kaydında tıklama/doldurma hedefi boş kalıyordu
+  → runtime artık `element` alanını yazar (test var, runtime yeniden başlayınca). Sınırlar DOMAIN → Gerçek tarayıcıda test.
+- Sıradaki (kullanıcı onayıyla): aynı projeye ikinci iş, keşif alt ajanı açık/kapalı.
