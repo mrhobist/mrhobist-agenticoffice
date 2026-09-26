@@ -5,6 +5,8 @@ frontend tipleri `npm run gen:api` ile üretilir (CLAUDE.md §5). Burada **anlam
 
 Tüm hatalar Problem Details + `errorCode` (bkz. `docs/error-codes.md`); `title`/`detail`
 ekrana basılmaz, `errorCode` Türkçe metne eşlenir. Geçersiz gövde **400** döner, sessiz kabul yok.
+Çözülemeyen gövde (sözdizimi bozuk JSON, eksik/null zorunlu alan, yanlış tür) **her uçta** 400
+`request.invalid`, `application/problem+json`; Development dışında da (`ThrowOnBadRequest` açık).
 Enum'lar JSON'da **adıyla** taşınır. Hostlar yalnız `127.0.0.1`.
 
 | Host | Port | Sorumluluk |

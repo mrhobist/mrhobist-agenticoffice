@@ -193,3 +193,13 @@ girdi tokeni **iç turların toplamı** (yapısal çıktı en az 2 tur, araçlı
 istemde görünmeyen ~4,5k token ekliyor. 10k karakterlik bir istemde düz oran ~1,4 çıkar, tahmin ~3 kat şişer ve
 sıkıştırma hep erken tetiklenir. Doğrusu: yalnız araçsız turlar, tur başına girdi, eğim (sabit terim ek yükü yutar).
 
+
+## Hata sözleşmesi (2026-09-26)
+
+### Minimal API bağlama hatası yalnız Development'ta istisna
+
+`ProblemMapping` `BadHttpRequestException`'ı `request.invalid`'e çeviriyordu ve Development'ta curl bunu
+doğruluyordu. Ama `RouteHandlerOptions.ThrowOnBadRequest` varsayılanı `IsDevelopment()`: başka ortamda çerçeve
+istisna atmadan 400 yazar, gövdeyi `UseStatusCodePages` **`errorCode`'suz** doldurur — bozuk JSON da, eksik zorunlu
+alan da. Artık `Program.cs`'te sabit `true`. Hata sözleşmesini doğrularken Api'yi `ASPNETCORE_ENVIRONMENT=Production`
+ile de kaldır; `dotnet run` launchSettings üzerinden hep Development'tır.
