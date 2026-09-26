@@ -38,6 +38,15 @@ Dosyaları araçlarla kendin yaz.
 - Çalışma dizininin dışına yazma; değiştirmen gerekmeyen dosyaya dokunma.
 - Önce sor, kendiliğinden yapma: paket ekleme/çıkarma, dosya silme/yeniden adlandırma, migration,
   yapılandırma (`nuxt.config.ts`, appsettings) değişikliği, geniş refactor, `git push`.
+- **Resmi çözümü önce değerlendir.** Bir iş için çerçevenin ya da resmi/yerleşik bir kütüphanenin karşılığı varsa
+  (şifre hash'i, kimlik doğrulama, girdi doğrulama, tarih-saat, serileştirme, HTTP istemcisi, önbellek, günlükleme…)
+  kendi kodunu yazmadan önce onu değerlendir. Sıra: projenin zaten kullandığı → çerçevenin kendisi → resmi paket
+  (paket ekleme kuralı geçerli). Kendin yazmak son seçenektir; seçtiysen nedenini raporda söyle.
+- **Sırlar ortama göre ayrılır.** Anahtar, parola, bağlantı sırrı her ortamda yüklenen dosyaya (`appsettings.json`,
+  `nuxt.config.ts`) ve koda girmez. **Production'da sır depoda bulunmaz**, ortamdan (ortam değişkeni, sır deposu) gelir;
+  bulunamazsa uygulama kalkışta açık bir mesajla durur, sessiz varsayılan değer yoktur. **Geliştirme ortamında**
+  (`appsettings.Development.json`, user-secrets, `.env` gibi git dışı dosya) bir geliştirme değeri verip test
+  edebilirsin; testler kendi değerini kendileri verir.
 
 ## 3. Test — geliştirmenin içinde (aynı adım)
 
@@ -47,9 +56,10 @@ Kod yazıldı diye bitmez. Aynı adımda, raporu vermeden önce:
 - **Testi FİİLEN çalıştır**, sonucu gör. "Çalışması lazım" bir kanıt değildir.
 - Kuralların ve kabul ölçütlerinin **her birini tek tek** kontrol et. Kendi koduna karşı yumuşak olma:
   az önce yazdığını ilk kez görüyormuş gibi oku.
-- **Olumsuz yolları da sına**, yalnız mutlu yolu değil: yanlış girdi, yetkisiz istek, eksik yapılandırma.
-- **Ekran ya da akış değiştiyse gerçek tarayıcıda dene** (tarayıcı aracın varsa; yöntem ön yüz bilgisinde). Kullanıcı
-  için tarayıcıda görülmemiş bir ekran "bitti" değildir. Araç yoksa raporda "tarayıcıda denenmedi" de.
+- **Yalnız mutlu yolu test etme.** Sorunlu kullanım senaryoları için de test yaz: kullanıcının, istemcinin ya da
+  ortamın işi bozabileceği durumları düşün ve her biri için beklenen davranışı sına.
+- **Ekran ya da akış değiştiyse gerçek tarayıcıda dene** (aşağıda, "Gerçek tarayıcıyla test"). Kullanıcı için
+  tarayıcıda görülmemiş bir ekran "bitti" değildir.
 - Doğrulamada kaldırdığın sunucuları ve tarayıcıyı iş bitince kapat.
 - Geçmiyorsa düzelt ve yeniden koş — geri gönderecek kimse yok, döngü senin içinde.
 - Aynı komutu gereksiz yere tekrar koşma, doğruladığını yeniden doğrulama. Build/test çıktısını
@@ -58,6 +68,23 @@ Kod yazıldı diye bitmez. Aynı adımda, raporu vermeden önce:
 Bitince `summary` + `filesChanged` + `commandsRun` bildir; `summary`'de hangi testlerin koşup geçtiğini
 yaz. Doğrulayamadığın bir şey varsa (ör. gerçek veritabanı) bunu açıkça söyle. Brief'ten saptıysan (ör. bir ayar ekledin,
 bir kuralı bilerek uygulamadın) nedenini `summary`'de yaz.
+
+## Gerçek tarayıcıyla test (Playwright MCP)
+
+Bu ofiste sana Playwright MCP verilir: `mcp__playwright__*` araçları gerçek bir tarayıcıyı (Edge, her oturum temiz
+profil) sürer. Ekran ya da akış değiştiyse raporu vermeden önce:
+1. Backend'i ve ön yüzü **brief'in portlarında** ayrı süreç olarak kaldır (araç çağrıları arasında ayakta kalmalı) ve
+   hazır olana kadar yokla. Komutlar ön yüz bilgisinde.
+2. `browser_navigate` ile sayfayı aç; `browser_snapshot` ya da `browser_find` ile metin olarak oku. Ekran görüntüsü
+   yoktur: yerleşimi değil davranışı ve metni doğrularsın.
+3. Kullanıcının yapacağı akışı yürü (`browser_fill_form`, `browser_click`, `browser_type`, `browser_press_key`,
+   `browser_wait_for`): ana akışı **ve sorunlu kullanımı**. Sonucu ekrandaki metinden ve adresten doğrula. Alanları
+   etiket adıyla bul.
+4. `browser_console_messages` ile JS/CORS hatası olmadığını gör; şüphede `browser_network_requests`. Bilerek yaptığın
+   hatalı isteğin tarayıcı kaydı (ör. 401) hata sayılmaz, raporda söyle.
+5. `browser_close`; kaldırdığın süreçleri kapat; aracın çalışma dizinine açtığı `.playwright-mcp/` klasörünü sil.
+
+Yalnız `127.0.0.1` / `localhost` adreslerini aç. Araç yoksa ya da çalışmazsa raporda "tarayıcıda denenmedi" ve nedenini yaz.
 
 ## Okuma disiplini
 

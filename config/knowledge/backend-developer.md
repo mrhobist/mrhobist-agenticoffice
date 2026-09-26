@@ -147,9 +147,9 @@ public class ExampleItemsController(IExampleItemService exampleItemService) : Co
 ## Güvenlik varsayılanları (2026-09-26 karşılaştırması)
 
 Hedef projede hazır karşılığı yoksa (yeni ya da küçük proje):
-- **Kriptoyu kendin yazma.** Şifre hash'i için çerçevenin `PasswordHasher<TUser>`'ı (`Microsoft.AspNetCore.Identity`,
-  paylaşımlı çerçevede, paket gerekmez); kendi PBKDF2/salt/karşılaştırma kodun değil. Projede `Common/Security/PasswordHasher`
-  varsa o kullanılır.
+- **Resmi çözüm önce (ajan md'si) — .NET karşılıkları:** şifre hash'i `PasswordHasher<TUser>` (`Microsoft.AspNetCore.Identity`,
+  paylaşımlı çerçevede, paket gerekmez; projede `Common/Security/PasswordHasher` varsa o), JWT `Microsoft.AspNetCore.Authentication.JwtBearer`,
+  hata gövdesi `ProblemDetails`/`ValidationProblemDetails`, eşzamanlı bellek deposu `ConcurrentDictionary`.
 - **Sır `appsettings.json`'a girmez.** JWT anahtarı, bağlantı parolası: geliştirmede `appsettings.Development.json` ya da
   user-secrets, testte test kendi değerini verir. Değer yoksa ya da zayıfsa (JWT anahtarı < 32 karakter) uygulama
   **kalkışta** açık bir mesajla durur; sessiz varsayılan anahtar yok.

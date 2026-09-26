@@ -146,26 +146,16 @@ npm run build 2>&1 | tail -20 && npm run typecheck 2>&1 | tail -20
 grep -nE 'console\.log\(|:\s*any\b|as any\b|<any>|any\[\]|process\.client|from\s*.(axios|dayjs|date-fns|moment|chart\.js|apexcharts|vue-chartjs)|\b(useFetch|useAsyncData)\s*[(<]|\b(localStorage|sessionStorage)\b|v-html|<table[ >]|^\s*(//|/\*+)\s*@ts-(ignore|nocheck)\b' <yazdigin-dosyalar>
 ```
 
-### Gerçek tarayıcıda dene — ekran ya da akış değiştiyse
+### Gerçek tarayıcıda dene — Nuxt ve Windows ayrıntıları
 
-build + typecheck sayfanın **çalıştığını** kanıtlamaz (yönlendirme, form gönderimi, CORS, çerez ancak tarayıcıda
-görülür). Tarayıcı aracın varsa (`mcp__playwright__*`) raporu vermeden önce:
-1. Backend'i ve ön yüzü **brief'in portlarında** ayrı süreç olarak kaldır ve hazır olana kadar yokla; araç çağrıları
-   arasında ayakta kalmalı. Windows'ta: `powershell -Command "Start-Process -WindowStyle Hidden dotnet -ArgumentList 'run','--project','backend/src/X.Api'"`,
-   ön yüz için `npm --prefix frontend run dev` aynı biçimde; hazır mı: `curl -s -o /dev/null -w '%{http_code}' <adres>`.
-2. `browser_navigate` ile sayfayı aç, `browser_snapshot` ile oku (ekran görüntüsü değil: snapshot metindir, ucuzdur).
-3. **Ana akışı ve olumsuz yolları** yürü, alanları etiket adıyla bul. Oturum/giriş içeren bir ekranda en az şunlar:
-   - girişsiz korumalı sayfa → girişe yönlendirme;
-   - boş form → doğrulama metni; yanlış giriş → hata metni, oturum yazılmaz;
-   - doğru giriş → hedef sayfa ve beklenen metin; **sayfa yenilenince oturum korunur**;
-   - girişliyken giriş sayfası → hedefe yönlendirme;
-   - çıkış → girişe dönüş, ardından korumalı sayfa yine girişe yönlendirir;
-   - **bozuk/süresi dolmuş token** (çerezi elle boz) → oturum kapanır, girişe dönülür;
-   - ön yüz hem `127.0.0.1` hem `localhost` kökeninden açılınca aynı akış çalışır (CORS).
-4. `browser_console_messages` hata içermemeli; başarısız istek şüphesinde `browser_network_requests`.
-5. Bitince `browser_close` ve kaldırdığın süreçleri portundan bulup kapat
-   (`powershell -Command "Get-NetTCPConnection -LocalPort <port> -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }"`).
-Yalnız `127.0.0.1` / `localhost` adreslerini aç. Araç yoksa raporda açıkça "tarayıcıda denenmedi" yaz.
+Yöntem ajan md'sinde ("Gerçek tarayıcıyla test"); build + typecheck yönlendirmeyi, form gönderimini, CORS'u ve çerezi
+kanıtlamaz. Buradakiler yalnız bu yığına özgü ayrıntılar:
+- Süreci arka planda kaldır: `powershell -Command "Start-Process -WindowStyle Hidden dotnet -ArgumentList 'run','--project','backend/src/X.Api'"`,
+  ön yüz için `npm --prefix frontend run dev` aynı biçimde; hazır mı: `curl -s -o /dev/null -w '%{http_code}' <adres>`.
+- Kapat: `powershell -Command "Get-NetTCPConnection -LocalPort <port> -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }"`.
+- Oturum/giriş içeren bir ekranda sorunlu kullanım için bakılacak yerler: girişsiz korumalı sayfa, boş ve hatalı form,
+  sayfa yenilenince oturum, girişliyken giriş sayfası, çıkıştan sonra korumalı sayfa, bozuk/süresi dolmuş token (çerezi
+  elle boz), `127.0.0.1` ve `localhost` kökenleri (CORS).
 
 `src/pages/**/index.vue` yazdıysan `definePageMeta` içerdiğini ayrıca kontrol et. Kullandığın PrimeVue
 bileşenleri `include` listesinde mi, bak.
