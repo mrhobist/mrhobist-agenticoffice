@@ -154,8 +154,14 @@ görülür). Tarayıcı aracın varsa (`mcp__playwright__*`) raporu vermeden ön
    arasında ayakta kalmalı. Windows'ta: `powershell -Command "Start-Process -WindowStyle Hidden dotnet -ArgumentList 'run','--project','backend/src/X.Api'"`,
    ön yüz için `npm --prefix frontend run dev` aynı biçimde; hazır mı: `curl -s -o /dev/null -w '%{http_code}' <adres>`.
 2. `browser_navigate` ile sayfayı aç, `browser_snapshot` ile oku (ekran görüntüsü değil: snapshot metindir, ucuzdur).
-3. **Ana akışı ve en az bir olumsuz yolu** yürü: girişsiz korumalı sayfa → yönlendirme; yanlış giriş → hata metni;
-   doğru giriş → hedef sayfa ve beklenen metin; çıkış → geri dönüş. Alanları etiket adıyla bul.
+3. **Ana akışı ve olumsuz yolları** yürü, alanları etiket adıyla bul. Oturum/giriş içeren bir ekranda en az şunlar:
+   - girişsiz korumalı sayfa → girişe yönlendirme;
+   - boş form → doğrulama metni; yanlış giriş → hata metni, oturum yazılmaz;
+   - doğru giriş → hedef sayfa ve beklenen metin; **sayfa yenilenince oturum korunur**;
+   - girişliyken giriş sayfası → hedefe yönlendirme;
+   - çıkış → girişe dönüş, ardından korumalı sayfa yine girişe yönlendirir;
+   - **bozuk/süresi dolmuş token** (çerezi elle boz) → oturum kapanır, girişe dönülür;
+   - ön yüz hem `127.0.0.1` hem `localhost` kökeninden açılınca aynı akış çalışır (CORS).
 4. `browser_console_messages` hata içermemeli; başarısız istek şüphesinde `browser_network_requests`.
 5. Bitince `browser_close` ve kaldırdığın süreçleri portundan bulup kapat
    (`powershell -Command "Get-NetTCPConnection -LocalPort <port> -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }"`).

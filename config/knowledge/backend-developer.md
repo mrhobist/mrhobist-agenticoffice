@@ -153,7 +153,13 @@ Hedef projede hazır karşılığı yoksa (yeni ya da küçük proje):
 - **Sır `appsettings.json`'a girmez.** JWT anahtarı, bağlantı parolası: geliştirmede `appsettings.Development.json` ya da
   user-secrets, testte test kendi değerini verir. Değer yoksa ya da zayıfsa (JWT anahtarı < 32 karakter) uygulama
   **kalkışta** açık bir mesajla durur; sessiz varsayılan anahtar yok.
-- Olumsuz yolları test et: bilinmeyen kullanıcı, yanlış şifre, geçersiz/süresi dolmuş token, izinsiz CORS kökeni.
+- Olumsuz yolları **test olarak yaz** (2026-09-26 tekrar koşusu: Claude Code bunları da sınadı, ofis sınamadı):
+  - giriş: yanlış şifre, bilinmeyen kullanıcı, boş/eksik gövde;
+  - token: yok, bozuk, **süresi dolmuş**, **başka anahtarla imzalanmış** — hepsi 401;
+  - CORS: izinli kökenler başlığı alır, izinsiz köken almaz;
+  - kalkış: anahtar yok ya da kısa → uygulama durur.
+- Bilinmeyen kullanıcıda da hash doğrulaması koşsun (sabit bir sahte hash'e karşı): yanıt süresi kullanıcının var olup
+  olmadığını ele vermesin.
 
 ## Doğrulama — bitti demeden önce
 
