@@ -144,6 +144,17 @@ public class ExampleItemsController(IExampleItemService exampleItemService) : Co
 - SQLite `xmin`, 23505, `timestamptz`, `jsonb`, partial index, şema ayrımını doğrulamaz: bunlara dokunduysan
   çıktıda "gerçek Postgres'te denenmedi" yaz.
 
+## Güvenlik varsayılanları (2026-09-26 karşılaştırması)
+
+Hedef projede hazır karşılığı yoksa (yeni ya da küçük proje):
+- **Kriptoyu kendin yazma.** Şifre hash'i için çerçevenin `PasswordHasher<TUser>`'ı (`Microsoft.AspNetCore.Identity`,
+  paylaşımlı çerçevede, paket gerekmez); kendi PBKDF2/salt/karşılaştırma kodun değil. Projede `Common/Security/PasswordHasher`
+  varsa o kullanılır.
+- **Sır `appsettings.json`'a girmez.** JWT anahtarı, bağlantı parolası: geliştirmede `appsettings.Development.json` ya da
+  user-secrets, testte test kendi değerini verir. Değer yoksa ya da zayıfsa (JWT anahtarı < 32 karakter) uygulama
+  **kalkışta** açık bir mesajla durur; sessiz varsayılan anahtar yok.
+- Olumsuz yolları test et: bilinmeyen kullanıcı, yanlış şifre, geçersiz/süresi dolmuş token, izinsiz CORS kökeni.
+
 ## Doğrulama — bitti demeden önce
 
 Ham verbose `dotnet build/test` koşma; hedef projenin kapısı:

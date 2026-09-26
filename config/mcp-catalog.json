@@ -388,7 +388,7 @@
           "description": "Ajan arka planda tarayıcı açar. Profil bellekte tutulur, her oturum temiz başlar.",
           "transport": "Stdio",
           "command": "cmd",
-          "args": ["/c", "npx", "-y", "@playwright/mcp@latest", "--headless", "--isolated", "--browser={BROWSER}"],
+          "args": ["/c", "npx", "-y", "@playwright/mcp@0.0.82", "--headless", "--isolated", "--browser={BROWSER}"],
           "requires": ["Node.js"],
           "fields": [
             { "name": "BROWSER", "label": "Tarayıcı", "target": "Input", "choices": ["msedge", "chrome", "firefox", "webkit"], "default": "msedge", "help": "Edge Windows'ta hazır; firefox/webkit için önce npx playwright install." }
@@ -400,7 +400,7 @@
           "description": "Tarayıcı penceresi ekranda açılır; ajanın ne yaptığını izleyebilirsin.",
           "transport": "Stdio",
           "command": "cmd",
-          "args": ["/c", "npx", "-y", "@playwright/mcp@latest", "--isolated", "--browser={BROWSER}"],
+          "args": ["/c", "npx", "-y", "@playwright/mcp@0.0.82", "--isolated", "--browser={BROWSER}"],
           "requires": ["Node.js"],
           "fields": [
             { "name": "BROWSER", "label": "Tarayıcı", "target": "Input", "choices": ["msedge", "chrome", "firefox", "webkit"], "default": "msedge" }

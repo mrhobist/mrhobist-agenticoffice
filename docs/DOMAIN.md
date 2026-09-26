@@ -98,6 +98,21 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
   etmiyor — kullanıcının kendi OAuth uygulamasının istemci kimliği/gizli anahtarı gerekir (dönüş adresi o uygulamaya eklenir).
   Alternatif (Claude Code'un saklı OAuth belirtecini paylaşmak) reddedildi: kullanıcının kişisel oturumu ajana sızardı.
 
+### Gerçek tarayıcıda test (2026-09-26, kullanıcı isteği; ayrıntılar varsayımla ilerlenir)
+
+Karşılaştırmada Claude Code ön yüzü tarayıcıda uçtan uca denedi, ofis denemedi; kullanıcı için önemli. **Karar:** yeni bir
+mekanizma değil, var olan MCP yolu — katalogdaki **Playwright MCP** (Microsoft, resmi; sürüm sabit `0.0.82`, `@latest` her
+kurulumda başka kod getirirdi) kurulur ve ajana yetki verilir. Makinedeki Edge kullanılır (`--browser=msedge`), tarayıcı
+indirilmez; `--headless --isolated`: her oturum temiz profil. Nasıl deneneceği ön yüz bilgisinde (sunucuyu kaldır → snapshot
+ile oku → ana akış + olumsuz yol → konsol → kapat); ajan md'si "ekran değiştiyse tarayıcıda dene, araç yoksa söyle" der.
+- **Bağlam bedeli:** her aracın şeması her iç turda gider; MCP panelinden yalnız gereken araçlar seçilir (navigate, snapshot,
+  click, type, fill_form, press_key, wait_for, console_messages, network_requests, close).
+- **Sınır:** MCP araçları runtime'ın yazma denetiminden (`_guard`) geçmez; tarayıcı yalnız yerel adres açsın diye kural md'de.
+  Sunucu tarafında köken kısıtı (`--allowed-origins`) kurulumdan sonra sürümün desteğine bakılarak eklenir.
+- **Alternatif (reddedilmedi):** ajan projeye Playwright testleri yazar (`@playwright/test`) — kalıcı e2e testi bırakır ama her
+  projeye paket + tarayıcı indirmesi ekler ve brief istemeden test altyapısı kurar. Brief e2e testi isterse ajan bunu yapar.
+- Claude masaüstünün kendi tarayıcısı SDK alt sürecinden erişilebilir değil; bu yüzden kullanılmadı.
+
 ## Projeler (2026-09-19, kullanıcı kararı)
 
 > Her işin bir projesi vardır; proje bağımsız iş başlatılamaz (`run.project_required`).

@@ -46,12 +46,17 @@ Kod yazıldı diye bitmez. Aynı adımda, raporu vermeden önce:
 - **Testi FİİLEN çalıştır**, sonucu gör. "Çalışması lazım" bir kanıt değildir.
 - Kuralların ve kabul ölçütlerinin **her birini tek tek** kontrol et. Kendi koduna karşı yumuşak olma:
   az önce yazdığını ilk kez görüyormuş gibi oku.
+- **Olumsuz yolları da sına**, yalnız mutlu yolu değil: yanlış girdi, yetkisiz istek, eksik yapılandırma.
+- **Ekran ya da akış değiştiyse gerçek tarayıcıda dene** (tarayıcı aracın varsa; yöntem ön yüz bilgisinde). Kullanıcı
+  için tarayıcıda görülmemiş bir ekran "bitti" değildir. Araç yoksa raporda "tarayıcıda denenmedi" de.
+- Doğrulamada kaldırdığın sunucuları ve tarayıcıyı iş bitince kapat.
 - Geçmiyorsa düzelt ve yeniden koş — geri gönderecek kimse yok, döngü senin içinde.
 - Aynı komutu gereksiz yere tekrar koşma, doğruladığını yeniden doğrulama. Build/test çıktısını
   `2>&1 | tail -20` ile kırp.
 
 Bitince `summary` + `filesChanged` + `commandsRun` bildir; `summary`'de hangi testlerin koşup geçtiğini
-yaz. Doğrulayamadığın bir şey varsa (ör. gerçek veritabanı, tarayıcıda görsel kontrol) bunu açıkça söyle.
+yaz. Doğrulayamadığın bir şey varsa (ör. gerçek veritabanı) bunu açıkça söyle. Brief'ten saptıysan (ör. bir ayar ekledin,
+bir kuralı bilerek uygulamadın) nedenini `summary`'de yaz.
 
 ## Okuma disiplini
 

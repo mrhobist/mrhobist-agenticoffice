@@ -122,6 +122,9 @@ savunma) ayrıdır; şema mesajını arayüz metni gibi kullanma.
   `aria-label` (listede kayıt adıyla), tıklanabilir öğe `<button>`, `v-for` key kayıt kimliği; sayfa boyutu
   varsayılan 10; ağır dialog `v-if`. Renk: birincil `#0ea5b7`; hazır sınıflar `create-button`,
   `icon-action.{edit|delete|…}`, `status-badge.status-{active|draft|archived}`.
+- **Form ve sayfa erişilebilir** (2026-09-26 karşılaştırması: Claude Code yaptı, ofis yapmadı): her girdinin
+  `<label for>` + `id` ile bağlı adı olur (yalnız placeholder ad değildir); hata metni `role="alert"`; her sayfa
+  `useHead({ title })` ile başlık alır. Tarayıcı testi alanları da bu adlarla bulur.
 - **Yasak paketler:** `axios`, `dayjs`, `date-fns`, `moment`, `chart.js`, `apexcharts`, `vue-chartjs`, yeni UI
   kütüphanesi/ikon seti. Grafik `computed` oran + CSS. Yeni event bus / global store / provide-inject zinciri yok.
 - **Burada bilinçli olarak yok:** i18n, ESLint/Prettier, vitest/birim test (istenmeden test dosyası üretme),
@@ -142,6 +145,21 @@ npm run build 2>&1 | tail -20 && npm run typecheck 2>&1 | tail -20
 ```bash
 grep -nE 'console\.log\(|:\s*any\b|as any\b|<any>|any\[\]|process\.client|from\s*.(axios|dayjs|date-fns|moment|chart\.js|apexcharts|vue-chartjs)|\b(useFetch|useAsyncData)\s*[(<]|\b(localStorage|sessionStorage)\b|v-html|<table[ >]|^\s*(//|/\*+)\s*@ts-(ignore|nocheck)\b' <yazdigin-dosyalar>
 ```
+
+### Gerçek tarayıcıda dene — ekran ya da akış değiştiyse
+
+build + typecheck sayfanın **çalıştığını** kanıtlamaz (yönlendirme, form gönderimi, CORS, çerez ancak tarayıcıda
+görülür). Tarayıcı aracın varsa (`mcp__playwright__*`) raporu vermeden önce:
+1. Backend'i ve ön yüzü **brief'in portlarında** ayrı süreç olarak kaldır ve hazır olana kadar yokla; araç çağrıları
+   arasında ayakta kalmalı. Windows'ta: `powershell -Command "Start-Process -WindowStyle Hidden dotnet -ArgumentList 'run','--project','backend/src/X.Api'"`,
+   ön yüz için `npm --prefix frontend run dev` aynı biçimde; hazır mı: `curl -s -o /dev/null -w '%{http_code}' <adres>`.
+2. `browser_navigate` ile sayfayı aç, `browser_snapshot` ile oku (ekran görüntüsü değil: snapshot metindir, ucuzdur).
+3. **Ana akışı ve en az bir olumsuz yolu** yürü: girişsiz korumalı sayfa → yönlendirme; yanlış giriş → hata metni;
+   doğru giriş → hedef sayfa ve beklenen metin; çıkış → geri dönüş. Alanları etiket adıyla bul.
+4. `browser_console_messages` hata içermemeli; başarısız istek şüphesinde `browser_network_requests`.
+5. Bitince `browser_close` ve kaldırdığın süreçleri portundan bulup kapat
+   (`powershell -Command "Get-NetTCPConnection -LocalPort <port> -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }"`).
+Yalnız `127.0.0.1` / `localhost` adreslerini aç. Araç yoksa raporda açıkça "tarayıcıda denenmedi" yaz.
 
 `src/pages/**/index.vue` yazdıysan `definePageMeta` içerdiğini ayrıca kontrol et. Kullandığın PrimeVue
 bileşenleri `include` listesinde mi, bak.
