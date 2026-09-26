@@ -753,6 +753,39 @@ public sealed class RunServiceTests : IDisposable
         _runtime.SpecJson = null;
     }
 
+    /// <summary>Anlik goruntu alinamazsa neden calismanin kaydina duser (eskiden yalniz konsol logu); is durmaz.</summary>
+    [Fact]
+    public async Task Anlik_goruntu_alinamazsa_neden_kayda_duser_is_surer()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var svc = new RunService(_store, new JsonWorkflowStore(_fx.Paths), agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene,
+            new WorkspaceLocator(_fx.Paths), _scheduler, snapshots: new BrokenSnapshot());
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        run = await svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Completed, run.Status);
+        // Her uretici adim kendi notunu yazar: o adimin "geri al" secenegi kaybolur.
+        var notes = (await _store.ReadMessagesAsync(run.Id, Ct)).Where(m => m.Subject == "snapshot").ToList();
+        Assert.NotEmpty(notes);
+        Assert.All(notes, n => Assert.Contains("Permission denied", n.Body, StringComparison.Ordinal));
+    }
+
+    private sealed class BrokenSnapshot : IWorkspaceSnapshot
+    {
+        public Task<string?> TrackAsync(string workDir, CancellationToken ct) => Task.FromResult<string?>(null);
+
+        public Task<bool> RestoreAsync(string workDir, string snapshot, CancellationToken ct) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<WorkspaceChange>> DiffAsync(string workDir, string fromSnapshot, string toSnapshot, IReadOnlyList<string> include, IReadOnlyList<string> exclude, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<WorkspaceChange>>([]);
+
+        public Task<string?> ReadAsync(string workDir, string snapshot, string path, CancellationToken ct) => Task.FromResult<string?>(null);
+
+        public string? LastTrackFailure(string workDir) => "git add (128): error: open(\".vs/x.vsidx\"): Permission denied";
+    }
+
     private sealed class FakeSnapshot : IWorkspaceSnapshot
     {
         private int _n;

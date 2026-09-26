@@ -706,6 +706,13 @@ public sealed class RunService(
                 {
                     // Yazmadan ONCEKI hal: red tavaninda kullanici "geri al" derse donulecek nokta (ornek: opencode snapshot).
                     var before = await (snapshots ?? new NoWorkspaceSnapshot()).TrackAsync(root, ct).ConfigureAwait(false);
+                    if (before is null && snapshots?.LastTrackFailure(root) is { } why)
+                    {
+                        // Gorunur olsun: alinamayan goruntu "geri al" secenegini sessizce yok eder (2026-09-24 canli bulgu).
+                        await runs.AppendMessageAsync(run.Id, new Message(DateTimeOffset.UtcNow, MessageKind.Note, "system", a.Agent,
+                            $"Anlık görüntü alınamadı: {why}. Bu adım için 'geri al' seçeneği sunulamaz; iş sürüyor.", Stage: a.Stage.Id, Task: a.Task.Id, Subject: "snapshot"), ct).ConfigureAwait(false);
+                    }
+
                     // Tek sorgu: hem bu gorevin son denemesi hem calismanin ilk anlik goruntusu ayni faz listesinden okunur.
                     var runPhases = await runs.ReadRunPhasesAsync(run.Id, ct).ConfigureAwait(false);
                     // Onceki deneme yarida kesildiyse (zaman asimi, yeniden baslatma) dizinde onun isi var: ajan bastan yazmasin, devam etsin.

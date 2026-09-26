@@ -93,6 +93,23 @@ public sealed class WorkspaceSnapshotTests : IDisposable
         Assert.True(File.Exists(index), "IDE dizini geri donuste silinmemeli");
     }
 
+    /// <summary>Kaynak dosya kilitliyse goruntu alinamaz: neden gosterilebilir halde tutulur, sonraki basarili goruntu onu siler.</summary>
+    [Fact]
+    public async Task Alinamayan_goruntunun_nedeni_okunur_basarida_temizlenir()
+    {
+        var locked = Path.Combine(_work, "Kilitli.cs");
+        await File.WriteAllTextAsync(locked, "x", Ct);
+
+        using (new FileStream(locked, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.Null(await _snap.TrackAsync(_work, Ct));
+        }
+
+        Assert.StartsWith("git add", _snap.LastTrackFailure(_work), StringComparison.Ordinal);
+        Assert.NotNull(await _snap.TrackAsync(_work, Ct));
+        Assert.Null(_snap.LastTrackFailure(_work));
+    }
+
     /// <summary>
     /// Paket/derleme ciktilari (node_modules, bin, obj) her adimda hash'lenip saklaniyordu (ilk goruntu ~260 MB). Artik
     /// goruntuye girmez; geri donus kaynagi dondurur, bu dizinlere dokunmaz (silmez, eski hale de cekmez).

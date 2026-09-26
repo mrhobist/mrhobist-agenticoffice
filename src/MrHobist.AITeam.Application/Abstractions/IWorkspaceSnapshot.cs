@@ -32,6 +32,13 @@ public interface IWorkspaceSnapshot
 
     /// <summary>Bir dosyanin o goruntudeki metni; yoksa ya da okunamazsa <c>null</c>.</summary>
     Task<string?> ReadAsync(string workDir, string snapshot, string path, CancellationToken ct);
+
+    /// <summary>
+    /// Bu dizin icin son <see cref="TrackAsync"/> neden alinamadi (kisa, kullaniciya gosterilebilir; sir yok). Alindiysa ya da
+    /// bilinmiyorsa null. 2026-09-24'e kadar neden yalniz konsol loguna dusuyordu: canli projede 23 Eylul'den beri hic goruntu
+    /// alinmamisti ve kimse gormemisti.
+    /// </summary>
+    string? LastTrackFailure(string workDir) => null;
 }
 
 /// <summary>Iki goruntu arasinda degisen bir dosya. <see cref="Status"/>: <c>A</c> eklendi · <c>M</c> degisti · <c>D</c> silindi. Ikili dosyada satir sayilari 0.</summary>

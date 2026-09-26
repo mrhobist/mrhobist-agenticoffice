@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -41,6 +42,12 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
 
     private readonly ILogger _log = logger ?? NullLogger<GitWorkspaceSnapshot>.Instance;
 
+    /// <summary>Golge depo (gitDir) → son git hatasi. Bellekte, yalniz gosterim icin: kalici durum degil.</summary>
+    private readonly ConcurrentDictionary<string, string> _failures = new(StringComparer.OrdinalIgnoreCase);
+
+    public string? LastTrackFailure(string workDir)
+        => string.IsNullOrWhiteSpace(workDir) ? null : _failures.GetValueOrDefault(GitDirFor(workDir));
+
     public async Task<string?> TrackAsync(string workDir, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(workDir) || !Directory.Exists(workDir))
@@ -48,9 +55,10 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
             return null;
         }
 
+        var gitDir = GitDirFor(workDir);
+        _failures.TryRemove(gitDir, out _);
         try
         {
-            var gitDir = GitDirFor(workDir);
             if (!Directory.Exists(Path.Combine(gitDir, "objects")))
             {
                 Directory.CreateDirectory(gitDir);
@@ -91,6 +99,7 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {
             SnapshotLog.TrackFailed(_log, ex, workDir);
+            _failures[gitDir] = ex.Message;
             return null; // Anlik goruntu bir kolayliktir; alinamamasi calismayi durdurmaz.
         }
     }
@@ -265,6 +274,7 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
         using var proc = Process.Start(psi);
         if (proc is null)
         {
+            _failures[gitDir] = "git başlatılamadı";
             return null; // git kurulu degil.
         }
 
@@ -287,6 +297,7 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
             }
 
             SnapshotLog.GitTimedOut(_log, string.Join(' ', args), limit.TotalSeconds);
+            _failures[gitDir] = $"git {args.FirstOrDefault()} {limit.TotalSeconds:0} sn içinde bitmedi";
             return null;
         }
 
@@ -295,7 +306,10 @@ public sealed class GitWorkspaceSnapshot(StoragePaths paths, ILogger<GitWorkspac
             return await stdout.ConfigureAwait(false);
         }
 
-        SnapshotLog.GitFailed(_log, string.Join(' ', args), proc.ExitCode, (await stderr.ConfigureAwait(false)).Trim());
+        var error = (await stderr.ConfigureAwait(false)).Trim();
+        SnapshotLog.GitFailed(_log, string.Join(' ', args), proc.ExitCode, error);
+        // Ilk satir yeter ("error: open(...): Permission denied"); tam metin logda.
+        _failures[gitDir] = $"git {args.FirstOrDefault()} ({proc.ExitCode}): {error.Split('\n', 2)[0].Trim()}";
         return null;
     }
 
