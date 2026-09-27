@@ -77,6 +77,9 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `project.launch_missing` | 404 | `launch`: proje kökünde `run.cmd` yok |
 | `project.launch_failed` | 400 | `launch`: başlatıcı süreç açılamadı |
 | `project.invalid_color` | 400 | `color` `#rrggbb` değil |
+| `project.dir_not_found` | 404 | `inspect` / `import`: klasör diskte yok |
+| `project.dir_in_use` | 409 | `import` / `POST` / `PUT /projects`: klasör başka bir projenin hedef dizini (iki proje aynı klasöre yazamaz) |
+| `project.dir_reserved` | 400 | `inspect` / `import` / `POST` / `PUT /projects`: sürücülü tam yol ofisin kendi deposu, onun iç klasörü ya da onu içeren üst klasör (ajan `config/`, `src/`, `data/`'ya yazabilirdi) |
 | `project.budget_invalid` | Proje bütçesi sıfır ya da negatif verildi; sınırsız için alan boş bırakılır | 400 |
 | `project.budget_exceeded` | Proje bütçesi dolu: yeni iş başlamaz, süren iş `BudgetExceeded` olur | 400 |
 | `config.file_missing` | 404/500 | Yapılandırma dosyası yok |

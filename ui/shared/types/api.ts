@@ -1669,6 +1669,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectInspection"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImportProjectRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{key}": {
         parameters: {
             query?: never;
@@ -1749,6 +1823,43 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectInspection"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2292,6 +2403,11 @@ export interface components {
             mcp?: null | string[];
             sprite?: null | string;
             exploreModel?: null | string;
+            /**
+             * Format: int32
+             * @default 1
+             */
+            maxInstances: number | string;
         };
         AgentListItem: {
             key: string;
@@ -2357,6 +2473,8 @@ export interface components {
             mcp?: null | string[];
             sprite?: null | string;
             exploreModel?: null | string;
+            /** Format: int32 */
+            maxInstances?: null | number | string;
         };
         CreateProjectRequest: {
             key: string;
@@ -2376,6 +2494,7 @@ export interface components {
             path: string;
             parent: null | string;
             dirs: components["schemas"]["WorkspaceDirectory"][];
+            drives?: null | string[];
         };
         /** Format: binary */
         IFormFile: string;
@@ -2383,6 +2502,18 @@ export interface components {
         ImportMarkdownRequest: {
             key: string;
             markdown: string;
+        };
+        ImportProjectRequest: {
+            path: string;
+            key?: null | string;
+            title?: null | string;
+            description?: null | string;
+            workflow?: null | string;
+            color?: null | string;
+            /** Format: double */
+            maxCostUsd?: null | number | string;
+            /** Format: int64 */
+            maxTokens?: null | number | string;
         };
         InboxItem: {
             runId: string;
@@ -2405,6 +2536,14 @@ export interface components {
         KnowledgeModel: {
             title: null | string;
             body: string;
+        };
+        LanguageShare: {
+            name: string;
+            color: string;
+            /** Format: int64 */
+            bytes: number | string;
+            /** Format: double */
+            percent: number | string;
         };
         LiveContextPart: {
             name: string;
@@ -2488,6 +2627,7 @@ export interface components {
             official: boolean;
             docsUrl?: null | string;
             notes?: null | string;
+            default?: null | components["schemas"]["McpDefaultInstall"];
         };
         McpCatalogField: {
             name: string;
@@ -2503,6 +2643,15 @@ export interface components {
             default?: null | string;
             choices?: null | string[];
             header?: null | string;
+        };
+        McpDefaultInstall: {
+            option: string;
+            values?: null | {
+                [key: string]: string;
+            };
+            tools?: null | string[];
+            /** @default false */
+            grantNewAgents: boolean;
         };
         /**
          * @default env
@@ -2666,6 +2815,7 @@ export interface components {
             detail?: null | string;
             cause?: null | components["schemas"]["PhaseCause"];
             snapshot?: null | string;
+            worker?: null | string;
             isSystemFailure?: boolean;
             isCutShort?: boolean;
         };
@@ -2739,6 +2889,24 @@ export interface components {
             /** Format: int32 */
             runsDeleted: number | string;
             filesDeleted: boolean;
+        };
+        ProjectInspection: {
+            path: string;
+            isGit: boolean;
+            gitBranch: null | string;
+            gitRemote: null | string;
+            /** Format: int32 */
+            files: number | string;
+            /** Format: int64 */
+            bytes: number | string;
+            truncated: boolean;
+            languages: components["schemas"]["LanguageShare"][];
+            manifests: string[];
+            launchable: boolean;
+            suggestedKey: string;
+            suggestedTitle: string;
+            suggestedDescription: string;
+            usedBy: null | string;
         };
         ProjectModel: {
             title: string;
@@ -3121,6 +3289,7 @@ export interface components {
             peakContextTokens?: null | number | string;
             cacheTtl?: null | string;
             modelUsage?: null | components["schemas"]["ModelTokens"][];
+            worker?: null | string;
         };
         UpdateAgentRequest: {
             name: string;
@@ -3135,6 +3304,8 @@ export interface components {
             mcp?: null | string[];
             sprite?: null | string;
             exploreModel?: null | string;
+            /** Format: int32 */
+            maxInstances?: null | number | string;
         };
         UsageItem: {
             provider: string;

@@ -264,9 +264,48 @@ export interface LaunchResult { key: string; processId: number; launcher: string
 /** DELETE /api/v1/projects/{key}?deleteFiles= yaniti: gecmis projeyle gitti; dosyalar istendiyse ve varsa silindi. */
 export interface ProjectDeleteResult { key: string; targetDir: string; runsDeleted: number; filesDeleted: boolean }
 
-/** GET /api/v1/projects/dirs?path= — klasor secicinin bir seviyesi (depo kokune gore yollar). */
+/**
+ * GET /api/v1/projects/dirs?path= — klasor secicinin bir seviyesi. Yollar depo icinde goreli, depo disinda suruculu tam yol
+ * (2026-09-26: iceri alma icin depo disi da gezilir). `drives` hazir surucu kokleri (`C:/`).
+ */
 export interface WorkspaceDirectory { name: string; path: string }
-export interface DirectoryListing { path: string; parent: string | null; dirs: WorkspaceDirectory[] }
+export interface DirectoryListing { path: string; parent: string | null; dirs: WorkspaceDirectory[]; drives?: string[] | null }
+
+/** Bir dilin payi (GitHub'daki dil seridi gibi): linguist rengi, bayt, yuzde (bir ondalik). */
+export interface LanguageShare { name: string; color: string; bytes: number; percent: number }
+
+/**
+ * GET /api/v1/projects/inspect?path= ve /projects/{key}/inspect — klasorde zaten ne var (docs/DOMAIN.md → Projeyi iceri alma).
+ * `usedBy`: klasor (ya da ic/dis klasoru) baska bir projenin; iceri alma 409 project.dir_in_use verir.
+ */
+export interface ProjectInspection {
+  path: string
+  isGit: boolean
+  gitBranch: string | null
+  gitRemote: string | null
+  files: number
+  bytes: number
+  truncated: boolean
+  languages: LanguageShare[]
+  manifests: string[]
+  launchable: boolean
+  suggestedKey: string
+  suggestedTitle: string
+  suggestedDescription: string
+  usedBy: string | null
+}
+
+/** POST /api/v1/projects/import govdesi: yalniz path zorunlu, bos alanlar incelemenin onerisinden gelir. */
+export interface ImportProjectRequest {
+  path: string
+  key?: string | null
+  title?: string | null
+  description?: string | null
+  workflow?: string | null
+  color?: string | null
+  maxCostUsd?: number | null
+  maxTokens?: number | null
+}
 
 /** POST /api/v1/projects govdesi. */
 export interface CreateProjectRequest {

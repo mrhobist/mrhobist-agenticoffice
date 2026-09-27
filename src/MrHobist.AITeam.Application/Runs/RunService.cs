@@ -63,7 +63,8 @@ public sealed class RunService(
     IRunScheduler scheduler,
     IHistoryCompactor? compactor = null,
     IWorkspaceSnapshot? snapshots = null,
-    IAttachmentStore? attachments = null) : IRunService
+    IAttachmentStore? attachments = null,
+    IWorkspaceInspector? inspector = null) : IRunService
 {
     private const string PlanRevisionSubject = "plan-revision";
 
@@ -322,7 +323,9 @@ public sealed class RunService(
         var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
         var knowledge = team.Agents.Values.SelectMany(x => x.Includes).Distinct(StringComparer.Ordinal)
             .Where(team.Knowledge.ContainsKey).Select(k => team.Knowledge[k]).ToList();
-        var list = new List<RuntimeMessage> { new("user", Prompts.AnalystBrief(run, wf, root, knowledge, AttachmentsOf(run))) };
+        // Dizinde ne var (2026-09-26): iceri alinan projede ajan "sifirdan kur" sanmasin. Tarama hata firlatmaz; yoksa bolum yazilmaz.
+        var existing = inspector is null ? null : await inspector.ScanAsync(root, ct).ConfigureAwait(false);
+        var list = new List<RuntimeMessage> { new("user", Prompts.AnalystBrief(run, wf, root, knowledge, AttachmentsOf(run), existing)) };
 
         var turns = (await runs.ReadTurnsAsync(run.Id, analyze.Role, ct).ConfigureAwait(false))
             .Where(t => t.Stage == analyze.Id && !string.IsNullOrWhiteSpace(t.Output))

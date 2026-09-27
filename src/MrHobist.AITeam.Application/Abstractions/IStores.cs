@@ -162,14 +162,55 @@ public interface IWorkspaceLocator
     /// Depo icindeki klasorler (klasor secici icin; kullanici karari 2026-09-20: hedef dizin serbest metin degil).
     /// <paramref name="relativePath"/> depo kokune gore (<c>""</c> = kok); gizli ve uretilen klasorler (<c>.git</c>,
     /// <c>node_modules</c>, <c>bin</c>, <c>obj</c>, <c>.venv</c>…) listelenmez. Disari cikan yol <c>project.target_dir_invalid</c>.
+    /// 2026-09-26'dan beri suruculu tam yol da gezilir (surucu koku <c>C:/</c> dahil): iceri alinacak proje depo disindadir.
+    /// Erisilemeyen klasorler ve sistem/gizli klasorler atlanir.
     /// </summary>
     IReadOnlyList<WorkspaceDirectory> ListDirectories(string? relativePath);
 
     /// <summary>Projenin hedef dizinini icerigiyle siler; yoksa false. Depo disina cikamaz (RootOf ile ayni kural).</summary>
     bool DeleteRoot(Project project);
+
+    /// <summary>
+    /// Hedef dizin degerinin (depo icinde goreli ya da suruculu tam yol) mutlak yolu; dizini OLUSTURMAZ. Iki projenin ayni
+    /// klasore baglanip baglanmadigi ve iceri alinacak klasorun varligi buna bakilarak anlasilir (2026-09-26).
+    /// </summary>
+    string PathOf(string targetDir);
+
+    /// <summary>Hazir surucu kokleri (<c>C:/</c>, <c>D:/</c>): klasor secicinin depo disi gezinmesi baslangici (2026-09-26).</summary>
+    IReadOnlyList<string> Drives();
 }
 
-/// <summary>Klasor secicinin bir satiri: ad ve depo kokune gore yol (ileri bolu).</summary>
+/// <summary>
+/// Bir dizinde zaten ne var (kullanici istegi 2026-09-26: baslamis projeyi iceri alip devam ettirmek). Yalniz OKUR:
+/// dosya listesi (git deposuysa <c>git ls-files</c>, degilse <see cref="Codebase.SkippedDirs"/> budanarak yurunur), dal ve
+/// uzak depo, oneri icin <c>package.json</c> ve README'nin basi. Siniflama <see cref="Codebase"/>'de (saf).
+/// Hata firlatmaz: okunamayan kisim bos gelir -- tarama istemi zenginlestirir, calismayi durduramaz.
+/// </summary>
+public interface IWorkspaceInspector
+{
+    Task<WorkspaceScan> ScanAsync(string root, CancellationToken ct);
+}
+
+/// <summary>
+/// Tarama sonucu: dosya listesi degil, OLCULMUS hali (<see cref="Codebase"/>) ve oneri. Ham liste (monorepoda 50 bin yol)
+/// tarayicidan cikmaz; onbellekte de yalniz bu kucuk ozet durur. <see cref="Truncated"/>: dosya siniri asildi, olcu ilk
+/// parcaya gore. <see cref="GitRemote"/> kimlik bilgisi AYIKLANMIS adres (<c>https://kullanici:belirtec@</c> kismi hic
+/// tasinmaz). <see cref="GitBranch"/> kopuk HEAD'de kisa hash. <c>Suggested*</c>: <see cref="ProjectSuggestion.From"/>.
+/// </summary>
+public sealed record WorkspaceScan(
+    bool Exists,
+    Codebase Code,
+    bool Truncated,
+    bool IsGit,
+    string? GitBranch,
+    string? GitRemote,
+    string SuggestedTitle,
+    string SuggestedDescription)
+{
+    public static readonly WorkspaceScan Missing = new(false, Codebase.Empty, false, false, null, null, "", "");
+}
+
+/// <summary>Klasor secicinin bir satiri: ad ve yol (depo icinde goreli, depo disinda suruculu tam yol; ileri bolu).</summary>
 public sealed record WorkspaceDirectory(string Name, string Path);
 
 /// <summary>

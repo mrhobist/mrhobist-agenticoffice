@@ -1147,3 +1147,44 @@ görünmesin, iş verildikçe çoğalsınlar". DOMAIN → Kopyalar, SCENE → Ko
   Dev Kadro 2/3" belirdi; kopya 2 "boşta" → ~20 s sonra listeden düştü; kopyaya tıklama ana ajanın panelini açtı.
 - **Ölçülmedi:** gerçek paralel koşu (2+ projeye aynı anda iş). **Aşama 2 (açık):** kopyanın başka bir kopyayı yardımcı
   alt ajan olarak çağırması.
+
+## Projeyi içeri alma + dil şeridi (2026-09-26, kullanıcı isteği) ✅ canlı ajan koşusu ölçülmedi
+
+Kullanıcı: "projede kullanılan diller (GitHub'daki gibi) ve proje içeri alma; hep sıfır proje düşündük ama başlamış projeleri
+içeri alıp devam ettirebilmeliyiz". DOMAIN → Projeyi içeri alma ve dil şeridi.
+
+- **Yapılan:** `Domain/Projects/Codebase` (linguist özü dil ölçüsü, manifest, öneri) · `IWorkspaceInspector` +
+  `WorkspaceInspector` (git ls-files / yürüyüş, dal, kimliksiz remote) · `GET /projects/inspect`, `POST /projects/import`,
+  `GET /projects/{key}/inspect` · klasör seçici depo dışını gezer · bir klasör bir proje kuralı (`project.dir_in_use`, iç/dış
+  klasör dahil) · analiz isteminde "# Mevcut kod" bölümü · UI: Yeni proje → "Mevcut projeyi içeri al" (önizleme: şerit,
+  git, derleme dosyaları, run.cmd, çakışma), panelde şerit + lejant, ray kartında ince şerit.
+- **Yan düzeltmeler:** `C:` gibi sürücüye göreli yol çalışma dizinine çözülüp "depo içi" sayılabiliyordu → reddedilir; yeni
+  proje formunda anahtarın `pattern`'i tarayıcının `v` bayraklı regex'inde geçersizdi (doğrulama sessizce hiç çalışmıyordu) → `\-`.
+- **Doğrulama:** 60 birim (7 yeni: dil payı, eleme, `.h`, boş dizin, dil satırı, öneri, anahtar) + 187 servis testi (6 yeni:
+  depo dışı içeri alma ve çakışmalar, öneri/anahtar çakışması, 404/400, depo dışı gezinme, gerçek git ile gitignore + dal +
+  kimliksiz remote, istem bölümü); Api `-warnaserror` temiz; UI typecheck temiz. Canlı: bu depo 0,19 sn (git, 327 dosya,
+  C# %51,4 · Vue %21,9 · TypeScript %15,6 · Python %10,2), `MrHobist.Appointo` UI'dan içeri alındı (175 dosya; git başka Windows kullanıcısında
+  "dubious ownership" → yürüyüşe düştü, dal yine okundu), iç klasörü 409.
+- **Ölçülmedi:** içeri alınmış projede gerçek bir ajan koşusu (runtime kapalıydı): "# Mevcut kod" bölümünün planı ve
+  kod-okuma turlarını ne kadar değiştirdiği. Sonraki adım: aynı brief'i içeri alınmış bir projede bölümlü/bölümsüz koşup
+  analiz turlarını karşılaştırmak.
+- **Açık:** `.gitattributes` (`linguist-vendored`/`linguist-generated`) okunmuyor; yürüyüş yolunda `.gitignore` okunmuyor.
+
+### İnceleme düzeltmeleri (2026-09-27, kullanıcı: "tümü için fix, özellikle önbellek")
+
+- **Ofis deposu bağlanamaz:** sürücülü tam yol ofis deposu, iç klasörü ya da onu içeren üst klasör olamaz → `project.dir_reserved`
+  (400, `WorkspaceLocator.Resolve`). Önce `C:/…/MrHobist.AITeam` içeri alınabiliyordu; ajan `config/`, `src/`, `data/`'ya yazabilirdi.
+- **Önbellek:** tarayıcı artık ham dosya listesini değil ölçülmüş özeti (`WorkspaceScan.Code`, öneri) döner ve tutar; süresi dolan
+  kayıt her yazımda atılır. Önce gezilen her klasörün 50 bin yollu listesi süreç ömrü boyunca bellekte kalıyordu. **Token ile ilgisi
+  yok (doğrulandı):** önbellek yalnız disk taramasını tekrarlamamak için; istem metni aynı ölçüden üretilir, analiz revizyonları
+  30 sn'den çok sonra geldiği için önbellek istem ön ekini zaten etkilemiyordu.
+- **Dayanıklılık:** yürüyüşte tarama sırasında silinen klasör taramayı düşürmüyor (önce istisna analiz adımını Failed yapıyordu).
+- **Okuma uçları diske yazmaz:** proje listesi ve `/{key}/inspect` `RootOf` yerine `PathOf`; eksik dizin oluşmaz, bariyer yazılmaz.
+- **Ray:** 60 sn'lik tüm proje taraması kalktı; şerit iş/çalışan sayısı değişince tazelenir (ölçüldü: 4 yoklamada proje başına 1 `/inspect`).
+- **Sürücü listesi:** ağ sürücüsünde `IsReady` sorulmaz (kopuk eşlenmiş sürücü her klasör tıklamasını bekletiyordu).
+- **Sadeleştirme:** içeri almadaki çift klasör kontrolü kalktı (`CreateAsync` denetler); sürücü/yol ayrıştırması tek yerde
+  (`Project.NormalizeDir`/`IsDriveRoot`); `Prompts`'taki sahipsiz `<summary>` `RevisionNote`'a taşındı.
+- **Değişmedi:** `types.ts`'deki elle nesne tipleri — üretilen şemada sayılar `number | string`; dosya başlığı bunu belgeliyor.
+- **Doğrulama:** 60 birim + 189 servis testi (2 yeni: ofis deposu reddi, okuma uçlarının dizin oluşturmaması); `-warnaserror` temiz;
+  UI typecheck temiz. Ayrı veri klasörlü Api + UI ile canlı: depo kökü ve üstü 400 `project.dir_reserved`, içeri alma 201, iç klasör
+  409, liste + inceleme sonrası `taze` klasörü oluşmadı, ray şeridi göründü.

@@ -1,4 +1,5 @@
 using System.Text;
+using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Domain.Agents;
 using MrHobist.AITeam.Domain.Runs;
 using MrHobist.AITeam.Domain.Workflows;
@@ -18,7 +19,7 @@ public sealed record PriorTask(string Id, string Title, string Report);
 public static class Prompts
 {
     /// <summary>Analistin ilk mesaji: brief, proje dizini, akis, beklenen sema.</summary>
-    public static string AnalystBrief(Run run, Workflow wf, string projectRoot, IReadOnlyList<Knowledge>? knowledge = null, AttachmentContext? attachments = null)
+    public static string AnalystBrief(Run run, Workflow wf, string projectRoot, IReadOnlyList<Knowledge>? knowledge = null, AttachmentContext? attachments = null, WorkspaceScan? existing = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(wf);
@@ -32,7 +33,15 @@ public static class Prompts
 
         sb.AppendLine("# Proje dizini");
         sb.AppendLine($"Tüm dosyalar şu dizinin İÇİNDE yaşar: `{projectRoot}`. Plandaki dosya yolları bu dizine göre GÖRELİ yazılır (ör. `src/App/Program.cs`), dizinin adı yola eklenmez, dışına çıkılmaz.");
-        sb.AppendLine("Dizinde zaten kod olabilir; okuma araçların varsa önce bak, var olanın üstüne planla.").AppendLine();
+        if (existing is { Exists: true, Code.IsEmpty: false })
+        {
+            AppendExistingCode(sb, existing);
+        }
+        else
+        {
+            sb.AppendLine("Dizinde zaten kod olabilir; okuma araçların varsa önce bak, var olanın üstüne planla.").AppendLine();
+        }
+
         sb.AppendLine("# İş akışı");
         sb.AppendLine("Her görev sırayla şu adımlardan geçer: " + string.Join(" → ", wf.TaskStages.Select(s => $"{s.Title} ({s.Role})")) + ".");
         sb.AppendLine("Sen yalnız planı üretirsin; kod yazmazsın.").AppendLine();
@@ -64,7 +73,33 @@ public static class Prompts
         return sb.ToString();
     }
 
-    /// <summary>Kullanicinin revize notu, analistin gecmisine kullanici mesaji olarak eklenir.</summary>
+    /// <summary>
+    /// Dizin bos degil (2026-09-26, iceri alinan proje ya da ofisin onceki isleri): ajan "sifirdan kur" sanmasin. Dil payi,
+    /// derleme dosyalari ve git bilgisi taramadan gelir -- ajan bunlari bulmak icin dizini dolasmak zorunda kalmaz; ama
+    /// koda bakmadan plan yapmasin diye okumasi gerekenler acikca yazilir. Projenin kendi git gecmisi kullanicinindir.
+    /// </summary>
+    private static void AppendExistingCode(StringBuilder sb, WorkspaceScan scan)
+    {
+        var code = scan.Code;
+        sb.AppendLine("# Mevcut kod");
+        sb.Append("Dizin boş değil — bu bir DEVAM işi: ").Append(code.Files).Append(" dosya");
+        sb.Append(scan.Truncated ? " (sınır aşıldı, ilk kısım sayıldı)" : "");
+        sb.Append(code.Languages.Count > 0 ? $", diller: {code.LanguageLine()}" : "").AppendLine(".");
+        if (code.Manifests.Count > 0)
+        {
+            sb.AppendLine("Derleme/paket dosyaları: " + string.Join(", ", code.Manifests.Select(m => $"`{m}`")) + ".");
+        }
+
+        if (scan.IsGit)
+        {
+            sb.Append("Proje kendi git deposu").Append(scan.GitBranch is { } b ? $" (`{b}` dalı)" : "")
+              .AppendLine(": geçmişi kullanıcınındır. Brief istemedikçe commit atma, dal açma/değiştirme, push yapma; `.gitignore`'a uy.");
+        }
+
+        sb.AppendLine("Var olan yapıyı, adlandırmayı, klasör düzenini ve derleme/test komutlarını KORU; brief istemedikçe yeniden yazma, taşıma, çatı ya da sürüm değiştirme.");
+        sb.AppendLine("Planlamadan önce giriş noktalarını ve yukarıdaki derleme dosyalarını oku; kabul ölçütleri projenin KENDİ komutlarıyla çalışsın.").AppendLine();
+    }
+
     /// <summary>
     /// Plani onaylayan ajanin istemi (akis <c>planApprover</c> verdiginde insanin yerine gecer).
     /// Kod yazdirmaz, dosya okutmaz: karar PLANIN kendisi uzerine verilir.
@@ -106,6 +141,7 @@ public static class Prompts
         return sb.ToString();
     }
 
+    /// <summary>Kullanicinin revize notu, analistin gecmisine kullanici mesaji olarak eklenir.</summary>
     public static string RevisionNote(string note)
         => $"# Revize notu\n{note}\n\nPlanı bu nota göre güncelle; değişmeyen kısımları koru. Aynı şemayla planın tamamını yeniden ver.";
 
@@ -395,7 +431,7 @@ public static class Prompts
 
         sb.AppendLine("Önce dizine bak (Glob/Read); var olan dosyayı ezmeden değiştir. Kabul ölçütlerindeki komutları FİİLEN çalıştır ve geçtiğini gör.");
         // Var olan bir depoya (kendi CLAUDE.md'si, kendi baslatma yolu olan) run.cmd eklemek o depoyu kirletiyordu (2026-09-23).
-        sb.AppendLine("Ofisteki \"Projeyi başlat\" düğmesi proje kökündeki `run.cmd` dosyasını YENİ BİR KONSOL PENCERESİNDE çalıştırır. Uygulamayı SIFIRDAN kuruyorsan, çalıştırılabilir hâle gelince bu dosyayı yaz ya da güncelle. "
+        sb.AppendLine("Ofisteki \"Projeyi başlat\" düğmesi proje kökündeki `run.cmd` dosyasını YENİ BİR KONSOL PENCERESİNDE çalıştırır. Dosya yoksa ve uygulama çalıştırılabilir hâldeyse yaz (içeri alınmış projede de); varsa güncel tut. "
             + "Kendi başlatma yolu olan var olan bir depoda (kökte `CLAUDE.md`, betikler, launch ayarları) `run.cmd` yoksa EKLEME — o depo kullanıcının kendi yoluyla başlatılır. "
             + "İçeriği ASCII olsun; `@echo off`, `cd /d \"%~dp0\"`, sonra uygulamayı başlatan komut (konsol uygulaması: `dotnet run --project ...` ve bitince `pause`; web: sunucuyu başlat ve `start http://127.0.0.1:PORT`; masaüstü/oyun: exe). Kurulum gereken projede (npm install, restore) bunu da run.cmd yapsın.");
         sb.AppendLine("Kural çelişkisi ya da eksik bilgi varsa TAHMİN ETME: blocked=true ve question ile sor; işi yarım bırak.");

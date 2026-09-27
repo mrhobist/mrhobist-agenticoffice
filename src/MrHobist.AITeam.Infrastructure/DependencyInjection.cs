@@ -60,6 +60,7 @@ public static class DependencyInjection
         services.AddSingleton<IUsageReader, UsageReader>();
         services.AddSingleton<ISpendReader, SpendReader>();
         services.AddSingleton<IWorkspaceLocator, WorkspaceLocator>();
+        services.AddSingleton<IWorkspaceInspector, WorkspaceInspector>();
         services.AddSingleton<IProjectLauncher, WindowsProjectLauncher>();
         services.AddSingleton<LimitGuard>();
         services.AddSingleton(RetryPolicy.Default);

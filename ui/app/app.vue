@@ -107,6 +107,7 @@
           <span class="card-meta">{{ p.runs }} iş<template v-if="p.running"> · <b class="run-n">{{ p.running }} çalışıyor</b></template><template v-if="p.paused"> · {{ p.paused }} durakladı</template> · {{ fmtCost(p.totalCostUsd) }}<template v-if="projectTokens(p)"> · {{ fmtTokens(projectTokens(p)) }} tk</template></span>
           <span v-if="inboxOfProject(p.key)" class="card-ask"><Ico name="bell" :size="12" /> {{ inboxOfProject(p.key) }} senden bekliyor</span>
           <span v-else-if="p.lastActivityAt" class="card-detail">son hareket {{ fmtAgo(p.lastActivityAt) }}</span>
+          <LangBar v-if="langs[p.key]?.length" class="card-langs" :languages="langs[p.key]!" compact />
         </button>
         <p v-if="!projects.length" class="rail-empty">Henüz proje yok. "+" ile ilk projeyi aç; işler onun içinde başlar.</p>
         <button type="button" class="rail-all" @click="toggleJobs">Tüm işler <b v-if="overview">{{ overview.total }}</b></button>
@@ -197,12 +198,13 @@ import McpPanel from '~/components/McpPanel.vue'
 import LimitsBar from '~/components/LimitsBar.vue'
 import JobsPanel from '~/components/JobsPanel.vue'
 import ProjectPanel from '~/components/ProjectPanel.vue'
+import LangBar from '~/components/LangBar.vue'
 import LoginPanel from '~/components/LoginPanel.vue'
 import TeamPanel from '~/components/TeamPanel.vue'
 import { useAuth } from '~/composables/useAuth'
 import type { Hud } from '~/scene/world'
 import { roleHex, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
-import type { AgentDetail, AgentListItem, InboxKind, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
+import type { AgentDetail, AgentListItem, InboxKind, LanguageShare, ProjectCard, ProjectInspection, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel, fmtCost as fmtCostLabel, fmtTokens } from '~/api/labels'
@@ -259,6 +261,22 @@ const projects = ref<ProjectCard[]>([])
 const runsList = ref<RunSummary[]>([])
 async function loadProjects() {
   try { projects.value = await api.get<ProjectCard[]>('/api/v1/projects') } catch { /* ray eski kalir */ }
+  void loadLangs()
+}
+
+/**
+ * Ray kartindaki ince dil seridi (2026-09-26, GitHub'daki gibi). Dil payi ancak bir is baslayip bitince degisir: kart ilk
+ * gorundugunde ve is sayisi / calisan sayisi degisince alinir. Zamanlayici yok (2026-09-27): 60 sn'lik tazeleme her projede
+ * git sureci + dosya basina stat demekti. Alinamayan proje, is durumu degisene kadar seritsiz kalir.
+ */
+const langs = ref<Record<string, LanguageShare[]>>({})
+const langsFor: Record<string, string> = {}
+async function loadLangs() {
+  const due = projects.value.filter(p => langsFor[p.key] !== `${p.runs}:${p.running}`)
+  if (!due.length) return
+  for (const p of due) langsFor[p.key] = `${p.runs}:${p.running}`
+  const got = await Promise.all(due.map(async p => [p.key, await api.get<ProjectInspection>(`/api/v1/projects/${encodeURIComponent(p.key)}/inspect`).then(r => r.languages, () => [])] as const))
+  langs.value = { ...langs.value, ...Object.fromEntries(got) }
 }
 async function loadRuns() {
   try { runsList.value = await api.get<RunSummary[]>('/api/v1/runs?limit=100') } catch { /* eski kalir */ }
@@ -689,6 +707,7 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .card-meta { font-size: 11px; color: #4a5068; }
 .card-ask { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #7a5a00; background: #f6e2a0; padding: 3px 8px; border-radius: 3px; margin-top: 2px; overflow: hidden; white-space: nowrap; }
 .card-detail { font-size: 10px; color: #6b7285; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-langs { margin-top: 3px; }
 .rail-empty { margin: 0; font-size: 11px; color: #d9b98f; line-height: 1.5; padding: 0 2px; }
 .rail-all {
   margin-top: auto; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 8px 10px; border-radius: 4px;

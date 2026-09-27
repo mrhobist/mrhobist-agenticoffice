@@ -82,9 +82,16 @@ public sealed record Project(
     /// </summary>
     public static bool IsExternalDir(string? dir)
     {
-        var d = (dir ?? "").Replace('\\', '/').Trim().TrimEnd('/');
+        var d = NormalizeDir(dir);
         return d.Length > 3 && char.IsAsciiLetter(d[0]) && d[1] == ':' && d[2] == '/' && !d.Contains("..", StringComparison.Ordinal);
     }
+
+    /// <summary><c>C:</c> ya da <c>C:/</c>: klasor secicide gezilir ama hedef dizin olamaz (<see cref="IsExternalDir"/> reddeder).</summary>
+    public static bool IsDriveRoot(string? dir)
+        => NormalizeDir(dir) is { Length: 2 } d && char.IsAsciiLetter(d[0]) && d[1] == ':';
+
+    /// <summary>Hedef dizin ve klasor secici yolunun tek bicimi: ters bolu → ileri bolu, bosluk ve sondaki bolu atilir.</summary>
+    public static string NormalizeDir(string? dir) => (dir ?? "").Replace('\\', '/').Trim().TrimEnd('/');
 
     /// <summary>Varsayilan hedef dizin: <c>projects/{key}</c>.</summary>
     public static string DefaultTargetDir(string key) => $"projects/{key}";

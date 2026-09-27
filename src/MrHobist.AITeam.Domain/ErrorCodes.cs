@@ -55,6 +55,15 @@ public static class ErrorCodes
     public const string ProjectLaunchMissing = "project.launch_missing";
     public const string ProjectLaunchFailed = "project.launch_failed";
     public const string ProjectInvalidColor = "project.invalid_color";
+
+    /// <summary>Iceri alma / inceleme: verilen klasor diskte yok (2026-09-26).</summary>
+    public const string ProjectDirNotFound = "project.dir_not_found";
+
+    /// <summary>Klasor zaten baska bir projenin hedef dizini: ayni klasore iki proje yazarsa sira kilidi ve golge depo karisir.</summary>
+    public const string ProjectDirInUse = "project.dir_in_use";
+
+    /// <summary>Klasor ofisin kendi deposu, onun ic klasoru ya da onu iceren bir ust klasor: ajan config/, src/, data/'ya yazabilirdi.</summary>
+    public const string ProjectDirReserved = "project.dir_reserved";
     public const string RunNotCancellable = "run.not_cancellable";
     public const string RunBudgetInvalid = "run.budget_invalid";
     public const string RunNotAwaitingInput = "run.not_awaiting_input";

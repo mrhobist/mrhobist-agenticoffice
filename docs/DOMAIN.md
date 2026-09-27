@@ -145,7 +145,11 @@ ile oku → ana akış + olumsuz yol → konsol → kapat); ajan md'si "ekran de
 - **Hedef dizin seçimi (2026-09-20, kullanıcı kararı):** serbest metin **yok**; klasör seçici `GET /projects/dirs?path=` ile depo
   içini bir seviye bir seviye gezer (`.git`, `node_modules`, `bin`, `obj`, `runs`… gizli). Seçim: var olan klasör ya da
   gezilen klasörün içinde `<key>` adlı yeni klasör. Boş = varsayılan `projects/{key}`. İlke: **serbest metin yalnız ad ve
-  açıklama alanlarında**; diğer alanlar seçici/liste.
+  açıklama alanlarında**; diğer alanlar seçici/liste. 2026-09-26'dan beri seçici sürücü köklerinden (`C:/`, `D:/`) depo
+  dışını da gezer (yalnız klasör **adları**; erişilemeyen, gizli ve sistem klasörleri atlanır); sürücü kökü gezilir ama seçilemez.
+- **Bir klasör, bir proje (2026-09-26):** iki proje aynı klasöre — ya da biri diğerinin iç/dış klasörüne — bağlanamaz
+  (409 `project.dir_in_use`; oluşturma, içeri alma ve hedef dizin değişikliğinde). Neden: aynı-proje sıra kilidi anahtara
+  göre tutulur, iki iş aynı dosyalara aynı anda yazardı; üstteki projenin "son turu geri al"ı alttakinin yazdıklarını da silerdi.
 - **Renk ve sıra (2026-09-20, kullanıcı isteği):** her projenin bir rengi (`color`, `#rrggbb`; boşsa paletten
   kullanılmayan ilk renk) ve sırası (`order`) var. Ray kartı, Kanban sekme grupları ve Kanban **"Tümü"** sekmesi
   (tüm projelerin görevleri dört Kanban şeridinde, kart rengi = proje) aynı rengi ve sırayı okur. Sıra
@@ -162,6 +166,45 @@ açar (`POST /projects/{key}/launch`, `cmd /c start … cmd /k run.cmd`). Sözle
 sunucu + `start http://127.0.0.1:PORT`, kurulum gerekiyorsa o da içinde). Dosya yoksa düğme pasif (`launchable=false`)
 ve 404 `project.launch_missing`. Süreç Api'ye bağlanmaz; çıktı pencerede, kapatmak kullanıcıda. İlk `run.cmd`
 `hello-world-console` için elle yazıldı (varsayımla ilerlenir: Windows tek platform; Linux/mac gelirse `run.sh`).
+
+### Projeyi içeri alma ve dil şeridi (2026-09-26, kullanıcı isteği)
+
+> "Hep sıfır proje düşündük; hazırda başlamış projeleri içeri alıp devam ettirebilmeliyiz" + "projede kullanılan diller, GitHub'daki gibi".
+
+- **Akış:** Yeni proje → **Mevcut projeyi içeri al** → klasör seç (depo içi ya da başka sürücü) → sunucu inceler
+  (`GET /projects/inspect?path=`) → form öneriyle dolar → `POST /projects/import`. Dosyalar **yerinde kalır**: kopyalanmaz,
+  taşınmaz, klasöre hiçbir şey yazılmaz (MSBuild bariyeri yalnız depo içi hedefte). Depo dışı klasör proje silinse de silinmez.
+- **Ofisin kendi deposu bağlanamaz (2026-09-27):** sürücülü tam yol ofis deposunun kendisi, bir iç klasörü ya da depoyu içeren üst
+  klasör olamaz (`project.dir_reserved`, 400; kontrol `WorkspaceLocator`'da, yeni proje/güncelleme/içeri alma/inceleme hepsi
+  bağlı). Aksi halde ajanın `cwd`'si ofis olurdu: `config/` (canlı yeniden yüklenir), `src/`, `data/aiteam.db`. Depo içi hedef
+  eskisi gibi göreli yazılır (`projects/{key}`).
+- **Okuma uçları diske yazmaz (2026-09-27):** proje listesi ve `GET /projects/{key}/inspect` hedef dizini oluşturmaz, bariyer
+  yazmaz; dizin yoksa (ilk iş başlamadı ya da klasör taşındı) "0 dosya" / başlatılamaz görünür. Dizini işi başlatan oluşturur.
+- **Öneri:** anahtar klasör adından (alınmışsa `-2`, `-3`…); başlık README'nin ilk `#` başlığı → `package.json` `name` →
+  klasör adı; açıklama `package.json` `description` → README'nin ilk düzyazı paragrafı (rozet/resim/liste atlanır).
+- **Dil ölçüsü (`Domain/Projects/Codebase`, saf):** GitHub linguist'in özü — pay **baytla**; yalnız programlama ve işaretleme
+  dilleri (JSON/YAML/Markdown sayılmaz); üçüncü taraf klasörleri (`node_modules`, `vendor`, `third_party`…), kökteki
+  `docs/`, her derinlikte `documentation/`/`examples/`, küçültülmüş/üretilmiş dosyalar (`*.min.js`, `*.Designer.cs`,
+  `*.pb.go`, `wwwroot/lib/`…) elenir; `.h` komşularına göre C/C++/Objective-C. Renkler linguist'in. `run.cmd` de Batchfile
+  sayılır (GitHub da sayar). Birebir linguist değil: `.gitattributes` (`linguist-vendored` vb.) okunmaz.
+- **Dosya listesi (`Infrastructure/Storage/WorkspaceInspector`):** git deposunda `git ls-files --cached --others
+  --exclude-standard` — `.gitignore`'a uyar, devam eden işin henüz commit'lenmemiş dosyaları da görünür. Git yoksa ya da
+  başarısızsa (ör. depo başka Windows kullanıcısının: "dubious ownership") klasör yürünür ve çıktı/IDE/sanal ortam klasörleri
+  budanır; bu yolda `.gitignore` okunmaz. 50 bin dosya sınırı (`truncated`). Dal ve uzak adres `.git` dosyalarından,
+  süreçsiz okunur; uzak adresteki kullanıcı bilgisi (`https://ad:belirteç@`) **atılır** — değer ekrana ve istemde gider.
+  Sonuç 30 sn bellekte: ray kartı ve proje paneli aynı dizini art arda sorar. Önbellek **yalnız disk taramasını** (git süreci +
+  dosya başına stat) tekrarlamamak içindir, token ile ilgisi yoktur: istem metni aynı ölçüden üretilir. Tutulan ham dosya
+  listesi değil, ölçülmüş özettir (diller, manifestler, öneri); süresi dolan kayıt her yazımda atılır (2026-09-27: gezilen her
+  klasörün 50 bin yollu listesi süreç ömrü boyunca bellekte kalıyordu). Tarama sırasında silinen klasör atlanır, tarama düşmez.
+- **Ajan tarafı:** analiz istemi dizin doluysa "Dizinde kod olabilir" cümlesi yerine **"# Mevcut kod"** bölümü alır: dosya
+  sayısı, dil satırı (`C# %62,1 · TypeScript %30`), derleme/paket dosyaları, git dalı; "bu bir DEVAM işi: yapıyı, adlandırmayı,
+  komutları koru; brief istemedikçe yeniden yazma/taşıma/çatı değiştirme; kabul ölçütleri projenin kendi komutlarıyla";
+  git deposunda "geçmiş kullanıcının: commit, dal, push yok". Aynı bölüm ofisin kendi önceki işleri olan projede de çıkar
+  (doğru: orada da devam işi). `run.cmd` kuralı: yoksa ve uygulama çalışır hâldeyse yaz (içeri alınmış projede de), varsa güncel tut.
+- **Görünüm:** proje panelinin İşler sekmesinde şerit + lejant (ilk 6 dil, kalanı "Diğer") ve git dalı; ray kartında ince şerit
+  (kart ilk göründüğünde ve projenin iş/çalışan sayısı değişince; zamanlayıcı yok, 5 sn yoklamasına binmez).
+- **Varsayımla ilerlenir:** klasör seçicinin tüm diskin klasör adlarını listelemesi (tek kullanıcı, loopback + giriş). Alternatif
+  (reddedilmedi): yalnız belirli köklere (ör. kullanıcı klasörü) izin veren bir ayar.
 
 ## Çalışma yaşam döngüsü
 
