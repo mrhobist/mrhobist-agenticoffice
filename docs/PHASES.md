@@ -783,3 +783,408 @@ kalibre oran eşiği taşır (Türkçe metin), depo yalnız araçsız + aynı mo
 **Ölçülmedi:** gerçek koşu yok (`data/aiteam.db`'de tur yok). Kalibrasyonun gerçek değeri ve sıkıştırmanın
 tetiklenme sıklığı ilk koşulardan sonra `context-report.py` ile okunacak; 4. adım (LLM özeti) o rakama bağlı.
 
+## Tasarım kapısı, geri alma ve ziyaretçi turu (2026-09-22) 🔶 ölçüm bekliyor
+
+### 1. Tasarım kapısı yakınsamıyordu — kök neden istemdeydi
+
+`tam-kadro` 2026-09-21'de ard arda 3 red verip **$1,70 harcadı ve tek satır kod üretmedi**. Suç
+manager'ın md'sinde sanılmıştı; asıl neden `Prompts.ReviewTask`'ın **tek bir inceleme türü** varsayması:
+
+> "Developer dosyaları bu dizine yazdı… komutları Bash ile FİİLEN çalıştır" … "Şüphedeyken reddet."
+
+`tasarim-onay` adımında ortada kod yok — tasarımcı bir rehber üretti. Manager'a olmayan bir build'i
+koşması söyleniyor, bulamıyor, sonra "şüphedeyken reddet" talimatını uyguluyordu.
+
+**Düzeltme (özel durum değil, genelleme):** inceleme istemi artık kapının **beklettiği üretici adıma**
+göre şekilleniyor — bilgi zaten tek kaynakta duruyordu (`Workflow.ProducerBefore`). `design` kapısında:
+komut koşulmaz, `testsRun=false`, ölçüt "developer bu rehberle tahmin etmeden ilerleyebilir mi", ve
+**şüphedeyken kabul** (ara kapıda red bedava değil; eksiği sonraki test adımı zaten yakalar).
+`implement` kapısında eski davranış aynen korunur, şüphedeyken red.
+
+Aynı ayrım `manager.md` (§2a ara kapı / §2b son kapı) ve `karar-ilkeleri.md`'ye de girdi. Oradaki
+**"karşılanmamış kabul ölçütü varsa hüküm RED'dir"** kuralı asıl kilitti: bir rehber kabul ölçütünü
+*karşılamaz*, onu kod karşılar — kural manager'ı reddetmeye zorluyordu. Artık yalnız son kapı için.
+Her iki kapıya ölçek kuralı eklendi: brief'in istemediği ek özellik/belge/mimari talep edilmez.
+
+### 2. Geri alma: opencode `snapshot` aktarıldı
+
+Ajanlar dosyayı kendileri yazar; red turunda yarım kalan dosyalar sonraki tura kalıyordu ve **geri
+alma yolu yoktu**. Örnek [sst/opencode](https://github.com/sst/opencode) `snapshot`: proje dizininin
+**dışında** duran bir gölge git deposu (`--git-dir` ayrı, `--work-tree` proje kökü) — kullanıcının
+kendi git geçmişine, dallarına ve staging alanına dokunulmaz, proje hiç git deposu olmasa da çalışır.
+
+Alınan: mekanizma (`track` + `restore`). Alınmayan: yama/diff/budama (opencode'da 800 satır).
+`IWorkspaceSnapshot` (Application) · `GitWorkspaceSnapshot` (Infrastructure). Her `implement` turundan
+**önce** hâl kaydedilir; tanıtıcı `Phase.Snapshot`'ta taşınır — **SQL değişikliği yok**, faz gövdesiyle
+birlikte `run_phase.data` JSON'una biner (sorgulanmıyor).
+
+**Geri alma kendiliğinden ASLA olmaz:** yarım iş çoğu zaman doğruya yakındır ve red geri bildirimi
+"şunu düzelt" der, "baştan yap" demez. Yalnız red tavanı sorusunda, yalnız kaydedilmiş bir hâl varsa
+dördüncü seçenek olarak çıkar (`choice: revert`) ve yalnız kullanıcı seçerse koşar. Dönüş başarısızsa
+ajana **"dizin dönmedi, kendin kontrol et"** notu gider: sessiz yanlış bilgilendirme olmaz.
+
+### 3. Ziyaretçi turu zenginleşti (kullanıcı kararı)
+
+Ofiste 9 masa, 10 ajan var. Karar: **masa eklenmedi**, masasız ajanın hayatı zenginleştirildi —
+kapıdan girer, kahve/pano/su/pencere duraklarından karışık sırayla 2–3'ünü gezer, içeceğini alıp
+taşır, çıkarken elini boşaltır. Başka bir ofisten uğramış gibi. Ayrıntı ve tuzağı `docs/SCENE.md`.
+
+### 4. Limit beklemesi yanlış okunuyordu
+
+Ölçüm koşusu sırasında yakalandı: haftalık kota 3 gün sonrasına sıfırlanıyordu ama mesaj yalnız
+**"07:00'de sürer"** diyordu — bugün sanılıyor. `ResumeText.For` artık bugün değilse tarihi de yazar.
+
+### Ölçülemedi — Anthropic haftalık kotası doldu
+
+`tam-kadro` koşusu başlatıldı (`20260922-052033-c45c`) ama ilk turda limit koruması devreye girdi:
+`weekly_scoped` %99, sıfırlanma **2026-09-25T04:00Z**. Çalışma `Paused` duruyor ve pencere açılınca
+kendiliğinden sürer. **Bu yüzden üç ölçüm de bekliyor:**
+
+1. tasarım kapısı düzeltmesi gerçek koşuda yakınsıyor mu,
+2. compact gerçek red döngüsünde ne kazandırıyor (hâlâ yalnız sentetik ölçüldü),
+3. `SystemPromptModes`'un ikinci veri noktası (n=1'de kazanç **sıfır** ölçülmüştü).
+
+Kod tarafı bitti ve testlerle bağlandı: **38 birim + 98 servis + 47 Python** (main ile birleştikten sonra, Windows), `verify.ps1` tüm
+adımlarda geçiyor.
+
+## Ekip sıfırlandı: tek kişilik dev kadro (2026-09-23, kullanıcı kararı) ✅
+
+Canlı `config/`'ta yalnız bir ajan ve iki ek bilgi kaldı: `tek-kisilik-dev-kadro` (eski `solo`'nun Claude Code
+gibi çalışan hâli; analist + developer, `office_roles: [pm, dev]`) ve `backend-developer` (kurumun referans
+backend deseni) + `frontend-developer-nuxt` (referans Nuxt panel deseni + `kurallar.py` denetimi grep olarak).
+Kurum ve ürün adları yer tutucudur (`<Urun>`, `<Kok>`): yerel pre-commit koruması kurum izini reddeder, ajan gerçek adları hedef koddan okur.
+`default` akışı iki adım (analiz → geliştirme), `handoffRole: null`. Sahnede tek ajan.
+
+**Eski ekip silinmedi, taşındı:** 10 ajan, 5 akış, 5 bilgi dosyası `tests/MrHobist.AITeam.ServiceTests/Fixtures/config/`
+altında testlerin sabit ekibi oldu — `StorageFixture` artık canlı `config/`'u değil bunu kopyalar. Sebep: servis
+testleri manager/tam-kadro/tasarimli'ye bağlıydı; kullanıcı ekibi değiştirdikçe testler kırılmamalı. Canlı config
+için ayrı `LiveConfigTests`: yalnız çözülebilirliği denetler (akış rolleri ve `includes` var mı), içeriği değil.
+Tam yedek ayrıca `data/backup/config-20260923-111925/` (git dışı).
+
+**Veri de temizlendi:** 11 çalışma ve 10 deneme projesi silindi (hedef dizinlerdeki dosyalara dokunulmadı);
+öncesi `data/backup/aiteam-20260923-*.db`.
+
+**Hook notu:** hedef projenin `.claude/settings.json` hook'ları ofis ajanlarında çalışmaz (runtime `setting_sources`
+vermiyor); bu yüzden frontend bilgisi denetimi ajanın kendisinin koşacağı tek `grep` olarak taşır.
+
+**Doğrulama:** 38 birim + 99 servis testi (yeni `LiveConfigTests` dahil) geçti; Api canlı config'le hatasız kalkıyor.
+
+## İlk gerçek iş — bekleyen geliştirme talepleri (2026-09-23, kullanıcı notları) 🔶 iş sürüyor
+
+İlk gerçek iş (Tek Kişilik Dev Kadro, Opus 5.5 high, hedef depo dışı klasör) koşarken kullanıcının aldırdığı notlar.
+İş bitince talep olarak ele alınacak; kapsam/öncelik o zaman netleşir.
+
+1. **Anlık düşünce akışı:** aktif iş sırasında ajanın düşüncesi (reasoning/metin) canlı okunabilsin. Maliyetsizse
+   anlık; ek maliyet doğuruyorsa gecikmeli olabilir. Bugün yalnız araç çağrıları canlı (`agent.tool` SSE), tam tur
+   metni tur bitince günlükte.
+2. **Kanbandan iş detayı:** Sprint panosundaki çalışan kartından doğrudan işin detayına (çalışma paneli, canlı
+   araç şeridi, günlük) gidilebilsin. Bugün kart yalnız alt şeritte özet gösteriyor; "Çalışmayı aç" genel düğme.
+3. **Kim ne kadar harcadı:** haftalık kota ortak — ofisteki ajan ile yöneten Claude Code oturumu aynı hesaptan
+   harcıyor. Başlangıç: haftalık %85 (11:50), eşik %90. İş sonunda ofis payı (kayıtlı turlar: token + eşdeğer $)
+   ile oturum payı ayrıştırılıp raporlanacak; ayrışmayan kısım "ölçülemedi" diye yazılır.
+4. **Ajan bağlamını görmek:** çalışan ajanın o an elindeki bağlam (sistem istemi + ek bilgiler + görev bağlamı +
+   geçmiş, boyutuyla) görülebilsin. Bugün tam istem yalnız tur bitince günlükte; tur sürerken görünmüyor.
+5. **"Çalışıyor" gerçekten çalışıyor mu:** 12:20'de tur kesildi ama kayıt "Çalışıyor" kaldı, ekran bunu ayırt
+   edemedi (kullanıcı fark etti). Canlılık göstergesi gerekir: son araç çağrısından bu yana geçen süre, ajan
+   süreci yaşıyor mu. Kök hata düzeltildi (aşağıda), gösterge talep olarak duruyor.
+
+Koşu sırasında çıkan ve düzeltilen hatalar (ayrıntı commit'lerde): limit koruması modele özel pencereyi herkese
+uyguluyordu / tüm-modeller penceresini saymıyordu (`3cee1ad`); depo dışı hedef dizin (`d047c70`); uzun sistem istemi
+Windows komut satırını aşıp "Access is denied" veriyordu (`045fbfb`); düşen işte "Yeniden dene" görünmüyordu (`045fbfb`).
+12 dk'lık runtime zaman aşımı geliştirme turunu kesti; `TaskCanceledException` iş kanalında "kullanıcı iptali"
+sanılıp yutuldu, çalışma sessizce Running'de asılı kaldı. Zaman aşımı artık görünür hata (`RuntimeErrorException`,
+iş Failed → "Yeniden dene"). Ajan t1'i yine de bitirmişti: diskte build temiz, 22 test geçiyor.
+
+**Zaman aşımı yaşanmasın, yaşanırsa devam edilsin (kullanıcı isteği, aynı gün):**
+- **Sabit süre yerine tur bekçisi** (`TurnWatch`, `AgentCaller`): ajan araç çağırdıkça sayaç sıfırlanır; 15 dk hiç hareket
+  yoksa ya da tur 180 dk'ya dayanırsa kesilir. HTTP süresi (200 dk) yalnız son emniyet. Çalışan uzun tur artık kesilmez.
+- **Kesilme görünür:** faz `Timeout` nedeniyle (sistem, tur sayılmaz) kapanır, çalışma Failed; ayrıntıda "yazılanlar diskte,
+  Yeniden dene kaldığı yerden sürdürür". `PhaseCause.Timeout` sona eklendi (§5), UI tipleri üretildi.
+- **Devam et:** önceki denemesi yarıda kesilen görev (`Phase.IsCutShort`: zaman aşımı, yeniden başlatma, çağrı sırasında
+  limit) yeniden koşarken ajana "DEVAM: baştan yazma, durumu çıkar, eksikleri tamamla" notu gider. Aynı turu iki kez ödememek için.
+- Test: hareketsiz tur zaman aşımına düşer → Failed/Timeout → Yeniden dene DEVAM notuyla tamamlanır; kesilmeyen görev notsuz.
+
+### Token maliyeti analizi (alt ajan, 2026-09-23) — backend koşusu
+
+Görevden göreve artış **birikme değil işin kendisi**: geçmiş taşınmıyor (kullanıcı istemi görev başına ~21–25K karakter
+sabit). t1→t2 artışının %80'i çıktı (yazılan kod + düşünme); t1 yalnız doğrulamaydı. Maliyet payı: önbellek YAZMA %45,
+çıktı %39, önbellek okuma %16 (Opus 5.5: okuma 0,20 · yazma(1 sa) 8 · çıktı 20 $/M, satırlardan türetildi).
+**Gizli maliyet:** kesilen ilk t1 denemesi 3,07 $ harcadı, `run_turn`'e yazılmadı → gerçek toplam **~11,1 $** (kayıtlı 8,04).
+
+**Asıl israf — alt süreç kullanıcının Claude Code ortamını devralıyordu:** runtime `setting_sources` / `strict_mcp_config`
+vermediği için CLI claude.ai MCP bağlayıcılarını (48 araç şeması ≈ 32K token/çağrı), kullanıcı ayarlarını ve CLAUDE.md'leri
+yüklüyordu; her görevde ~47K token yeniden önbelleğe yazılıyordu (~%18). Kullanıcının e-postası ve commit imza kuralı da
+ajan bağlamına sızıyordu. **Düzeltildi:** `setting_sources=[]`, `strict_mcp_config=True`, `ENABLE_CLAUDEAI_MCP_SERVERS=false`
+(runtime, test var). Frontend koşusu bittikten sonra runtime yeniden başlayınca devreye girer; ölçüm: çağrı 1'in okuduğu önek
+≈ çağrı 0 bağlamı olmalı.
+
+Bekleyen kaldıraçlar (öneri, sıralı): kesilen turun maliyetini de kaydet (§4 deliniyordu) · geliştirmede effort high→medium
+(~%6–7, kalite ölçülmedi) · görev başında önceki görevlerin dosya/imza özeti (tekrar okumayı keser, ~%6) · "bağlayıcı
+kurallar"ı göreve indir (~%3) · işe göre tek bilgi dosyası (~%1, bağlam temizliği). Değişmesi gerekmeyen: maxTurns,
+compactor, build/test çıktı kırpma (israf döngüsü yok).
+
+### Token maliyeti ve koşu notları uygulandı (2026-09-23, kullanıcı: "önce maliyet + notlar") ✅
+
+- **Kesilen tur boşa yanıyordu (en büyük sızıntı):** runtime kopan isteği durdurmuyordu; `claude.exe` kimse
+  beklemeden sürüyordu. Artık runtime bağlantıyı 1 s'de bir yoklar, kopunca turu iptal eder, SDK akışını `aclose()`
+  ile kapatır (alt süreç durur). Test: iptal → üretecin `finally`'si çalışır; kopan istek → 499 + tur iptal.
+- **Kesilen turun maliyeti kayda girer (CLAUDE.md §4 deliği):** runtime mesaj başına kullanımı canlı bildirir;
+  tur kesilirse `run_turn` `cutShort=true`, maliyet fiyat tablosundan (`config/models.json → prices`; Opus 5.5
+  4/0,2/8/20 $/M, CLI kayıtlarıyla birebir) ve çalışmanın toplamına eklenir.
+- **Görev başında bağımlı görevlerin raporu** (dosyalar + özet, ≤1500 kr): tekrar keşfi keser.
+- **Kurallar göreve iner:** plan `tasks[].ruleRefs` (0 tabanlı); boşsa tüm kurallar. **İşe göre bilgi dosyası:**
+  plan `knowledge[]`; bilinmeyen/boş = hepsi (seçim yanlışsa bilgi eksik kalmasın).
+- **Effort düşürülmedi:** kullanıcı Opus 5.5 high istedi; high→medium ~%6–7 kazandırır, kalite ölçülmedi —
+  karar kullanıcıda (ajan md'sinde `effort`).
+- **Talepler:** anlık düşünce/metin akışı + canlılık (son hareket, eşik uyarısı) + ajanın bağlamı (sistem parçaları
+  ve mesajlar, boyutlarıyla) → çalışma panelinde `GET /runs/{id}/live`; kanbanda çalışan kart doğrudan canlı
+  detayı açar (göreve odaklı); **Kim ne harcadı** → Ayarlar (`GET /usage/split`).
+- **İlk "kim ne harcadı" ölçümü (haftalık pencere, %92):** ofis ajanı ≥~$40 (~9 puan), Claude Code oturumları
+  ≥~$359 (~83 puan). Fable 5.1 / Sonnet 5 fiyatı bilinmiyor (hariç). Kotayı asıl yöneten oturum harcıyor.
+- **Bilgi dosyaları:** "paketi sürümüyle kur" (ajan PrimeVue 5 kurmuştu) ön yüz ve arka yüz dosyalarına eklendi.
+- **`.env*` yasağı:** ofis ajanı artık kullanıcının Claude Code ayarlarını devralmıyor (`setting_sources=[]`), o
+  yasak ajana uygulanmıyor. Ofis kuralı olarak eklenmedi; sırlar zaten kurum desenine göre user-secrets'ta.
+
+### Ara iş: iş eklerinde PDF/resim/belge + MCP yönetimi ve ajan yetkisi — 2026-09-23 ✅
+
+**Kullanıcı isteği:** "İş verilirken PDF vb. doküman, resim verilebilsin. MCP yönetim ekranı olsun, MCP eklenip yönetilebilsin,
+ekipteki kişilere MCP yetkisi verilsin." Kararlar belgede (DOMAIN.md → Ekler, MCP sunucuları; varsayımla ilerlenir).
+
+- **Ekler:** yeni iş formunda seç / sürükle-bırak / brief'e ekran görüntüsü yapıştır → `POST /attachments` (geçici) → `POST /runs`
+  `attachments[]` → `data/attachments/{runId}/`, üstveri `run.attachments`. İçerik isteme gömülmez; analiz ve görev istemlerinde
+  `# Ekler` (ad, tür, boyut, mutlak yol), ajana `readDirs` ile okuma izni (SDK `add_dirs`), yazma yine yalnız cwd. Word'ün metni
+  `.docx.txt` olarak çıkarılır. Çalışma detayında ekler listelenir/indirilir. Proje silinince ek dizinleri de gider.
+- **MCP:** tanım `mcp_server` tablosunda (betik 0004; belirteç git'e girmesin), yetki ajan md'sinde `mcp: [...]`. Üst çubukta
+  **MCP** paneli (kısayol M): ekle/düzenle/sil, aç/kapat, **Bağlantıyı dene** (runtime `mcp` istemcisiyle araçları listeler),
+  ajan başına yetki kutuları. Sırlar (env/başlık değeri) hiçbir yanıta yazılmaz. Yetkili ajan araçlı turlarda sunucuyu alır;
+  kapalı/silinmiş anahtar atlanır ve kayda not düşer. Yalnız Anthropic ajanları (diğerine yetki 400 `agent.mcp_unsupported`).
+- **Doğrulama:** 46 birim + 147 servis + 61 Python testi, `-warnaserror` derleme, UI typecheck. Python testi gerçek bir stdio MCP
+  sunucusuna (`runtime/tests/fixtures/echo_mcp.py`) bağlanıyor. Canlı Api'de uçlar denendi; arayüzden sunucu eklendi, bağlantı
+  denendi, yetki verilip kaldırıldı (ajan md'si byte-byte geri döndü), ek yüklendi, `.exe` reddedildi. **Uçtan uca gerçek tur**
+  (Haiku 4.5, $0,01): ajan cwd dışındaki eki Read ile okudu, `mcp__echo__echo` aracını çağırdı.
+- **Görülmedi:** eki olan bir çalışmanın detay ekranı (gerçek iş kota harcar); PDF/resim okumanın Opus'la büyük dosyada davranışı.
+- **Bilinçli dışarıda:** revize/devam brief'ine ek; Codex (openai) MCP bağlantısı; MCP araç çağrısı başına izin sorma.
+
+## Token yönetimi: ölçüm ve dört kaldıraç (2026-09-24, kullanıcı: "1, 2, 4, 5, 6") ✅
+
+**Ölçüm (4 iş, 18 tur, $35,05 eşdeğer):** önbelleğe yazma %40, çıktı %38, okuma %22; analiz %15. .NET sıkıştırması ve
+kalibrasyonu canlı akışta hiç devreye girmiyor (taşınan geçmiş 0, araçsız tur 0). Bağlam CLI oturumunun içinde büyüyor:
+tepe tur başına 95–168K, araç sonuçlarının %47'si Bash (ajan `for f …; cat` ile 20–25K karakterlik yığın döküyordu),
+ajan CLI'nin taşan çıktı dosyalarını (47K/37K karakter) baştan sona okuyordu. Bütün yazmalar 1 saatlik TTL.
+
+1. **Otomatik hafıza kapalı** (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`): ajan 9 turda cwd dışına, CLI'nin hafıza dizinine
+   yazmıştı; `_guard`'a uğramıyordu (LESSONS). İşe yarayan notlar taşındı: ofis ortamı (Bash sınırının URL/regex/`..`
+   tuzakları, dolu portlar) ajan md'sine, TypeScript 7 / PrimeVue global tip çakışması ön yüz bilgisine. Projeye özel
+   notlar (referans projelerin yeri, build rotası grep'i) taşınmadı; hedef projenin eski hafıza dosyaları diskte duruyor.
+2. **İstem önbelleği ömrü ayarı** (Ayarlar → İstem önbelleği; varsayılan değişmedi). Runtime 5 dk yazma payını ayırır,
+   tur kaydı `cacheWrite5mTokens` + `cacheTtl` taşır, fiyat tablosu `cacheWrite5m`. DOMAIN → İstem önbelleği ömrü.
+4. **Okuma disiplini** ajan md'sinde: önce ara sonra dar oku, topluca `cat` yok, kod haritası/rapordaki dosyayı yeniden
+   okuma, taşan çıktıyı Grep/tail ile.
+5. **Kod haritası:** plan `codeMap[]` (yol + tek satır öz, ≤25); görev isteminde "Kod haritası", görevin dosyaları önce,
+   3000 karakterde kesilir.
+6. **Ölçü:** `Turn.peakContextTokens` (turun en büyük tek çağrısı); `context-report.py` ikinci bölüm "context inside the
+   call". .NET compactor'ı bilinçli uykuda (DOMAIN → Bağlam bütçesi).
+
+**Doğrulama:** 50 birim + 160 servis + 66 Python testi geçti; UI typecheck temiz; tipler yeni Api'den (yalıtılmış, 5081,
+geçici veri) `openapi-typescript` ile üretildi, fark yalnız eklemeli. Canlı Api (5080) yeniden başlatılmadı: yeni kod
+bir sonraki kalkışta devreye girer.
+
+**Ölçülmedi:** gerçek koşu yok. Sıradaki iş koşusunda bakılacak: tepe bağlam ve iç tur başına girdi düştü mü (okuma
+disiplini + harita), analizin `codeMap`'i dolduruyor mu, `5m` ile yazma maliyeti ve kota yüzdesi ne oldu.
+
+## Görev başında yazılan kodun özeti + anlık görüntü onarımı (2026-09-24, kullanıcı: "2 ile başla, kodla") ✅
+
+**Araştırma sonucu (yan/ucuz LLM ile bağlam yönetimi):** taşınan geçmişe LLM özeti **kurulmadı** — canlı veride
+taşınan geçmiş 0, sıkıştırma hiç tetiklenmedi; bağlam CLI'nin iç tur döngüsünde büyüyor (18 tur, 857 iç tur, girdinin
+%95,6'sı önbellek okuması). Sıra: (2) kodla önceki görev özeti — bu iş; (3) Haiku keşif alt ajanı (SDK `agents`,
+kararı .NET verir) — kullanıcı "fena değil" dedi, açık: alt ajan tokenlerinin model bazında kayda düşmesi ve aynı
+brief'le önce/sonra karşılaştırması şartıyla.
+
+- **Özet:** DOMAIN → Bağlam bütçesi, "Görev başında yazılan kod". `IWorkspaceSnapshot` iki salt okunur işlem aldı
+  (`DiffAsync`, `ReadAsync`); imza çıkarımı `Application/Runs/CodeDigest.cs` (saf, testli).
+- **Canlı hata (bu işte bulundu):** canlı projede 23 Eylül'den beri **hiç** anlık görüntü alınmamış — fazlarda
+  `snapshot` yok, gölge deponun tek commit'i boş ağaç. Neden: proje Visual Studio'da açık, `.vs/…/*.vsidx` kilitli,
+  `git add -A --force` "Permission denied" ile tamamen düşüyor; `TrackAsync` null dönüp sessizce geçiyor. Sonuç:
+  "son turu geri al" seçeneği hiç sunulmadı. **Onarım:** `.vs` görüntüye girmez, geri dönüşte silinmez (`clean -e`);
+  `add` 3 dk (ilk görüntü ~20 bin dosya/~260 MB node_modules hash'ler, 30 sn'yi aşabilirdi) ve bundan eski
+  `index.lock` silinir (öldürülen add'in kilidi sonraki her görüntüyü düşürürdü). Kuru çalıştırma (`--dry-run`) canlı
+  projede önce `exit 128`, onarımla `exit 0`.
+- **Doğrulama:** 167 servis + 50 birim testi (yeni: imza çıkarımı ×4, gerçek git ile fark/okuma, kilitli `.vs`
+  dosyası, sahte görüntüyle uçtan uca istem); Api `-warnaserror` temiz (canlı Api kilitli olduğu için geçici klasöre).
+  **Görülmedi:** gerçek bir koşuda ilk görüntünün süresi ve bölümün istemdeki hâli; canlı Api yeniden başlatılmadı.
+- **Açık:** görüntü alınamadığında hâlâ yalnız konsol loguna yazılıyor (dosya logu yok); kayda/ekrana düşmüyor.
+
+## İnceleme bulguları: kesilen denemenin harcaması, yenileme kilidi, hafif canlı akış (2026-09-25) ✅
+
+Kod incelemesinin bulguları; davranış değişikliği yalnız doğruluk ve hız için.
+
+- **Tekrar edilen denemenin harcaması (CLAUDE.md §4):** geçici hatayla düşüp tekrar edilen her deneme kendi turu olarak
+  (`cutShort`) kaydedilir ve maliyeti çalışmaya taşınır. Önce yalnız son hata kaydediliyordu: tekrar başarılı olursa düşen
+  denemenin harcaması kayboluyordu. Sayaç deneme başına sıfırlanır (`ProgressRegistry.ResetUsage`), aynı harcama iki kez yazılmaz.
+- **Bekçi, ajan kilidini beklerken turu kesebiliyordu:** canlı belirteç kilitten ÖNCE kaydediliyordu; ajan başka
+  işte meşgulken geçen bekleme "hareketsizlik" sayılıp tur ilk yoklamada kesilebiliyordu, OAuth belirteci de beklerken eskiyordu.
+  Belirteç, MCP çözümü ve istek artık kilit alındıktan sonra kurulur; hareketsizlik turun başından önce sayılmaz.
+- **MCP OAuth yenilemesi sunucu başına kilitli:** iki tur aynı yenileme belirtecini harcarsa dönen belirteçli sağlayıcı ikinciyi
+  reddeder, yeniden kullanım tespiti belirteç ailesini iptal edebilir. Kilidi alan kaydı yeniden okur.
+- **Anlık görüntü dışında kalanlar genişledi:** `.vs`'e ek olarak `.idea`, `node_modules`, `bin`, `obj`, `.nuxt`, `.output`,
+  `.venv`, `__pycache__` görüntüye girmez ve geri dönüşte silinmez. Her `implement` adımından önce ~20 bin dosya hash'leniyor,
+  `data/snapshots` iş başına yüzlerce MB büyüyordu. Bedeli (varsayımla ilerlenir): geri dönüş yalnız kaynağı döndürür.
+- **Hız:** kod özetinde `git show` okumaları 4'lü paralel; faz listesi görev başına değil tek sorguyla (`ReadRunPhasesAsync`);
+  harcama raporu zaman aralığını sorguda süzer (`ReadUsageBetweenAsync`; "son 1000 tur" aralığı aşınca eksik sayıyordu);
+  `GET /runs/{id}/live` akışın son 80 satırını ve bağlam metnini yalnız `?context=true` ile döner (`streamTotal` artar, düşmez);
+  runtime `local_usage` değişmeyen dosyayı yeniden ayrıştırmaz.
+- **UI:** Özellikler paneli genişledi, dar ekranda sağlayıcı çipi ve geniş token sayıları taşmıyor, küçük tutarlarda 4 hane.
+- **Sahne:** kedinin mama/su kapları (sol alt köşe), acıktıkça yer ve içer (`cat` olayı `eat`; `docs/SCENE.md`).
+- **Doğrulama:** 50 birim + 170 servis + 67 Python testi. Yeni `AgentCallerTests` `RunServiceTests` ile paralel koşunca 4 test
+  `Running`'de kalıyordu: ajan kilitleri statik, biri "developer" kilidini tutarken diğerinin dağıtımı "ajan meşgul" sanıyordu.
+  İki sınıf aynı xUnit koleksiyonunda (`agent-locks`), sırayla koşar. Kod hatası değil.
+
+## Keşif alt ajanı (Haiku) + anlık görüntü hatası kayda düşer (2026-09-26, kullanıcı: "haiku keşif alt ajanı ve küçük açıklar") 🔶 ölçüm bekliyor
+
+- **Keşif alt ajanı:** DOMAIN → Keşif alt ajanı. md `explore_model` → araçlı turda salt okunur `kesif` alt ajanı (SDK `agents`,
+  Read/Glob/Grep, 25 iç tur). Karar `Application/Runs/Explorer`; runtime yalnız eşler ve `Agent` aracını verilen alt ajanlarla
+  sınırlar (yerleşik general-purpose/Explore reddedilir). Kullanıcının iki şartından **kayıt** karşılandı: `Turn.modelUsage`
+  (SDK `model_usage`), kesilen turda alt ajan mesajları kendi fiyatıyla, tepe bağlam ana ajanın. Ekip panelinde "Keşif alt
+  ajanı" seçimi; çalışma panelinde turun alt ajan payı. `tek-kisilik-dev-kadro`'da Haiku 4.5 ile açık.
+- **Anlık görüntü hatası görünür:** görüntü alınamazsa nedeni (`git add (128): … Permission denied` gibi, ilk satır) çalışmanın
+  kaydına `snapshot` notu olarak düşer; eskiden yalnız konsol logundaydı. İş durmaz.
+- **Doğrulama:** 50 birim + 174 servis + 69 Python testi; Api `-warnaserror`; UI typecheck; tipler canlı Api'den üretildi (yalnız
+  eklemeli). **Ölçülmedi:** gerçek koşu (şart 2, aynı brief'le önce/sonra) — sıradaki iş.
+- **Açık:** `.claude/worktrees/agent-a2dae16…` (dal `main`'e birleşmiş) içinde 19 Eylül'den kalma 15 commit'lenmemiş UI dosyası
+  var; silmek geri alınamaz, kullanıcıya soruldu.
+
+### Gerçek koşu: ofis ile Claude Code, aynı iş aynı anda (2026-09-26, kullanıcı isteği)
+
+Brief: mini girişli "Merhaba Dünya" (.NET 10 API + JWT + xUnit, Nuxt 4 login/hello, README, run.cmd). İki boş klasör, aynı metin;
+yalnız portlar ayrı (5181/3181 ofis, 5182/3182 Claude Code) ki doğrulama sunucuları karışmasın. Ofis: `tek-kisilik-dev-kadro`
+(Opus 5.5 high, keşif alt ajanı açık). Claude Code: aynı md'leri talimat olarak okuyan ayrı alt ajan (Opus 5.5, efor oturumdan).
+
+| | Ofis | Claude Code |
+|---|---|---|
+| Süre | 9 dk 50 sn (analiz 2:14, backend 2:51, frontend 4:43) | 11 dk 40 sn |
+| Maliyet (eşdeğer) | 2,23 $ (CLI) | ~2,25 $ (kayıttan, fiyat tablosuyla) |
+| Girdi / çıktı | 1,66 M (okuma 1,55 M, yazma 106 K, 1 sa) / 53 K | 4,54 M (okuma 4,42 M, yazma 121 K, 5 dk) / 38 K |
+| Tepe bağlam | 57 K | 121 K |
+| Araç çağrısı | ~71 (3 tur, 74 iç tur) | 74 (5'i tarayıcı) |
+| Kabul (bağımsız doğrulandı) | build, 14 test, typecheck, build, curl, tarayıcıda giriş/çıkış ✅ | build, 12 test, typecheck, build, curl, tarayıcıda giriş/çıkış ✅ |
+
+- **Bağlam ofiste 2,7 kat yalın** (kullanıcı ortamı devralınmıyor, görevler ayrı tur) ama maliyet aynı çıktı: ofis daha çok çıktı
+  yazdı ve önbelleğe **1 saatlik** fiyatla (8 $/M) yazdı; Claude Code 5 dk (5 $/M). 5 dk ayarıyla ofis ~1,9 $ olurdu (tahmin).
+- **Kalite farkları (ikisi de brief'i karşıladı):** Claude Code çerçevenin `PasswordHasher`'ını kullandı, JWT anahtarını yalnız
+  Development'a koydu (yoksa kalkmıyor), form alanları etiketli, tarayıcıda uçtan uca denedi. Ofis PBKDF2'yi kendisi yazdı (+4 test),
+  anahtar `appsettings.json`'da, form alanlarının erişilebilir adı yok.
+- **Keşif alt ajanı hiç çağrılmadı** — boş klasörde taranacak kod yok; önce/sonra ölçümü (şart 2) hâlâ açık, mevcut bir kod
+  tabanında yapılmalı. Model kırılımı başka bir şeyi gösterdi: CLI her turda kendi iç işleri için Haiku çağırıyor (~0,014 $/iş).
+- **Sınır:** Claude Code alt ajanı bir kez depoya boş `login.out` bıraktı (kendisi sildi) ve paylaşılan tarayıcıda ofis sekmesini
+  kapattı; ofis ajanının yazması `_guard` ile cwd'de kalır. n=1; Claude Code'un eforu doğrudan ayarlanamadı.
+
+### Karşılaştırmadan sonra: kalite notları ve gerçek tarayıcı testi (2026-09-26, kullanıcı isteği) ✅ tekrar koşusu bekliyor
+
+- **Claude Code'un iyi yaptıkları ofis md'lerine girdi:** çerçevenin `PasswordHasher`'ı, sır `appsettings.json`'a girmez + kalkışta
+  dur, olumsuz yol testleri (arka yüz bilgisi); etiketli form, `role="alert"`, sayfa başlığı (ön yüz bilgisi); "ekran değiştiyse
+  tarayıcıda dene, araç yoksa söyle", sunucuları kapat, sapmayı raporla (ajan md'si). Düzeltme: ofis ajanı da sunucuyu kaldırıp
+  curl'lemiş ve typecheck'in gerçekten denetlediğini bilerek hatalı dosyayla sınamıştı — o ikisi fark değildi.
+- **Tarayıcı:** DOMAIN → Gerçek tarayıcıda test. Playwright MCP 0.0.82 (sabit sürüm), görünür Edge, 14 araç, bağlantı denendi
+  (25 araç listelendi). Sıradaki: aynı işin tekrarı; ofis tarayıcıda denerse ve kalite farkları kapanırsa aynı projeye ikinci iş
+  (keşif alt ajanı açık/kapalı ölçümü).
+
+### Tekrar koşusu: kalite notları + Playwright sonrası (2026-09-26) ✅
+
+Aynı brief, yeni boş klasörler (`karsilastirma-2026-09-26-2`), aynı anda. Hepsi bağımsız doğrulandı (build, test, typecheck,
+build, curl 401/401/200, kalkışta anahtarsız durma).
+
+| | Ofis 1 | **Ofis 2** | Claude Code 1 | Claude Code 2 |
+|---|---|---|---|---|
+| Süre | 9:50 | **8:28** | 11:40 | 10:06 |
+| Maliyet (eşdeğer) | 2,23 $ | **2,13 $** | ~2,25 $ | ~2,31 $ |
+| Girdi / çıktı | 1,66 M / 53 K | 2,23 M / 43 K | 4,54 M / 38 K | 4,76 M / 38 K |
+| Tepe bağlam | 57 K | 78 K (tek görev) | 121 K | 124 K |
+| Test | 14 | 10 | 12 | 13 |
+| Tarayıcıda | yok | **Playwright, 13 çağrı, 5 akış** | pane | pane, 9 akış |
+| Framework hasher / sır Development'ta / kalkışta dur / etiketli form + başlık | ✗ | **✓** | ✓ | ✓ |
+
+- Kalite farkları kapandı; ofis hâlâ daha hızlı ve biraz ucuz. Claude Code sınama genişliğinde önde: süresi dolmuş / başka
+  anahtarla imzalanmış token testleri, sayfa yenilemede oturum, bozuk çerez, `localhost` kökeni.
+- Ofis bu kez tek görev çıkardı (ilkinde backend/frontend iki görev): tepe bağlam bu yüzden de büyüdü.
+- Playwright: `browser_find` ile okudu, `browser_snapshot` hiç çağırmadı; tur kaydında tıklama/doldurma hedefi boş kalıyordu
+  → runtime artık `element` alanını yazar (test var, runtime yeniden başlayınca). Sınırlar DOMAIN → Gerçek tarayıcıda test.
+- Sıradaki (kullanıcı onayıyla): aynı projeye ikinci iş, keşif alt ajanı açık/kapalı.
+
+### İkinci iş: kayıt olma + keşif alt ajanı açık/kapalı (2026-09-26, kullanıcı isteği) 🔶 keşif ölçülemedi
+
+Başlangıç: ikinci denemenin kodu, üç ayrı kopya (`karsilastirma-2026-09-26-3`). Ofis keşifli ve Claude Code aynı anda, ofis
+keşifsiz sonra (aynı ajan, tek iş kuralı). Hepsi bağımsız doğrulandı: test, typecheck, build, curl 201/409/409/400/400/200/hello.
+
+| | Ofis, keşif açık | Ofis, keşif kapalı | Claude Code |
+|---|---|---|---|
+| Süre | **7:36** | 8:50 | 8:36 |
+| Maliyet (eşdeğer) | **2,40 $** | 2,59 $ | ~2,49 $ |
+| Girdi / çıktı | 2,89 M / 44 K | 3,12 M / 46 K | 5,25 M / 38 K |
+| Tepe bağlam | 89 K | 85 K | 140 K |
+| Test (eski + yeni) | 30 | 29 | 34 |
+| Tarayıcı çağrısı | 36 (Playwright) | 33 (Playwright) | 22 (pane) |
+| Keşif alt ajanı çağrısı | **0** | — | — |
+
+- **Keşif alt ajanı yine hiç çağrılmadı:** 29 dosyalık projede ana ajan analizde 21 dosyayı kendisi okudu. Açık/kapalı farkı
+  (−0,19 $, −1:14) alt ajandan değil koşu değişkenliğinden. Şart 2 bu boyutta ölçülemez; büyük bir kod tabanı gerekir.
+  Açık kalması bedava sayılır (çağrılmadıkça yalnız `Agent` aracının şeması).
+- Kopyalamadaki `*/bin` hariç tutma deseni (.NET çıktısı için) `node_modules` içindeki paketlerin `bin/` klasörlerini de
+  sildi; üç ajan da `MODULE_NOT_FOUND` görüp `npm ci` ile onardı ve raporladı — hepsine eşit ek süre. Kopyada
+  `node_modules` hiç taşınmamalı.
+
+## Kopyalar: bir ajan, iş geldikçe çoğalan karakterler (2026-09-26, kullanıcı isteği) 🔶 aşama 1 bitti
+
+Kullanıcı: "ayrı ayrı iş yapabilsin ya da birbirlerini alt ajan gibi kullanabilsinler; 5'i birden ekip listesinde
+görünmesin, iş verildikçe çoğalsınlar". DOMAIN → Kopyalar, SCENE → Kopyalar.
+
+- **Aşama 1 (bitti):** md `max_instances` (tek kişilik kadroda 5). Kilit, dağıtıcı, analiz ve "başka çalışmada meşgul"
+  kopya başına; atomik ayırma; kayıtta `Agent` md anahtarı + `Worker`; sahnede kapıdan giren/çıkan klon; ajan panelinde
+  alan; iş havuzu 6; kopyaya port aralığı. **Yeni güvenlik kuralı:** aynı projenin iki çalışması aynı anda yazmaz (önce
+  ajan kilidinin yan etkisiydi).
+- **Doğrulama:** 53 birim + 181 servis testi (yeni: kopya kimliği, max_instances, boş kopya seçimi, fazdan meşgul kopya,
+  iki kopya aynı anda LLM çağrısında, atomik ayırma, aynı proje sırası; eski "ajan dolu" testi ayrı projeye alındı),
+  Api `-warnaserror`, UI typecheck. Canlı sahne: `scene/commands` ile kopya 2/3 "çalışıyor" → ekip listesinde "Tek Kişilik
+  Dev Kadro 2/3" belirdi; kopya 2 "boşta" → ~20 s sonra listeden düştü; kopyaya tıklama ana ajanın panelini açtı.
+- **Ölçülmedi:** gerçek paralel koşu (2+ projeye aynı anda iş). **Aşama 2 (açık):** kopyanın başka bir kopyayı yardımcı
+  alt ajan olarak çağırması.
+
+## Projeyi içeri alma + dil şeridi (2026-09-26, kullanıcı isteği) ✅ canlı ajan koşusu ölçülmedi
+
+Kullanıcı: "projede kullanılan diller (GitHub'daki gibi) ve proje içeri alma; hep sıfır proje düşündük ama başlamış projeleri
+içeri alıp devam ettirebilmeliyiz". DOMAIN → Projeyi içeri alma ve dil şeridi.
+
+- **Yapılan:** `Domain/Projects/Codebase` (linguist özü dil ölçüsü, manifest, öneri) · `IWorkspaceInspector` +
+  `WorkspaceInspector` (git ls-files / yürüyüş, dal, kimliksiz remote) · `GET /projects/inspect`, `POST /projects/import`,
+  `GET /projects/{key}/inspect` · klasör seçici depo dışını gezer · bir klasör bir proje kuralı (`project.dir_in_use`, iç/dış
+  klasör dahil) · analiz isteminde "# Mevcut kod" bölümü · UI: Yeni proje → "Mevcut projeyi içeri al" (önizleme: şerit,
+  git, derleme dosyaları, run.cmd, çakışma), panelde şerit + lejant, ray kartında ince şerit.
+- **Yan düzeltmeler:** `C:` gibi sürücüye göreli yol çalışma dizinine çözülüp "depo içi" sayılabiliyordu → reddedilir; yeni
+  proje formunda anahtarın `pattern`'i tarayıcının `v` bayraklı regex'inde geçersizdi (doğrulama sessizce hiç çalışmıyordu) → `\-`.
+- **Doğrulama:** 60 birim (7 yeni: dil payı, eleme, `.h`, boş dizin, dil satırı, öneri, anahtar) + 187 servis testi (6 yeni:
+  depo dışı içeri alma ve çakışmalar, öneri/anahtar çakışması, 404/400, depo dışı gezinme, gerçek git ile gitignore + dal +
+  kimliksiz remote, istem bölümü); Api `-warnaserror` temiz; UI typecheck temiz. Canlı: bu depo 0,19 sn (git, 327 dosya,
+  C# %51,4 · Vue %21,9 · TypeScript %15,6 · Python %10,2), `MrHobist.Appointo` UI'dan içeri alındı (175 dosya; git başka Windows kullanıcısında
+  "dubious ownership" → yürüyüşe düştü, dal yine okundu), iç klasörü 409.
+- **Ölçülmedi:** içeri alınmış projede gerçek bir ajan koşusu (runtime kapalıydı): "# Mevcut kod" bölümünün planı ve
+  kod-okuma turlarını ne kadar değiştirdiği. Sonraki adım: aynı brief'i içeri alınmış bir projede bölümlü/bölümsüz koşup
+  analiz turlarını karşılaştırmak.
+- **Açık:** `.gitattributes` (`linguist-vendored`/`linguist-generated`) okunmuyor; yürüyüş yolunda `.gitignore` okunmuyor.
+
+### İnceleme düzeltmeleri (2026-09-27, kullanıcı: "tümü için fix, özellikle önbellek")
+
+- **Ofis deposu bağlanamaz:** sürücülü tam yol ofis deposu, iç klasörü ya da onu içeren üst klasör olamaz → `project.dir_reserved`
+  (400, `WorkspaceLocator.Resolve`). Önce `C:/…/MrHobist.AITeam` içeri alınabiliyordu; ajan `config/`, `src/`, `data/`'ya yazabilirdi.
+- **Önbellek:** tarayıcı artık ham dosya listesini değil ölçülmüş özeti (`WorkspaceScan.Code`, öneri) döner ve tutar; süresi dolan
+  kayıt her yazımda atılır. Önce gezilen her klasörün 50 bin yollu listesi süreç ömrü boyunca bellekte kalıyordu. **Token ile ilgisi
+  yok (doğrulandı):** önbellek yalnız disk taramasını tekrarlamamak için; istem metni aynı ölçüden üretilir, analiz revizyonları
+  30 sn'den çok sonra geldiği için önbellek istem ön ekini zaten etkilemiyordu.
+- **Dayanıklılık:** yürüyüşte tarama sırasında silinen klasör taramayı düşürmüyor (önce istisna analiz adımını Failed yapıyordu).
+- **Okuma uçları diske yazmaz:** proje listesi ve `/{key}/inspect` `RootOf` yerine `PathOf`; eksik dizin oluşmaz, bariyer yazılmaz.
+- **Ray:** 60 sn'lik tüm proje taraması kalktı; şerit iş/çalışan sayısı değişince tazelenir (ölçüldü: 4 yoklamada proje başına 1 `/inspect`).
+- **Sürücü listesi:** ağ sürücüsünde `IsReady` sorulmaz (kopuk eşlenmiş sürücü her klasör tıklamasını bekletiyordu).
+- **Sadeleştirme:** içeri almadaki çift klasör kontrolü kalktı (`CreateAsync` denetler); sürücü/yol ayrıştırması tek yerde
+  (`Project.NormalizeDir`/`IsDriveRoot`); `Prompts`'taki sahipsiz `<summary>` `RevisionNote`'a taşındı.
+- **Değişmedi:** `types.ts`'deki elle nesne tipleri — üretilen şemada sayılar `number | string`; dosya başlığı bunu belgeliyor.
+- **Doğrulama:** 60 birim + 189 servis testi (2 yeni: ofis deposu reddi, okuma uçlarının dizin oluşturmaması); `-warnaserror` temiz;
+  UI typecheck temiz. Ayrı veri klasörlü Api + UI ile canlı: depo kökü ve üstü 400 `project.dir_reserved`, içeri alma 201, iç klasör
+  409, liste + inceleme sonrası `taze` klasörü oluşmadı, ray şeridi göründü.

@@ -22,6 +22,8 @@ internal sealed class AiTeamContext(DbContextOptions<AiTeamContext> options) : D
 
     public DbSet<SettingsRow> Settings => Set<SettingsRow>();
 
+    public DbSet<McpServerRow> McpServers => Set<McpServerRow>();
+
     /// <summary>Butun zaman damgalari tek bicimde: siralanabilir UTC metni (<see cref="UtcTextConverter"/>). Nullable olanlar da kapsanir.</summary>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -77,6 +79,7 @@ internal sealed class AiTeamContext(DbContextOptions<AiTeamContext> options) : D
             e.Property(x => x.WaitingSince).HasColumnName("waiting_since");
             e.Property(x => x.Spec).HasColumnName("spec");
             e.Property(x => x.WorkflowSnapshot).HasColumnName("workflow_snapshot");
+            e.Property(x => x.Attachments).HasColumnName("attachments");
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
@@ -140,6 +143,22 @@ internal sealed class AiTeamContext(DbContextOptions<AiTeamContext> options) : D
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id").ValueGeneratedNever();
             e.Property(x => x.Data).HasColumnName("data");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<McpServerRow>(e =>
+        {
+            e.ToTable("mcp_server");
+            e.HasKey(x => x.Key);
+            e.Property(x => x.Key).HasColumnName("key");
+            e.Property(x => x.Name).HasColumnName("name");
+            e.Property(x => x.Description).HasColumnName("description");
+            e.Property(x => x.Transport).HasColumnName("transport");
+            e.Property(x => x.Command).HasColumnName("command");
+            e.Property(x => x.Url).HasColumnName("url");
+            e.Property(x => x.Enabled).HasColumnName("enabled");
+            e.Property(x => x.Data).HasColumnName("data");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
         });
     }

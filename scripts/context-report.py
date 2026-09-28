@@ -11,6 +11,11 @@ here, the report shows the value the compactor actually used when it decided. do
 
 "resent" is an estimate: dropped tokens x internal turns of that call = history the model would have been
 sent again on every internal turn had it not been dropped (most of it would have been cache reads).
+
+Second section (2026-09-24): context INSIDE one agent call. With the single-agent team no history is carried, so the
+.NET compactor never fires; the context grows within the CLI session instead (tool results, written code, thinking).
+"peak" = the largest single API call of the turn (Turn.peakContextTokens), "5m" = share of cache writes made with the
+5-minute TTL (Settings -> prompt cache), "ttl" = the TTL the turn asked for. Rows written before 2026-09-24 show "-".
 """
 from __future__ import annotations
 
@@ -85,6 +90,21 @@ def main() -> int:
         f"\n{carried_turns} turns carried history, {compacted} compacted;"
         f" dropped ~{int(total_dropped)} tokens, ~{int(total_resent)} tokens not resent across internal turns."
     )
+
+    print("\n== context inside the call (per turn) ==")
+    print(f"  {'run':<28} {'task':<6} {'stage':<12} {'turns':>5} {'peak':>8} {'avg/turn':>9} {'write':>8} {'5m':>5} {'ttl':>4} {'cost$':>7}")
+    for run_id, agent, stage, task, rnd, provider, model, in_tok, cache_read, data in rows:
+        d = json.loads(data) if data else {}
+        turns = d.get("turns") or 1
+        peak = d.get("peakContextTokens")
+        write = d.get("cacheWriteTokens") or 0
+        short = d.get("cacheWrite5mTokens") or 0
+        share = f"{short / write:.0%}" if write and peak is not None else "-"
+        cost = d.get("costUsd")
+        print(
+            f"  {run_id:<28} {task or '-':<6} {stage or '-':<12} {turns:>5} {peak if peak is not None else '-':>8}"
+            f" {int((in_tok or 0) / turns):>9} {write:>8} {share:>5} {d.get('cacheTtl') or '-':>4} {cost if cost is not None else 0:>7.2f}"
+        )
     return 0
 
 

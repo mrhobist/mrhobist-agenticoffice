@@ -217,6 +217,65 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<TurnUsage>> ReadUsageBetweenAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        // ts UTC ve sabit genislikli metin (UtcTextConverter): metin karsilastirmasi zaman sirasidir.
+        var query = db.Turns.AsNoTracking().Where(t => t.Ts >= since);
+        if (until is { } end)
+        {
+            query = query.Where(t => t.Ts < end);
+        }
+
+        return await query
+            .OrderBy(t => t.Id)
+            .Select(t => new TurnUsage(t.RunId, t.Provider, t.Model, t.InputTokens, t.OutputTokens, t.CostUsd, t.Ts))
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// MCP'li turlar: <c>data</c>'dan yalniz <c>mcpServers</c> ve <c>toolUses</c> (json_extract), prompt/cikti okunmaz. Sunucu acilmamis
+    /// ama arac adinda <c>mcp__</c> gecen eski turlar da girer (alan eklenmeden once kaydedilenler).
+    /// </summary>
+    public async Task<IReadOnlyList<McpTurnUsage>> ReadMcpUsageAsync(int runLimit, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var take = Math.Clamp(runLimit, 1, 2000);
+        var rows = await db.Database.SqlQuery<McpUsageRow>($"""
+            SELECT t.run_id AS RunId, t.agent AS Agent, t.ts AS Ts,
+                   json_extract(t.data, '$.mcpServers') AS McpServers,
+                   json_extract(t.data, '$.toolUses') AS ToolUses
+            FROM run_turn t
+            WHERE t.run_id IN (SELECT id FROM run ORDER BY started_at DESC, id DESC LIMIT {take})
+              AND (json_extract(t.data, '$.mcpServers') IS NOT NULL OR instr(json_extract(t.data, '$.toolUses'), 'mcp__') > 0)
+            ORDER BY t.id
+            """).ToListAsync(ct).ConfigureAwait(false);
+
+        var result = new List<McpTurnUsage>(rows.Count);
+        foreach (var r in rows)
+        {
+            var servers = PersistenceJson.Read<List<string>>(r.McpServers);
+            var tools = (PersistenceJson.Read<List<ToolUse>>(r.ToolUses) ?? []).Select(u => u.Tool).Where(n => n.StartsWith("mcp__", StringComparison.Ordinal)).ToList();
+            var ts = DateTimeOffset.TryParse(r.Ts, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed) ? parsed : DateTimeOffset.MinValue;
+            result.Add(new McpTurnUsage(r.RunId, r.Agent, ts, servers, tools));
+        }
+
+        return result;
+    }
+
+    private sealed class McpUsageRow
+    {
+        public string RunId { get; set; } = "";
+
+        public string Agent { get; set; } = "";
+
+        public string Ts { get; set; } = "";
+
+        public string? McpServers { get; set; }
+
+        public string? ToolUses { get; set; }
+    }
+
     /// <summary>
     /// Kalibrasyon ornekleri: <c>data</c> govdesi (prompt/cikti, onlarca KB) okunmaz, <c>json_extract</c> ile iki sayi ve
     /// bir bayrak alinir. <c>toolsOffered</c> olmayan eski satirlar (null) ornege girmez: arac tanimli mi bilinmiyor.
@@ -280,6 +339,17 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
         return Revive<Phase>(rows);
     }
 
+    public async Task<IReadOnlyList<Phase>> ReadRunPhasesAsync(string runId, CancellationToken ct)
+    {
+        await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var rows = await db.Phases.AsNoTracking()
+            .Where(x => x.RunId == runId)
+            .OrderBy(x => x.Id)
+            .Select(x => x.Data)
+            .ToListAsync(ct).ConfigureAwait(false);
+        return Revive<Phase>(rows);
+    }
+
     public async Task<IReadOnlyList<string>> ListTasksAsync(string runId, CancellationToken ct)
     {
         await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
@@ -321,6 +391,7 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
         row.FinishedAt = run.FinishedAt;
         row.ResumeAt = run.ResumeAt;
         row.WaitingSince = run.WaitingSince;
+        row.Attachments = run.Attachments is { Count: > 0 } a ? PersistenceJson.Write(a) : null;
         row.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
@@ -344,5 +415,6 @@ internal sealed class SqliteRunStore(IDbContextFactory<AiTeamContext> factory) :
         row.Step,
         row.WaitingSince,
         row.InputTokens,
-        row.OutputTokens);
+        row.OutputTokens,
+        PersistenceJson.Read<List<RunAttachment>>(row.Attachments));
 }

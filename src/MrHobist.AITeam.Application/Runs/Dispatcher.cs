@@ -1,15 +1,23 @@
+using MrHobist.AITeam.Domain.Agents;
 using MrHobist.AITeam.Domain.Runs;
 using MrHobist.AITeam.Domain.Workflows;
 
 namespace MrHobist.AITeam.Application.Runs;
 
-/// <summary>Bir gorevin bir adima, o adimin ajanina verilmesi.</summary>
-public sealed record Assignment(RunTask Task, Stage Stage, string Agent);
+/// <summary>
+/// Bir gorevin bir adima, o adimin ajanina verilmesi. <see cref="Agent"/> md anahtari (kayitlar, gecmis); <see cref="Worker"/>
+/// adimi kosan kopya (kilit, sahne; docs/DOMAIN.md → Kopyalar). null = kopya 1.
+/// </summary>
+public sealed record Assignment(RunTask Task, Stage Stage, string Agent, string? Worker = null)
+{
+    public string WorkerId => Worker ?? Agent;
+}
 
 /// <summary>
 /// Organizatorun dagitim kurali — KOD, sifir token (docs/DOMAIN.md → Dagitim). Saf fonksiyon: kayitlari okur,
-/// atamalari doner; yazmaz, yayimlamaz. Kurallar: hazir gorev = bagimliliklari bitmis; ajan basina tek is;
-/// farkli ajanlar paralel; sira topolojik (analist sirasi korunur).
+/// atamalari doner; yazmaz, yayimlamaz. Kurallar: hazir gorev = bagimliliklari bitmis; KOPYA basina tek is (ajanin
+/// <c>max_instances</c> kadar kopyasi paralel; tek kopyali ajanda eski "ajan basina tek is"); farkli ajanlar paralel;
+/// sira topolojik (analist sirasi korunur). <paramref name="busyAgents"/> kopya kimlikleridir (<see cref="Workers"/>).
 /// </summary>
 public static class Dispatcher
 {
@@ -17,7 +25,9 @@ public static class Dispatcher
         Workflow workflow,
         Spec spec,
         IReadOnlyDictionary<string, IReadOnlyList<Phase>> phasesByTask,
-        IReadOnlySet<string> busyAgents)
+        IReadOnlySet<string> busyAgents,
+        Func<string, int>? instancesOf = null,
+        Func<string, string?>? preferredWorker = null)
     {
         ArgumentNullException.ThrowIfNull(workflow);
         ArgumentNullException.ThrowIfNull(spec);
@@ -46,19 +56,35 @@ public static class Dispatcher
             }
 
             var ready = task.DependsOn.All(d => done.Contains(d) || !known.Contains(d));
-            if (!ready || busy.Contains(next.Role))
+            if (!ready || FreeWorker(next.Role, busy, instancesOf?.Invoke(next.Role) ?? 1, preferredWorker?.Invoke(next.Role)) is not { } worker)
             {
                 continue;
             }
 
-            busy.Add(next.Role);
-            result.Add(new Assignment(task, next, next.Role));
+            busy.Add(worker);
+            result.Add(new Assignment(task, next, next.Role, worker == next.Role ? null : worker));
         }
 
         return result;
     }
 
-    /// <summary>Su anda bir fazi Started olan ajanlar (hangi gorevde oldugu fark etmez).</summary>
+    /// <summary>
+    /// Rolun bos kopyasi: once <paramref name="preferred"/> (ayni calismada ayni karakter surer), sonra en kucuk numarali bos kopya;
+    /// hepsi doluysa null.
+    /// </summary>
+    public static string? FreeWorker(string role, IReadOnlySet<string> busy, int instances, string? preferred = null)
+    {
+        ArgumentNullException.ThrowIfNull(busy);
+        var all = Workers.All(role, instances).ToList();
+        if (preferred is not null && all.Contains(preferred, StringComparer.Ordinal) && !busy.Contains(preferred))
+        {
+            return preferred;
+        }
+
+        return all.FirstOrDefault(w => !busy.Contains(w));
+    }
+
+    /// <summary>Su anda bir fazi Started olan kopyalar (hangi gorevde oldugu fark etmez).</summary>
     public static IReadOnlySet<string> BusyAgents(IReadOnlyDictionary<string, IReadOnlyList<Phase>> phasesByTask)
     {
         ArgumentNullException.ThrowIfNull(phasesByTask);
@@ -68,14 +94,19 @@ public static class Dispatcher
             var last = phases.Count == 0 ? null : phases[^1];
             if (last is { Status: PhaseStatus.Started })
             {
-                busy.Add(last.Agent);
+                busy.Add(last.Worker ?? last.Agent);
             }
         }
 
         return busy;
     }
 
-    /// <summary>Gorevin son adimi Done ise gorev bitmistir.</summary>
+    /// <summary>
+    /// Gorevin son adimi Done ya da Skipped ise gorev bitmistir. Skipped = kullanici "bu adimi gec / elle hallettim" dedi.
+    /// 2026-09-23'e kadar yalniz Done sayiliyordu: son adimi atlanan gorev ne bitmis ne dagitilabilir oluyordu, ona bagli
+    /// gorevler hic hazir olmuyordu ve calisma "ajan bekleniyor" diye sonsuza dek asili kaliyordu (tek adimli akista ilk
+    /// "Bu adimi gec" cevabinda yasandi).
+    /// </summary>
     public static bool IsDone(IReadOnlyList<Stage> stages, IReadOnlyList<Phase> phases)
     {
         if (stages.Count == 0)
@@ -84,7 +115,7 @@ public static class Dispatcher
         }
 
         var lastStage = stages[^1];
-        return phases.Any(p => p.Stage == lastStage.Id && p.Status == PhaseStatus.Done);
+        return phases.Any(p => p.Stage == lastStage.Id && p.Status is PhaseStatus.Done or PhaseStatus.Skipped);
     }
 
     /// <summary>

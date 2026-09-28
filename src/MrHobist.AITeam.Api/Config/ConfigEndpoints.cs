@@ -45,14 +45,15 @@ public static class ConfigEndpoints
             => reader.GetAgentWorkAsync(key, runs ?? 30, ct));
 
         // Sorgu parametresi tel adiyla gelir ("nvidia"); enum baglayici buyuk/kucuk harfe duyarli oldugu icin metin alinir.
-        g.MapGet("/models", (string? provider, IAgentRuntimeService runtime, CancellationToken ct)
-            => runtime.ListModelsAsync(Providers.Parse(provider), ct));
+        // Liste config/models.json'dan (.NET), erisilebilirlik runtime'dan (docs/API.md → Modeller).
+        g.MapGet("/models", (string? provider, IModelListService models, CancellationToken ct)
+            => models.ListAsync(Providers.Parse(provider), ct));
 
         // UI ilk yuklemede bakar: giris var mi, hangi modeller (docs/DOMAIN.md → Model, efor ve kimlik).
-        g.MapGet("/providers", async (bool? refresh, IAgentRuntimeService runtime, CancellationToken ct) =>
+        g.MapGet("/providers", async (bool? refresh, IAgentRuntimeService runtime, IModelListService modelList, CancellationToken ct) =>
         {
             var auth = await runtime.ListAuthAsync(null, refresh ?? false, ct).ConfigureAwait(false);
-            var models = await runtime.ListModelsAsync(null, ct).ConfigureAwait(false);
+            var models = await modelList.ListAsync(null, ct).ConfigureAwait(false);
             return auth.Select(a => new ProviderStatus(
                 a.Provider, a.LoggedIn, a.Account, a.Detail,
                 models.Where(m => m.Provider == a.Provider).ToList(), a.Method)).ToList();
@@ -72,6 +73,9 @@ public static class ConfigEndpoints
 
         // Kullanim: bizim kayitlarimizdan (kayitli turlar), saglayici+model bazinda.
         g.MapGet("/usage", (int? runs, IUsageReader usage, CancellationToken ct) => usage.SummarizeAsync(runs ?? 200, ct));
+
+        // Kim ne harcadi: makinedeki CLI kayitlarindan kaynak (ofis ajani / Claude Code oturumlari) basina token, esdeger $, kota payi.
+        g.MapGet("/usage/split", (DateTimeOffset? since, DateTimeOffset? until, ISpendReader spend, CancellationToken ct) => spend.GetAsync(since, until, ct));
 
         // Calisma alani ayarlari (config/settings.json): saglayici basina limit korumasi esigi (docs/DOMAIN.md → Butce ve limit).
         g.MapGet("/settings", async (ISettingsStore s, CancellationToken ct) => SettingsDto.From(await s.LoadAsync(ct).ConfigureAwait(false)));
@@ -105,11 +109,14 @@ public static class ConfigEndpoints
 // Ad `ProviderLoginRequest`: Auth/LoginRequest (kullanici adi + sifre) ile OpenAPI semasinda cakismasin (gen:api).
 public sealed record ProviderLoginRequest(string? Mode, string? Email, string? ApiKey = null);
 
-/// <summary><c>GET/PUT /settings</c> govdesi: <c>{ limitGuards: { anthropic: 99 } }</c>. Sozlesmede saglayici adi kucuk harf.</summary>
-public sealed record SettingsDto(Dictionary<string, int> LimitGuards)
+/// <summary>
+/// <c>GET/PUT /settings</c> govdesi: <c>{ limitGuards: { anthropic: 99 }, cacheTtl: null }</c>. Sozlesmede saglayici adi kucuk harf.
+/// <c>cacheTtl</c>: <c>5m</c> | <c>1h</c> | null (CLI varsayilani); atlanirsa null.
+/// </summary>
+public sealed record SettingsDto(Dictionary<string, int> LimitGuards, string? CacheTtl = null)
 {
     public static SettingsDto From(Domain.Settings.AppSettings s)
-        => new(s.LimitGuards.ToDictionary(kv => Domain.Agents.Providers.Wire(kv.Key), kv => kv.Value));
+        => new(s.LimitGuards.ToDictionary(kv => Domain.Agents.Providers.Wire(kv.Key), kv => kv.Value), s.CacheTtl);
 
     public Domain.Settings.AppSettings ToDomain()
     {
@@ -120,6 +127,6 @@ public sealed record SettingsDto(Dictionary<string, int> LimitGuards)
             guards[p] = value;
         }
 
-        return new Domain.Settings.AppSettings(guards);
+        return new Domain.Settings.AppSettings(guards, string.IsNullOrWhiteSpace(CacheTtl) ? null : CacheTtl.Trim());
     }
 }

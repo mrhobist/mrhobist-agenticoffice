@@ -77,10 +77,35 @@ export class Sprites {
     return { w: f.w, h: f.h }
   }
 
+  /** Nesne onbellegi: ekran olceginde bir kez yeniden orneklenmis kareler. Olcek degisince bosaltilir. */
+  private readonly objectCache = new Map<string, HTMLCanvasElement>()
+  private objectCacheScale = 0
+
+  /**
+   * Tileset nesnesi kaynak cozunurluktedir (monitor ~30 px) ve buyuk ekranda ~3.5 kat buyutulur. Her karede `high`
+   * kalite suzgecle yeniden orneklemek yuksek cozunurlukte kare basina ~40 ms tutuyordu: ajanlar yururken sahne
+   * takiliyordu (olcum 2026-09-26: 2400 px tuvalde kare 41 ms, 40'i bu cagri). Nesne o anki cihaz olceginde BIR KEZ
+   * cizilip saklanir, sonra 1:1 kopyalanir (arka plan onbellegiyle ayni yontem).
+   */
   drawObject(ctx: CanvasRenderingContext2D, name: string, x: number, y: number, w: number, h: number): void {
     const f = this.atlas.objects.tileset.frames[name]
     if (!f) return
-    ctx.drawImage(this.img(this.atlas.objects.tileset.image), f.x, f.y, f.w, f.h, x, y, w, h)
+    const m = ctx.getTransform()
+    const scale = Math.hypot(m.a, m.b)
+    if (Math.abs(scale - this.objectCacheScale) > 1e-3) { this.objectCache.clear(); this.objectCacheScale = scale }
+    const key = `${name}|${w.toFixed(2)}|${h.toFixed(2)}`
+    let c = this.objectCache.get(key)
+    if (!c) {
+      c = document.createElement('canvas')
+      c.width = Math.max(1, Math.ceil(w * scale))
+      c.height = Math.max(1, Math.ceil(h * scale))
+      const g = c.getContext('2d')!
+      g.imageSmoothingEnabled = true
+      g.imageSmoothingQuality = 'high'
+      g.drawImage(this.img(this.atlas.objects.tileset.image), f.x, f.y, f.w, f.h, 0, 0, c.width, c.height)
+      this.objectCache.set(key, c)
+    }
+    ctx.drawImage(c, x, y, w, h)
   }
 
   /**

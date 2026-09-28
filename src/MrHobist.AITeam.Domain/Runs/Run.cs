@@ -62,6 +62,8 @@ public enum PhaseCause
     Limit,
     Cancelled,
     Interrupted,
+    /// <summary>Tur hareketsiz kaldi ya da ust sinira dayandi (2026-09-23). Yazilan dosyalar diskte: "devam et" ile surer.</summary>
+    Timeout,
 }
 
 /// <summary>
@@ -132,7 +134,9 @@ public sealed record Run(
     /// </summary>
     long InputTokens = 0,
     /// <summary>Bu calismanin turlarinda uretilen cikti token'i toplami. Bkz. <see cref="InputTokens"/>.</summary>
-    long OutputTokens = 0)
+    long OutputTokens = 0,
+    /// <summary>Is verilirken eklenen dosyalar (docs/DOMAIN.md → Ekler). Sona eklendi (CLAUDE.md §5); null = ek yok.</summary>
+    IReadOnlyList<RunAttachment>? Attachments = null)
 {
     /// <summary>Proje butcesi icin tek olcu: girdi + cikti. Onbellek kirilimi rapordadir, tavanda degil.</summary>
     public long TotalTokens => InputTokens + OutputTokens;
@@ -175,10 +179,27 @@ public sealed record RunTask(
     string Description,
     IReadOnlyList<string> Files,
     IReadOnlyList<string> Acceptance,
-    IReadOnlyList<string> DependsOn);
+    IReadOnlyList<string> DependsOn,
+    /// <summary>
+    /// Bu gorevi baglayan kurallarin <see cref="Spec.Rules"/> icindeki 0 tabanli sirasi. Bos/null = tum kurallar (eski planlar,
+    /// analist emin degilse). 2026-09-23 maliyet kaldiraci: on yuz gorevine arka yuz kurallari her ic turda okunmasin. Sona eklendi.
+    /// </summary>
+    IReadOnlyList<int>? RuleRefs = null);
 
 /// <summary>Analist ciktisi: <c>runs/{id}/spec.json</c>.</summary>
-public sealed record Spec(string Summary, string Architecture, IReadOnlyList<string> Rules, IReadOnlyList<RunTask> Tasks);
+/// <remarks>
+/// <see cref="Knowledge"/>: gorevlerin ihtiyac duydugu bilgi dosyalari (ajan md'sindeki <c>includes</c> anahtarlari). Bos/null = ajanin
+/// tum bilgi dosyalari. 2026-09-23 maliyet kaldiraci: yalniz on yuz isinde arka yuz bilgisi sistem istemine girmesin. Sona eklendi.
+/// </remarks>
+/// <summary>
+/// Analistin plani. <see cref="CodeMap"/> (2026-09-24): analizin okudugu dosyalar ve her birinde ne oldugu -- gorevler ayni
+/// dosyalari anlamak icin yeniden okumasin (olcum: bir gorev analizin okudugu 11 dosyanin 6'sini yeniden okudu, analiz
+/// maliyetin %15'i). Sona eklendi; null = yok (eski planlar).
+/// </summary>
+public sealed record Spec(string Summary, string Architecture, IReadOnlyList<string> Rules, IReadOnlyList<RunTask> Tasks, IReadOnlyList<string>? Knowledge = null, IReadOnlyList<CodeNote>? CodeMap = null);
+
+/// <summary>Kod haritasinin bir satiri: proje kokune gore goreli yol + ne icerdigi (imza, desen, dikkat) tek satirda.</summary>
+public sealed record CodeNote(string Path, string Note);
 
 /// <summary>Bir gorevin bir fazi: <c>runs/{id}/tasks/{task}/phases.jsonl</c>.</summary>
 public sealed record Phase(
@@ -192,10 +213,21 @@ public sealed record Phase(
     PhaseStatus Status,
     double? DurationS = null,
     string? Detail = null,
-    PhaseCause? Cause = null)
+    PhaseCause? Cause = null,
+    /// <summary>
+    /// Bu adim KOSMADAN ONCEKI calisma alani hali (golge git taniticisi); alinamadiysa null. Uretici adimlarda
+    /// doldurulur: red tavaninda kullanici "son turu geri al" derse donulecek nokta budur. Sutun YOK -- faz
+    /// govdesiyle birlikte <c>run_phase.data</c> JSON'unda tasinir, sorgulanmaz.
+    /// </summary>
+    string? Snapshot = null,
+    /// <summary>Adimi kosan kopya (<see cref="Agents.Workers"/>); null = kopya 1 (ajanin kendisi). Sona eklendi.</summary>
+    string? Worker = null)
 {
     /// <summary>Sistemden dogan faz (limit, iptal, kesinti): ajanin hatasi degil; tur sayilmaz, tavana girmez.</summary>
-    public bool IsSystemFailure => Status == PhaseStatus.Failed && Cause is PhaseCause.Limit or PhaseCause.Cancelled or PhaseCause.Interrupted;
+    public bool IsSystemFailure => Status == PhaseStatus.Failed && Cause is PhaseCause.Limit or PhaseCause.Cancelled or PhaseCause.Interrupted or PhaseCause.Timeout;
+
+    /// <summary>Onceki deneme yarida kesildi (yeniden baslatma, zaman asimi, cagri sirasinda limit): dizinde yarim is olabilir.</summary>
+    public bool IsCutShort => Status == PhaseStatus.Failed && Cause is PhaseCause.Interrupted or PhaseCause.Timeout or PhaseCause.Limit;
 }
 
 /// <summary>Bir ajanin tek bir LLM cagrisi: <c>runs/{id}/conversations/{agent}.jsonl</c>. Tam metinler ayri alanlarda.</summary>
@@ -228,7 +260,40 @@ public sealed record Turn(
     /// </summary>
     bool? ToolsOffered = null,
     /// <summary>Tasinan gecmisin sikistirma oncesi/sonrasi olcusu; gecmis tasinmadiysa null. Sona eklendi (CLAUDE.md §5).</summary>
-    ContextStats? Context = null);
+    ContextStats? Context = null,
+    /// <summary>
+    /// Tur yarida kesildi (zaman asimi, iptal, saglayici hatasi): kullanim runtime'in canli bildiriminden, maliyet fiyat
+    /// tablosundan tahmin. Eski satirlarda null. Sona eklendi (CLAUDE.md §5).
+    /// </summary>
+    bool? CutShort = null,
+    /// <summary>
+    /// Bu turda ajana acilan MCP sunuculari (anahtarlar). MCP kullanim raporu "verildi ama kullanilmadi"yi bundan cikarir: her
+    /// sunucunun arac semalari her ic turda baglama girer, kullanilmayan sunucu bosuna odenir. Eski satirlarda null. Sona eklendi.
+    /// </summary>
+    IReadOnlyList<string>? McpServers = null,
+    /// <summary>
+    /// <see cref="CacheWriteTokens"/> icindeki 5 dakikalik yazma payi (1 saatliginden ucuz). null/0 = hepsi 1 saatlik ya da
+    /// saglayici ayirmadi. Onbellek omru denemesini (Ayarlar) olcmek icin. Sona eklendi (CLAUDE.md §5).
+    /// </summary>
+    int? CacheWrite5mTokens = null,
+    /// <summary>
+    /// Turdaki en buyuk tek API cagrisinin girdisi: ajanin baglaminin tepe noktasi. <see cref="InputTokens"/> ic turlarin
+    /// TOPLAMIDIR, baglamin ne kadar buyudugunu soylemez; okuma disiplini ve kod haritasinin etkisi bununla okunur
+    /// (<c>scripts/context-report.py</c>). null = olculemedi. Sona eklendi.
+    /// </summary>
+    int? PeakContextTokens = null,
+    /// <summary>Istenen onbellek omru (<c>5m</c> | <c>1h</c>); null = CLI varsayilani. Sona eklendi.</summary>
+    string? CacheTtl = null,
+    /// <summary>
+    /// Model basina kirilim (ana model + kesif alt ajani gibi alt ajanlar). Ust alanlar (<see cref="InputTokens"/>, <see cref="CostUsd"/>)
+    /// turun TOPLAMIDIR; alt ajanin payi yalniz burada ayrisir. Tek model ya da bildirilmediyse null. Sona eklendi.
+    /// </summary>
+    IReadOnlyList<ModelTokens>? ModelUsage = null,
+    /// <summary>Turu kosan kopya (<see cref="Agents.Workers"/>); null = kopya 1. <see cref="Agent"/> hep md anahtaridir. Sona eklendi.</summary>
+    string? Worker = null);
+
+/// <summary>Turdaki tek modelin payi. <see cref="InputTokens"/> toplamdir (dogrudan + onbellek okuma + yazma).</summary>
+public sealed record ModelTokens(string Model, int InputTokens, int OutputTokens, int CacheReadTokens, int CacheWriteTokens, decimal? CostUsd);
 
 /// <summary>
 /// Bir turda tasinan gecmisin olcusu (docs/DOMAIN.md → Baglam butcesi). Sikistirmanin neyi dusurdugunu ve hangi

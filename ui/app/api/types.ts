@@ -30,6 +30,10 @@ export interface AgentListItem {
   includes: string[]
   /** Soru sorabildigi ajan anahtari ya da null. */
   canAsk: string | null
+  /** Yetkili MCP sunuculari (md frontmatter `mcp`). Yonetim: MCP paneli. */
+  mcp?: string[] | null
+  /** Ofisteki karakteri (scene.json → agents[].sprite). PUT/POST'ta null = korunur / otomatik. */
+  sprite?: string | null
 }
 
 /** GET/PUT /api/v1/agents/{key} */
@@ -38,6 +42,13 @@ export interface AgentDetail extends AgentListItem {
   prompt: string
   /** govde + alt md'ler: modele giden metin. Salt okunur. */
   composedPrompt: string
+  /**
+   * Kesif alt ajaninin modeli (md `explore_model`): araçli turlarda salt okunur, ucuz bir alt ajan acilir. Yalniz anthropic.
+   * PUT'ta null = korunur, '' = kapatilir.
+   */
+  exploreModel?: string | null
+  /** Ayni anda en fazla kopya (md `max_instances`, 1..8): is geldikce kopya acilir, sahnede ayri karakter. PUT'ta null = korunur. */
+  maxInstances?: number | null
 }
 
 /**
@@ -128,6 +139,57 @@ export interface Turn {
   toolUses?: ToolUse[] | null
   /** Ajan dongusunun tur sayisi. */
   turns?: number | null
+  cacheReadTokens?: number | null
+  cacheWriteTokens?: number | null
+  /** Tur yarida kesildi: kullanim canli bildirimden, maliyet fiyat tablosundan tahmin. */
+  cutShort?: boolean | null
+  /** Turda birden cok model calistiysa (kesif alt ajani) model basina pay; ust alanlar toplamdir. */
+  modelUsage?: ModelTokens[] | null
+}
+
+export interface ModelTokens { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd: number | null }
+
+export interface RuntimeUsage { inputTokens: number; outputTokens: number; reasoningChars: number; cacheReadTokens: number; cacheWriteTokens: number }
+
+/** GET /api/v1/runs/{id}/live — suren tur: canlilik, akis (arac/metin/dusunce), o ana kadarki kullanim, ajanin baglami. */
+export interface LiveTurn {
+  agent: string
+  task: string | null
+  stage: string | null
+  startedAt: string
+  lastSeenAt: string
+  toolCount: number
+  usage: RuntimeUsage
+  stream: Array<{ ts: string; kind: 'tool' | 'text' | 'thinking'; tool: string | null; target: string | null; text: string | null }>
+  /** `text` yalniz `?context=true` ile gelir; yoklamada null (ad ve boyut yeter). */
+  context: Array<{ name: string; role: string; chars: number; text: string | null }>
+  /** Hareketsizlik esigi (s): bu kadar hareket olmazsa tur kesilir. */
+  idleLimitS: number
+  /** Tur boyunca bildirilen akis satiri sayisi (artar); `stream` yalniz son satirlardir. */
+  streamTotal: number
+}
+
+/** GET /api/v1/usage/split — kim ne harcadi (ofis ajani / Claude Code oturumlari). */
+export interface SpendReport {
+  since: string
+  until: string | null
+  weeklyPercent: number | null
+  weeklyResetsAt: string | null
+  officeRecordedUsd: number
+  officeRecordedTurns: number
+  sources: Array<{
+    key: 'office' | 'sessions'
+    label: string
+    messages: number
+    inputTokens: number
+    outputTokens: number
+    costUsd: number | null
+    quotaPoints: number | null
+    lines: Array<{ source: string; project: string; model: string; messages: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd: number | null }>
+    /** Fiyati bilinmeyen modeller: costUsd ve quotaPoints bunlar HARIC (alt sinir). */
+    unpricedModels?: string[] | null
+  }>
+  notes: string[]
 }
 
 export interface ToolUse { tool: string; target: string | null }
@@ -202,9 +264,48 @@ export interface LaunchResult { key: string; processId: number; launcher: string
 /** DELETE /api/v1/projects/{key}?deleteFiles= yaniti: gecmis projeyle gitti; dosyalar istendiyse ve varsa silindi. */
 export interface ProjectDeleteResult { key: string; targetDir: string; runsDeleted: number; filesDeleted: boolean }
 
-/** GET /api/v1/projects/dirs?path= — klasor secicinin bir seviyesi (depo kokune gore yollar). */
+/**
+ * GET /api/v1/projects/dirs?path= — klasor secicinin bir seviyesi. Yollar depo icinde goreli, depo disinda suruculu tam yol
+ * (2026-09-26: iceri alma icin depo disi da gezilir). `drives` hazir surucu kokleri (`C:/`).
+ */
 export interface WorkspaceDirectory { name: string; path: string }
-export interface DirectoryListing { path: string; parent: string | null; dirs: WorkspaceDirectory[] }
+export interface DirectoryListing { path: string; parent: string | null; dirs: WorkspaceDirectory[]; drives?: string[] | null }
+
+/** Bir dilin payi (GitHub'daki dil seridi gibi): linguist rengi, bayt, yuzde (bir ondalik). */
+export interface LanguageShare { name: string; color: string; bytes: number; percent: number }
+
+/**
+ * GET /api/v1/projects/inspect?path= ve /projects/{key}/inspect — klasorde zaten ne var (docs/DOMAIN.md → Projeyi iceri alma).
+ * `usedBy`: klasor (ya da ic/dis klasoru) baska bir projenin; iceri alma 409 project.dir_in_use verir.
+ */
+export interface ProjectInspection {
+  path: string
+  isGit: boolean
+  gitBranch: string | null
+  gitRemote: string | null
+  files: number
+  bytes: number
+  truncated: boolean
+  languages: LanguageShare[]
+  manifests: string[]
+  launchable: boolean
+  suggestedKey: string
+  suggestedTitle: string
+  suggestedDescription: string
+  usedBy: string | null
+}
+
+/** POST /api/v1/projects/import govdesi: yalniz path zorunlu, bos alanlar incelemenin onerisinden gelir. */
+export interface ImportProjectRequest {
+  path: string
+  key?: string | null
+  title?: string | null
+  description?: string | null
+  workflow?: string | null
+  color?: string | null
+  maxCostUsd?: number | null
+  maxTokens?: number | null
+}
 
 /** POST /api/v1/projects govdesi. */
 export interface CreateProjectRequest {
@@ -242,6 +343,8 @@ export interface RunRequest {
   label?: string | null
   /** Butce ust siniri ($); asilinca calisma BudgetExceeded ile durur. null = sinir yok. */
   maxCostUsd?: number | null
+  /** POST /attachments'in dondurdugu gecici ek kimlikleri. */
+  attachments?: string[] | null
 }
 
 /** run.json */
@@ -277,7 +380,7 @@ export interface RunSummary {
 export type RunStep = 'analyze' | 'approval' | 'dispatch'
 
 /** Fazi kim kapatti: `agent` ajanin sonucu; digerleri sistem kaynakli (tur sayilmaz). Eski kayitlarda yok. */
-export type PhaseCause = 'agent' | 'limit' | 'cancelled' | 'interrupted'
+export type PhaseCause = 'agent' | 'limit' | 'cancelled' | 'interrupted' | 'timeout'
 
 export interface QuestionOption { id: string; label: string; detail: string; needsNote: boolean }
 export interface UserQuestion {
@@ -292,8 +395,11 @@ export interface UserQuestion {
 /** POST /api/v1/runs/{id}/answer */
 export interface AnswerRequest { choice: string; note?: string | null }
 
-/** GET/PUT /api/v1/settings — saglayici basina limit korumasi esigi (%). */
-export interface AppSettings { limitGuards: Record<string, number> }
+/**
+ * GET/PUT /api/v1/settings — saglayici basina limit korumasi esigi (%) ve Anthropic istem onbelleginin omru
+ * (`5m` | `1h` | null = CLI varsayilani, bugun 1 sa).
+ */
+export interface AppSettings { limitGuards: Record<string, number>; cacheTtl?: '5m' | '1h' | null }
 
 /** Gelen kutusu satirinin turu: soru (plan onayi), karar (durdu: yeniden dene / iptal), soru (ajan ask). */
 export type InboxKind = Schemas['InboxKind']
@@ -395,7 +501,41 @@ export interface RunDetail extends RunSummary {
   order: string[]
   tasks: Array<{ id: string; phases: Phase[] }>
   messages: RunMessage[]
+  /** Is verilirken eklenen dosyalar; indirme GET /runs/{id}/attachments/{fileName}. */
+  attachments?: RunAttachment[] | null
 }
+
+// ------------------------------------------------------------------ ekler (docs/DOMAIN.md → Ekler)
+
+export type AttachmentKind = NonNullable<Schemas['AttachmentKind']>
+/** POST /api/v1/attachments ogesi: yuklendi, henuz bir ise bagli degil. */
+export type StagedAttachment = Schemas['StagedAttachment']
+export type RunAttachment = Schemas['RunAttachment']
+/** GET /api/v1/attachments/rules */
+export type AttachmentRules = Schemas['AttachmentRulesView']
+
+// ------------------------------------------------------------------ MCP (docs/DOMAIN.md → MCP sunuculari)
+
+export type McpTransport = NonNullable<Schemas['McpTransport']>
+/** GET /api/v1/mcp ogesi. env/headers degerleri DONMEZ; yalniz ad + kayitli mi. */
+export type McpServerView = Schemas['McpServerView']
+/** POST/PUT govdesi. env/headers satirinda value null → kayitli deger korunur. */
+export type McpServerRequest = Schemas['McpServerRequest']
+export type McpTestResult = Schemas['McpTestResult']
+/** GET /api/v1/mcp/catalog ogesi (config/mcp-catalog.json): hazir sunucu ve baglanti yontemleri. Sir tasimaz. */
+export type McpCatalogEntry = Schemas['McpCatalogEntry']
+export type McpAuthOption = Schemas['McpAuthOption']
+export type McpCatalogField = Schemas['McpCatalogField']
+/** POST /api/v1/mcp/catalog/{key}/install govdesi. */
+export type McpInstallRequest = Schemas['McpInstallRequest']
+/** PUT /api/v1/mcp/{key}/tools govdesi: ajana acilacak araclar, null = hepsi. */
+export type McpToolsRequest = Schemas['McpToolsRequest']
+/** GET /api/v1/mcp/usage */
+export type McpUsageReport = Schemas['McpUsageReport']
+export type McpServerUsage = Schemas['McpServerUsage']
+/** POST /api/v1/mcp/{key}/oauth/start */
+export type McpOAuthStartRequest = Schemas['McpOAuthStartRequest']
+export type McpOAuthStart = Schemas['McpOAuthStart']
 
 /** RFC 9457 govdesi + errorCode. `title`/`detail` EKRANA BASILMAZ; yalniz errorCode eslenir. */
 export interface ProblemDetails {

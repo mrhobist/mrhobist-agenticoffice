@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using MrHobist.AITeam.Application.Abstractions;
 using MrHobist.AITeam.Application.Agents;
+using MrHobist.AITeam.Application.Mcp;
 using MrHobist.AITeam.Application.Projects;
 using MrHobist.AITeam.Application.Runs;
 using MrHobist.AITeam.Application.Workflows;
@@ -32,24 +33,41 @@ public static class DependencyInjection
 
         services.AddSingleton<IAgentStore, MarkdownAgentStore>();
         services.AddSingleton<IWorkflowStore, JsonWorkflowStore>();
+        services.AddSingleton<IModelCatalog, JsonModelCatalog>();
         services.AddSingleton<ISceneLayout, JsonSceneLayoutStore>();
 
         services.AddSingleton<IProjectStore, SqliteProjectStore>();
         services.AddSingleton<IRunStore, SqliteRunStore>();
         services.AddSingleton<ISettingsStore, SqliteSettingsStore>();
+        services.AddSingleton<IMcpStore, SqliteMcpStore>();
+        services.AddSingleton<IMcpCatalog, JsonMcpCatalog>();
+        services.AddSingleton<IAttachmentStore, FileAttachmentStore>();
 
         services.AddSingleton<IProjectService, ProjectService>();
         services.AddSingleton<IAgentService, AgentService>();
+        services.AddTransient<IMcpService, McpService>();
+        services.AddSingleton<IMcpUsageReader, McpUsageReader>();
+        // OAuth: istemci IHttpClientFactory ile her cagrida HttpClient alir, bu yuzden singleton olabilir (AgentCaller singleton'u tutar).
+        services.AddHttpClient(McpOAuthHttpClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
+        services.AddSingleton<IMcpOAuthClient, McpOAuthHttpClient>();
+        services.AddSingleton<McpOAuthPending>();
+        services.AddSingleton<McpOAuthService>();
+        services.AddSingleton<IMcpTokenRefresher>(sp => sp.GetRequiredService<McpOAuthService>());
+        // Transient: runtime istemcisi typed HttpClient, singleton'a hapsedilmesin.
+        services.AddTransient<IModelListService, ModelListService>();
         services.AddSingleton<IWorkflowService, WorkflowService>();
         services.AddSingleton<IRunReader, RunReader>();
         services.AddSingleton<IUsageReader, UsageReader>();
+        services.AddSingleton<ISpendReader, SpendReader>();
         services.AddSingleton<IWorkspaceLocator, WorkspaceLocator>();
+        services.AddSingleton<IWorkspaceInspector, WorkspaceInspector>();
         services.AddSingleton<IProjectLauncher, WindowsProjectLauncher>();
         services.AddSingleton<LimitGuard>();
         services.AddSingleton(RetryPolicy.Default);
         services.AddSingleton<ProgressRegistry>();
         services.AddSingleton<AgentCaller>();
         services.AddSingleton<IHistoryCompactor, MafHistoryCompactor>();
+        services.AddSingleton<IWorkspaceSnapshot, GitWorkspaceSnapshot>();
         services.AddSingleton<IRunService, RunService>();
         return services;
     }
@@ -81,7 +99,8 @@ public static class DependencyInjection
         await db.Messages.Take(0).ToListAsync(ct).ConfigureAwait(false);
         await db.Phases.Take(0).ToListAsync(ct).ConfigureAwait(false);
         await db.Settings.Take(0).ToListAsync(ct).ConfigureAwait(false);
-        return 6;
+        await db.McpServers.Take(0).ToListAsync(ct).ConfigureAwait(false);
+        return 7;
     }
 
     private static string ConnectionString(StoragePaths paths) => new SqliteConnectionStringBuilder
@@ -98,8 +117,9 @@ public static class DependencyInjection
         services.AddHttpClient<IAgentRuntimeService, PythonAgentRuntimeClient>(client =>
         {
             client.BaseAddress = baseAddress;
-            // Bir LLM turu dakikalar surebilir (LESSONS: NVIDIA 180 s x 3 deneme runtime icinde).
-            client.Timeout = TimeSpan.FromMinutes(12);
+            // Asil sinir AgentCaller'in tur bekcisidir (TurnWatch: 15 dk hareketsizlik / 180 dk ust sinir). Bu yalniz son
+            // emniyet: bekciden sonra dolar. 2026-09-23'e kadar sabit 12 dk'ydi ve calisan Opus turunu kesiyordu.
+            client.Timeout = TimeSpan.FromMinutes(200);
         });
         return services;
     }

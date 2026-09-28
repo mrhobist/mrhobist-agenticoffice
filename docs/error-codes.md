@@ -18,6 +18,27 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `knowledge.not_found` | 404 | Böyle bir bilgi dosyası yok |
 | `knowledge.in_use` | 409 | `DELETE /knowledge`: bir ajanın `includes`'inde geçiyor |
 | `knowledge.body_empty` | 400 | Bilgi dosyası gövdesi boş |
+| `agent.unknown_sprite` | 400 | Seçilen karakter `scene.json → sprites[]` listesinde yok |
+| `agent.unknown_mcp` | 400 | `mcp` listesine kayıtlı olmayan bir MCP sunucusu eklendi |
+| `agent.mcp_unsupported` | 400 | MCP yetkisi verilen ajanın sağlayıcısı MCP çalıştıramıyor (yalnız `anthropic` / varsayılan) |
+| `agent.invalid_instances` | 400 | Ajan md'sindeki `max_instances` 1..8 aralığında ya da sayı değil |
+| `agent.explore_unsupported` | 400 | Keşif alt ajanı (`explore_model`) verilen ajanın sağlayıcısı alt ajan çalıştıramıyor (yalnız `anthropic` / varsayılan) |
+| `mcp.invalid_key` | 400 | MCP anahtarı `[a-z0-9][a-z0-9_-]*` değil |
+| `mcp.invalid` | 400 | stdio'da komut yok, http/sse'de mutlak http(s) adres yok, boş ya da yinelenen değişken/başlık adı |
+| `mcp.not_found` | 404 | Böyle bir MCP sunucusu yok |
+| `mcp.exists` | 409 | `POST /mcp`: bu anahtarla sunucu var |
+| `mcp.oauth_unsupported` | 400 | OAuth yalnız uzak (http/sse) sunucularda |
+| `mcp.oauth_discovery_failed` | 502 | Yetki sunucusu bulunamadı ya da ucu https değil |
+| `mcp.oauth_client_required` | 400 | Sunucu dinamik istemci kaydı yapmıyor/reddetti; kullanıcı istemci kimliği girmeli |
+| `mcp.oauth_state_invalid` | 400 | OAuth dönüşündeki giriş oturumu bilinmiyor ya da süresi doldu |
+| `mcp.oauth_token_failed` | 502 | Yetkilendirme reddedildi ya da belirteç alınamadı |
+| `mcp.catalog_not_found` | 404 | Katalogda böyle bir hazır sunucu ya da bağlantı yöntemi yok |
+| `mcp.in_use` | 409 | `DELETE /mcp`: sunucu bir ajana yetkili; önce yetki kaldırılır |
+| `attachment.empty` | 400 | Yüklenen dosya boş ya da istekte dosya yok |
+| `attachment.too_large` | 400 | Dosya 20 MB'tan büyük |
+| `attachment.type_unsupported` | 400 | İzinli uzantılardan biri değil (`GET /attachments/rules`) |
+| `attachment.too_many` | 400 | Bir işe 10'dan fazla ek |
+| `attachment.not_found` | 400/404 | `POST /runs`: geçici ek kimliği bilinmiyor ya da süresi doldu (400) · indirme: çalışmanın böyle bir eki yok (404) |
 | `agent.markdown_invalid` | 400 | `POST /agents/import`: md frontmatter/gövde çözülemedi |
 | `workflow.analyze_count` | 400 | Tam olarak bir `analyze` adımı olmalı |
 | `workflow.analyze_first` | 400 | `analyze` ilk sırada olmalı |
@@ -56,6 +77,9 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `project.launch_missing` | 404 | `launch`: proje kökünde `run.cmd` yok |
 | `project.launch_failed` | 400 | `launch`: başlatıcı süreç açılamadı |
 | `project.invalid_color` | 400 | `color` `#rrggbb` değil |
+| `project.dir_not_found` | 404 | `inspect` / `import`: klasör diskte yok |
+| `project.dir_in_use` | 409 | `import` / `POST` / `PUT /projects`: klasör başka bir projenin hedef dizini (iki proje aynı klasöre yazamaz) |
+| `project.dir_reserved` | 400 | `inspect` / `import` / `POST` / `PUT /projects`: sürücülü tam yol ofisin kendi deposu, onun iç klasörü ya da onu içeren üst klasör (ajan `config/`, `src/`, `data/`'ya yazabilirdi) |
 | `project.budget_invalid` | Proje bütçesi sıfır ya da negatif verildi; sınırsız için alan boş bırakılır | 400 |
 | `project.budget_exceeded` | Proje bütçesi dolu: yeni iş başlamaz, süren iş `BudgetExceeded` olur | 400 |
 | `config.file_missing` | 404/500 | Yapılandırma dosyası yok |
@@ -63,7 +87,7 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `runtime.unavailable` | 503 | Python runtime'a ulaşılamıyor |
 | `runtime.error` | 502 | Runtime ayakta ama istenen uç 5xx döndü (kapalı değil, uç bozuk) |
 
-Runtime'ın kendi kodları (`runtime/README.md`) Api'ye `runtime <kod>: mesaj` metniyle gelir, ayrı `errorCode` olmaz: `runtime.cli_missing`, `runtime.not_logged_in`, `runtime.provider_error`, `runtime.provider_unsupported`, `runtime.tools_unsupported` (OpenAI API anahtarı yolunda araçlı adım yok).
+Runtime'ın kendi kodları (`runtime/README.md`) Api'ye `runtime <kod>: mesaj` metniyle gelir, ayrı `errorCode` olmaz: `runtime.cli_missing`, `runtime.not_logged_in`, `runtime.provider_error`, `runtime.provider_unsupported`, `runtime.tools_unsupported` (OpenAI API anahtarı yolunda araçlı adım yok), `runtime.mcp_unsupported` (OpenAI sağlayıcısında MCP bağlanmadı).
 | `scene.command.type_missing` | 400 | Sahne komutunda `type` yok |
 | `scene.command.type_unknown` | 400 | Bilinmeyen sahne olayı türü |
 | `scene.command.data_missing` | 400 | Sahne komutunda `data` nesnesi yok |

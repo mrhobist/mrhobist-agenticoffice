@@ -141,6 +141,7 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
 <style scoped>
 .limits { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
 .prov {
+  flex: none; white-space: nowrap;
   display: flex; align-items: center; gap: 9px; font: inherit; cursor: pointer; color: var(--ink-2);
   background: var(--surface-2); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 12px 4px 10px; min-height: 38px;
 }
@@ -167,6 +168,9 @@ const unavailable = computed(() => (items.value ?? []).filter(p => !p.available)
 .ring.warn { --c: #d99b3a; }
 .ring.crit { --c: #e05252; }
 .sub.short { max-width: 140px; }
+/* Dar ekranda kullanilmayan saglayici cipi yalniz adini gosterir: "OpenAI (ChatGPT)" iki satira kirilip "giri…" diye
+   kesiliyordu (961 px, 2026-09-25). Neden ipucunda (title) kalir. */
+@media (max-width: 1180px) { .prov.off.quiet .sub.short { display: none; } }
 .stale { margin-left: 4px; color: var(--ink-3); }
 .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
 </style>

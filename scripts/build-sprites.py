@@ -167,6 +167,33 @@ def recolor(img: Image.Image, hue_band: tuple[int, int], hue_to: int, min_sat: i
     return Image.fromarray(rgba, "RGBA")
 
 
+def recolor_ops(img: Image.Image, ops: list[dict]) -> Image.Image:
+    """Several HSV edits in one pass; each op selects pixels by hue band + saturation + value range.
+
+    Unlike `recolor`, an op can also darken/brighten (black or blonde hair cannot be reached by a hue
+    shift alone) and select by value, which separates dark brown hair from lighter skin of similar hue.
+    Op keys (PIL scale 0-255): hue=(lo, hi) (lo > hi wraps), sat=(min, max), val=(min, max),
+    to_hue, sat_mul, val_mul, val_add. Selection always uses the ORIGINAL pixel, so ops don't chain.
+    """
+    rgba = np.asarray(img.convert("RGBA")).copy()
+    hsv = np.asarray(img.convert("RGB").convert("HSV")).astype(float)
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    out = hsv.copy()
+    for op in ops:
+        lo, hi = op.get("hue", (0, 255))
+        m = ((h >= lo) & (h <= hi)) if lo <= hi else ((h >= lo) | (h <= hi))
+        smin, smax = op.get("sat", (0, 255))
+        vmin, vmax = op.get("val", (0, 255))
+        m &= (s >= smin) & (s <= smax) & (v >= vmin) & (v <= vmax) & (rgba[:, :, 3] > 0)
+        if "to_hue" in op:
+            out[:, :, 0][m] = op["to_hue"]
+        out[:, :, 1][m] = np.clip(s[m] * op.get("sat_mul", 1.0), 0, 255)
+        out[:, :, 2][m] = np.clip(v[m] * op.get("val_mul", 1.0) + op.get("val_add", 0), 0, 255)
+    rgb = np.asarray(Image.fromarray(out.astype(np.uint8), "HSV").convert("RGB"))
+    rgba[:, :, :3] = rgb
+    return Image.fromarray(rgba, "RGBA")
+
+
 def pack_grid(frames: list[list[Image.Image]], target_h_world: int, name: str) -> dict:
     """Align every frame bottom-center into equal cells and scale to target height."""
     rows, cols = len(frames), len(frames[0])
@@ -335,10 +362,24 @@ CATALOGS = ROOT / "assets" / "reference" / "v2-catalogs"
 PANEL_ORDER = ["S", "SW", "W", "NW", "N", "NE", "E", "SE", "SIT", "TYPE"]
 PANEL_FRAMES = {"SIT": 8, "TYPE": 6}
 DIR_ROWS_8 = {"down": 0, "downleft": 1, "left": 2, "upleft": 3, "up": 4, "upright": 5, "right": 6, "downright": 7}
-CHAR_V2_HEIGHT_WORLD = 78
+# 2026-09-24 (kullanici: "simler masaya gore kucuk, masaya uzak oturuyor"): 78 -> 94. Olcum: masanin on yuzu ~55 dunya px,
+# 78 px'lik karakter oturunca basi masa ustunun kenarina hic yetismiyordu. Oturma noktalari da masaya yanastirildi (scene.json).
+CHAR_V2_HEIGHT_WORLD = 94
 
-# key -> (catalog file, optional recolor (hue_band, hue_to)); recolor derives an extra outfit.
-CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | None]] = {
+# HSV ops shared by derived characters (PIL hue 0-255: red 0, orange ~20, yellow ~42, green ~85, blue ~170, purple ~200).
+# Brown hair in these packs sits at hue 5-30 and is darker than skin of the same hue, hence the val cap.
+_HAIR = {"hue": (5, 30), "sat": (60, 255), "val": (0, 175)}
+_NAVY = {"hue": (145, 190), "sat": (40, 255)}      # skirt, tie, trousers (sim1, sim3)
+_JEANS = {"hue": (130, 185), "sat": (30, 255)}     # jeans (sim4)
+HAIR_BLONDE = {**_HAIR, "to_hue": 26, "sat_mul": 1.1, "val_mul": 1.7, "val_add": 30}
+HAIR_RED = {**_HAIR, "to_hue": 6, "sat_mul": 1.25, "val_mul": 1.15}
+HAIR_AUBURN = {**_HAIR, "to_hue": 250, "sat_mul": 1.1}
+HAIR_BLACK = {**_HAIR, "sat_mul": 0.3, "val_mul": 0.42}
+
+# key -> (catalog file, recolor): None, a legacy (hue_band, hue_to) tuple, or a list of `recolor_ops` ops.
+# Derived characters (2026-09-23, user request "new characters, mostly women"): palette variants of the
+# complete catalogs -- the extra packs (sim7, karma) have truncated or tiny panels and don't slice cleanly.
+CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | list[dict] | None]] = {
     "shirt-tie": ("sim1.png", None),
     "green-hoodie": ("sim2.png", None),
     "ponytail": ("sim3.png", None),
@@ -347,6 +388,12 @@ CHARACTERS_V2: dict[str, tuple[str, tuple[tuple[int, int], int] | None]] = {
     "curly-yellow": ("sim6.png", None),
     "hipster": ("sim8.png", None),
     "blue-hoodie": ("sim2.png", ((55, 115), 150)),
+    "ponytail-blonde": ("sim3.png", [HAIR_BLONDE, {**_NAVY, "to_hue": 245, "sat_mul": 1.1}]),
+    "ponytail-red": ("sim3.png", [HAIR_RED, {**_NAVY, "to_hue": 95}]),
+    "ponytail-black": ("sim3.png", [HAIR_BLACK, {**_NAVY, "sat_mul": 0.15, "val_mul": 1.35}]),
+    "bun-black": ("sim4.png", [HAIR_BLACK, {**_JEANS, "to_hue": 225, "sat_mul": 1.2, "val_mul": 0.8}]),
+    "bun-auburn": ("sim4.png", [HAIR_AUBURN, {**_JEANS, "to_hue": 120, "val_mul": 0.9}]),
+    "shirt-tie-blond": ("sim1.png", [HAIR_BLONDE, {**_NAVY, "to_hue": 250, "sat_mul": 1.2}]),
 }
 
 
@@ -428,18 +475,27 @@ def panel_frames(img: Image.Image, box: tuple[int, int, int, int], expected: int
 _CATALOG_CACHE: dict[str, tuple[dict[str, list[Image.Image]], float]] = {}
 
 
+# Bu kataloglarda "SW" paneli neredeyse onden cizilmis (yuz kameraya, ayaklar asagi): sol-asagi yuruyen karakter
+# bize dogru kayiyor gibi gorunuyordu, "SE" ise duzgun yan profil. SW, SE'nin aynasindan uretilir (olcum 2026-09-24).
+MIRROR_SW_FROM_SE = {"sim1.png", "sim5.png", "sim6.png"}
+
+
 def catalog_frames(key: str) -> tuple[dict[str, list[Image.Image]], float]:
     """Bir katalogun 10 panelinden kareler + o karakterin dunya olcegi. Bagisci de buradan gelir."""
     if key in _CATALOG_CACHE:
         return _CATALOG_CACHE[key]
     file, recolor_spec = CHARACTERS_V2[key]
     img = Image.open(CATALOGS / file).convert("RGBA")
-    if recolor_spec:
+    if isinstance(recolor_spec, list):
+        img = recolor_ops(img, recolor_spec)
+    elif recolor_spec:
         img = recolor(img, recolor_spec[0], recolor_spec[1])
     panels = catalog_panels(img)
     frames: dict[str, list[Image.Image]] = {}
     for name, box in zip(PANEL_ORDER, panels):
         frames[name] = panel_frames(img, box, PANEL_FRAMES.get(name, 6))
+    if file in MIRROR_SW_FROM_SE:
+        frames["SW"] = [f.transpose(Image.Transpose.FLIP_LEFT_RIGHT) for f in frames["SE"]]
     # One scale for the whole character: standing height from the walk-south frames.
     stand_h = max(f.height for f in frames["S"])
     scale = (CHAR_V2_HEIGHT_WORLD * WORLD_SCALE) / stand_h
@@ -447,8 +503,60 @@ def catalog_frames(key: str) -> tuple[dict[str, list[Image.Image]], float]:
     return frames, scale
 
 
+# Kaynak katalogda "yazma" paneli sandalyesiz cizilmis karakterler (sim8: ayakta, elinde laptop). Masada arkadan oturma
+# kareleri (TYPE 3-5) bagiscinin sandalyesi + karakterin arkadan yuruyus karesinin ust govdesiyle uretilir.
+# Bagisci secimi olcumle: yesil kapusonun koyu tonlari ve koyu sac sandalye maskesine karisiyor, "bun"un sandalyesi temiz kesiliyor.
+SEATED_BACK_DONOR: dict[str, str] = {"hipster": "bun"}
+
+
+def _chair_masks(rgba: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(lacivert, lacivert|koyu dis cizgi) maskeleri (PIL HSV). Ust sinir yalniz lacivertten bulunur: koyu sac da 'koyu'dur."""
+    hsv = np.asarray(Image.fromarray(rgba[:, :, :3], "RGB").convert("HSV")).astype(int)
+    h, s_, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    opaque = rgba[:, :, 3] > 128
+    navy = (h >= 140) & (h <= 190) & (s_ >= 35) & (v <= 190) & opaque
+    return navy, (navy | (v <= 70)) & opaque
+
+
+def synth_seated_back(key: str, frames: dict[str, list[Image.Image]], scale: float) -> None:
+    donor_frames, donor_scale = catalog_frames(SEATED_BACK_DONOR[key])
+    k = donor_scale / scale  # bagisci karesi -> bu karakterin kaynak pikseli
+    torso_src = frames["N"][0]
+    tb = torso_src.getchannel("A").point(lambda a: 255 if a > 128 else 0).getbbox()
+    torso_src = torso_src.crop(tb)
+    torso = torso_src.crop((0, 0, torso_src.width, int(torso_src.height * 0.62)))  # bas + govde, kalca sandalye arkasinda kalir
+    out = list(frames["TYPE"])
+    for i in (3, 4, 5):
+        d = donor_frames["TYPE"][i]
+        d = d.resize((max(1, round(d.width * k)), max(1, round(d.height * k))), Image.LANCZOS)
+        a = np.asarray(d.convert("RGBA")).copy()
+        navy, chair = _chair_masks(a)
+        row_frac = navy.mean(axis=1)
+        rows = np.where(row_frac >= 0.45)[0]
+        top = int(rows[0]) if len(rows) else a.shape[0] // 3
+        keep = np.zeros_like(chair)
+        keep[top:, :] = chair[top:, :]
+        # Bagiscinin kol dis cizgileri sandalyenin yaninda kalir: lacivertin yatay sinirinin disindaki koyu pikseller atilir.
+        cols = np.where(navy[top:, :].any(axis=0))[0]
+        if len(cols):
+            keep[:, : max(0, int(cols[0]) - 1)] = False
+            keep[:, int(cols[-1]) + 2 :] = False
+        a[:, :, 3] = np.where(keep, a[:, :, 3], 0)
+        chair_img = Image.fromarray(a, "RGBA")
+        head_top = d.getchannel("A").point(lambda v: 255 if v > 128 else 0).getbbox()[1]
+        w = max(chair_img.width, torso.width)
+        canvas = Image.new("RGBA", (w, chair_img.height), (0, 0, 0, 0))
+        canvas.alpha_composite(torso, ((w - torso.width) // 2, head_top))
+        canvas.alpha_composite(chair_img, ((w - chair_img.width) // 2, 0))
+        out[i] = canvas
+    frames["TYPE"] = out
+
+
 def build_character_v2(key: str) -> dict:
     frames, scale = catalog_frames(key)
+    if key in SEATED_BACK_DONOR:
+        frames = dict(frames)
+        synth_seated_back(key, frames, scale)
 
     def pack(rows: list[list[Image.Image]], out_name: str) -> dict:
         max_w = max(f.width for r in rows for f in r)
@@ -546,7 +654,25 @@ def load(name: str) -> Image.Image:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--inspect", action="store_true", help="dump numbered tileset boxes and exit")
+    ap.add_argument("--only", help="comma-separated character keys: build just these and merge into the existing atlas.json "
+                    "(other files untouched, so a Pillow upgrade doesn't rewrite every PNG)")
     args = ap.parse_args()
+
+    if args.only:
+        keys = [k.strip() for k in args.only.split(",") if k.strip()]
+        unknown = [k for k in keys if k not in CHARACTERS_V2]
+        if unknown:
+            print(f"unknown character(s): {', '.join(unknown)}", file=sys.stderr)
+            return 2
+        atlas_file = OUT / "atlas.json"
+        atlas = json.loads(atlas_file.read_text(encoding="utf-8"))
+        for key in keys:
+            atlas["characters"][key] = build_character_v2(key)
+            w = atlas["characters"][key]["walk"]
+            print("character", key, w["frameW"], w["frameH"])
+        atlas_file.write_text(json.dumps(atlas, indent=2), encoding="utf-8")
+        print("atlas ->", atlas_file)
+        return 0
 
     tileset = load("objects-tileset.png")
     if args.inspect:

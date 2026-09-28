@@ -4,6 +4,80 @@
  */
 
 export interface paths {
+    "/api/v1/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": components["schemas"]["IFormFileCollection"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StagedAttachment"][];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/attachments/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AttachmentRulesView"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/progress/{token}": {
         parameters: {
             query?: never;
@@ -721,6 +795,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/usage/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    since?: string;
+                    until?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SpendReport"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -1164,6 +1276,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{id}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    tail?: number | string;
+                    context?: boolean;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LiveTurnView"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{id}/approve": {
         parameters: {
             query?: never;
@@ -1306,6 +1458,42 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{id}/attachments/{file}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    file: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1481,6 +1669,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectInspection"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ImportProjectRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{key}": {
         parameters: {
             query?: never;
@@ -1566,6 +1828,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{key}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProjectInspection"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{key}/runs": {
         parameters: {
             query?: never;
@@ -1640,6 +1939,451 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpServerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpCatalogEntry"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    runs?: number | string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpUsageReport"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/catalog/{key}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpInstallRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpServerRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpAccessRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": null | components["schemas"]["McpOAuthStartRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpOAuthStart"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/oauth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["McpToolsRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpServerView"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/{key}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpTestResult"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1656,6 +2400,14 @@ export interface components {
             canAsk: null | string;
             prompt: string;
             composedPrompt: string;
+            mcp?: null | string[];
+            sprite?: null | string;
+            exploreModel?: null | string;
+            /**
+             * Format: int32
+             * @default 1
+             */
+            maxInstances: number | string;
         };
         AgentListItem: {
             key: string;
@@ -1667,6 +2419,8 @@ export interface components {
             effort: null | string;
             includes: string[];
             canAsk: null | string;
+            mcp?: null | string[];
+            sprite?: null | string;
         };
         AgentRunWork: {
             run: components["schemas"]["Run"];
@@ -1677,6 +2431,19 @@ export interface components {
         AnswerRequest: {
             choice: string;
             note?: null | string;
+        };
+        /** @enum {unknown} */
+        AttachmentKind: "document" | "image" | "text" | "word";
+        AttachmentRulesView: {
+            extensions: string[];
+            /** Format: int64 */
+            maxBytes: number | string;
+            /** Format: int32 */
+            maxPerRun: number | string;
+        };
+        CodeNote: {
+            path: string;
+            note: string;
         };
         ContextStats: {
             /** Format: int32 */
@@ -1703,6 +2470,11 @@ export interface components {
             canAsk: null | string;
             prompt: string;
             effort?: null | string;
+            mcp?: null | string[];
+            sprite?: null | string;
+            exploreModel?: null | string;
+            /** Format: int32 */
+            maxInstances?: null | number | string;
         };
         CreateProjectRequest: {
             key: string;
@@ -1722,10 +2494,26 @@ export interface components {
             path: string;
             parent: null | string;
             dirs: components["schemas"]["WorkspaceDirectory"][];
+            drives?: null | string[];
         };
+        /** Format: binary */
+        IFormFile: string;
+        IFormFileCollection: components["schemas"]["IFormFile"][];
         ImportMarkdownRequest: {
             key: string;
             markdown: string;
+        };
+        ImportProjectRequest: {
+            path: string;
+            key?: null | string;
+            title?: null | string;
+            description?: null | string;
+            workflow?: null | string;
+            color?: null | string;
+            /** Format: double */
+            maxCostUsd?: null | number | string;
+            /** Format: int64 */
+            maxTokens?: null | number | string;
         };
         InboxItem: {
             runId: string;
@@ -1749,6 +2537,50 @@ export interface components {
             title: null | string;
             body: string;
         };
+        LanguageShare: {
+            name: string;
+            color: string;
+            /** Format: int64 */
+            bytes: number | string;
+            /** Format: double */
+            percent: number | string;
+        };
+        LiveContextPart: {
+            name: string;
+            role: string;
+            /** Format: int32 */
+            chars: number | string;
+            text: null | string;
+        };
+        LiveEntry: {
+            /** Format: date-time */
+            ts: string;
+            kind: string;
+            tool: null | string;
+            target: null | string;
+            text: null | string;
+        };
+        LiveTurnView: {
+            agent: string;
+            task: null | string;
+            stage: null | string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            lastSeenAt: string;
+            /** Format: int32 */
+            toolCount: number | string;
+            usage: components["schemas"]["RuntimeUsage"];
+            stream: components["schemas"]["LiveEntry"][];
+            context: components["schemas"]["LiveContextPart"][];
+            /** Format: int32 */
+            idleLimitS: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            streamTotal: number | string;
+        };
         LoginRequest: {
             username: string;
             password: string;
@@ -1758,6 +2590,186 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
             user: components["schemas"]["UserInfo"];
+        };
+        McpAccessRequest: {
+            agents: string[];
+        };
+        McpAgentUsage: {
+            agent: string;
+            /** Format: int32 */
+            offeredTurns: number | string;
+            /** Format: int32 */
+            calls: number | string;
+        };
+        McpAuthOption: {
+            id: string;
+            label: string;
+            transport: components["schemas"]["McpTransport"];
+            command?: null | string;
+            args?: null | string[];
+            url?: null | string;
+            fields?: null | components["schemas"]["McpCatalogField"][];
+            /** @default true */
+            supported: boolean;
+            description?: null | string;
+            notes?: null | string;
+            requires?: null | string[];
+            /** @default false */
+            oAuth: boolean;
+        };
+        McpCatalogEntry: {
+            key: string;
+            name: string;
+            vendor: string;
+            description: string;
+            options: components["schemas"]["McpAuthOption"][];
+            /** @default false */
+            official: boolean;
+            docsUrl?: null | string;
+            notes?: null | string;
+            default?: null | components["schemas"]["McpDefaultInstall"];
+        };
+        McpCatalogField: {
+            name: string;
+            label: string;
+            target?: components["schemas"]["McpFieldTarget"];
+            /** @default false */
+            secret: boolean;
+            /** @default true */
+            required: boolean;
+            placeholder?: null | string;
+            help?: null | string;
+            format?: null | string;
+            default?: null | string;
+            choices?: null | string[];
+            header?: null | string;
+        };
+        McpDefaultInstall: {
+            option: string;
+            values?: null | {
+                [key: string]: string;
+            };
+            tools?: null | string[];
+            /** @default false */
+            grantNewAgents: boolean;
+        };
+        /**
+         * @default env
+         * @enum {unknown}
+         */
+        McpFieldTarget: "input" | "env" | "header";
+        McpInstallRequest: {
+            option: string;
+            values?: null | {
+                [key: string]: string;
+            };
+            key?: null | string;
+            name?: null | string;
+        };
+        McpKnownTool: {
+            name: string;
+            description?: null | string;
+        };
+        McpOAuthStart: {
+            authorizationUrl: string;
+            registered: boolean;
+        };
+        McpOAuthStartRequest: {
+            clientId?: null | string;
+            clientSecret?: null | string;
+            scope?: null | string;
+        };
+        McpOAuthState: {
+            loggedIn: boolean;
+            /** Format: date-time */
+            expiresAt: null | string;
+            registered: boolean;
+            scope: null | string;
+            canRefresh: boolean;
+        };
+        McpSecretEntry: {
+            name: string;
+            hasValue: boolean;
+        };
+        McpSecretInput: {
+            name: string;
+            value?: null | string;
+        };
+        McpServerRequest: {
+            key: string;
+            name: string;
+            transport: components["schemas"]["McpTransport"];
+            command?: null | string;
+            args?: null | string[];
+            url?: null | string;
+            env?: null | components["schemas"]["McpSecretInput"][];
+            headers?: null | components["schemas"]["McpSecretInput"][];
+            /** @default true */
+            enabled: boolean;
+            description?: null | string;
+        };
+        McpServerUsage: {
+            key: string;
+            name: null | string;
+            registered: boolean;
+            /** Format: int32 */
+            offeredTurns: number | string;
+            /** Format: int32 */
+            usedTurns: number | string;
+            /** Format: int32 */
+            calls: number | string;
+            /** Format: int32 */
+            runs: number | string;
+            /** Format: date-time */
+            lastUsedAt: null | string;
+            tools: components["schemas"]["McpToolUsage"][];
+            agents: components["schemas"]["McpAgentUsage"][];
+        };
+        McpServerView: {
+            key: string;
+            name: string;
+            description: string;
+            transport: components["schemas"]["McpTransport"];
+            command: null | string;
+            args: string[];
+            url: null | string;
+            env: components["schemas"]["McpSecretEntry"][];
+            headers: components["schemas"]["McpSecretEntry"][];
+            enabled: boolean;
+            /** Format: date-time */
+            updatedAt: null | string;
+            agents: string[];
+            tools?: null | string[];
+            knownTools?: null | components["schemas"]["McpKnownTool"][];
+            /** Format: date-time */
+            toolsCheckedAt?: null | string;
+            oAuth?: null | components["schemas"]["McpOAuthState"];
+        };
+        McpTestResult: {
+            ok: boolean;
+            detail: string;
+            tools: components["schemas"]["RuntimeMcpTool"][];
+            serverName: null | string;
+            serverVersion: null | string;
+        };
+        McpToolUsage: {
+            name: string;
+            /** Format: int32 */
+            calls: number | string;
+        };
+        McpToolsRequest: {
+            tools: null | string[];
+        };
+        /** @enum {unknown} */
+        McpTransport: "stdio" | "http" | "sse";
+        McpUsageReport: {
+            /** Format: int32 */
+            runLimit: number | string;
+            /** Format: int32 */
+            turnsWithMcp: number | string;
+            /** Format: int32 */
+            calls: number | string;
+            servers: components["schemas"]["McpServerUsage"][];
         };
         Message: {
             /** Format: date-time */
@@ -1774,6 +2786,19 @@ export interface components {
         };
         /** @enum {unknown} */
         MessageKind: "ask" | "answer" | "handoff" | "note";
+        ModelTokens: {
+            model: string;
+            /** Format: int32 */
+            inputTokens: number | string;
+            /** Format: int32 */
+            outputTokens: number | string;
+            /** Format: int32 */
+            cacheReadTokens: number | string;
+            /** Format: int32 */
+            cacheWriteTokens: number | string;
+            /** Format: double */
+            costUsd: null | number | string;
+        };
         Phase: {
             /** Format: date-time */
             ts: string;
@@ -1789,15 +2814,25 @@ export interface components {
             durationS?: null | number | string;
             detail?: null | string;
             cause?: null | components["schemas"]["PhaseCause"];
+            snapshot?: null | string;
+            worker?: null | string;
             isSystemFailure?: boolean;
+            isCutShort?: boolean;
         };
         /** @enum {unknown} */
-        PhaseCause: "agent" | "limit" | "cancelled" | "interrupted" | null;
+        PhaseCause: "agent" | "limit" | "cancelled" | "interrupted" | "timeout" | null;
         /** @enum {unknown} */
         PhaseStatus: "started" | "done" | "rejected" | "failed" | "skipped";
         ProgressEvent: {
-            tool: string;
-            target: null | string;
+            tool?: null | string;
+            target?: null | string;
+            kind?: null | string;
+            text?: null | string;
+            messageId?: null | string;
+            usage?: null | components["schemas"]["RuntimeUsage"];
+            /** Format: int32 */
+            chars?: null | number | string;
+            model?: null | string;
         };
         ProjectCard: {
             key: string;
@@ -1854,6 +2889,24 @@ export interface components {
             /** Format: int32 */
             runsDeleted: number | string;
             filesDeleted: boolean;
+        };
+        ProjectInspection: {
+            path: string;
+            isGit: boolean;
+            gitBranch: null | string;
+            gitRemote: null | string;
+            /** Format: int32 */
+            files: number | string;
+            /** Format: int64 */
+            bytes: number | string;
+            truncated: boolean;
+            languages: components["schemas"]["LanguageShare"][];
+            manifests: string[];
+            launchable: boolean;
+            suggestedKey: string;
+            suggestedTitle: string;
+            suggestedDescription: string;
+            usedBy: null | string;
         };
         ProjectModel: {
             title: string;
@@ -1939,10 +2992,21 @@ export interface components {
              * @default 0
              */
             outputTokens: number | string;
+            attachments?: null | components["schemas"]["RunAttachment"][];
             /** Format: int64 */
             totalTokens?: number | string;
             isCancellable?: boolean;
             isRetryable?: boolean;
+        };
+        RunAttachment: {
+            id: string;
+            name: string;
+            fileName: string;
+            mediaType: string;
+            /** Format: int64 */
+            size: number | string;
+            kind: components["schemas"]["AttachmentKind"];
+            textFile?: null | string;
         };
         RunDetail: {
             id: string;
@@ -1975,6 +3039,7 @@ export interface components {
             step?: null | components["schemas"]["RunStep"];
             /** Format: date-time */
             waitingSince?: null | string;
+            attachments?: null | components["schemas"]["RunAttachment"][];
         };
         RunRequest: {
             brief: string;
@@ -1984,6 +3049,7 @@ export interface components {
             /** Format: double */
             maxCostUsd?: null | number | string;
             project?: null | string;
+            attachments?: null | string[];
         };
         /** @enum {unknown} */
         RunStatus: "running" | "completed" | "failed" | "interrupted" | "budgetExceeded" | "policyRejected" | "awaitingApproval" | "paused" | "cancelled" | "awaitingInput";
@@ -1996,6 +3062,7 @@ export interface components {
             files: string[];
             acceptance: string[];
             dependsOn: string[];
+            ruleRefs?: null | (number | string)[];
         };
         RunsOverview: {
             /** Format: int32 */
@@ -2031,6 +3098,10 @@ export interface components {
             started: boolean;
             detail: string;
         };
+        RuntimeMcpTool: {
+            name: string;
+            description: null | string;
+        };
         RuntimeModelInfo: {
             provider: components["schemas"]["Provider"];
             model: string;
@@ -2045,6 +3116,34 @@ export interface components {
             /** Format: date-time */
             fetchedAt: null | string;
             limits: components["schemas"]["RuntimeUsageLimit"][];
+        };
+        RuntimeUsage: {
+            /** Format: int32 */
+            inputTokens: number | string;
+            /** Format: int32 */
+            outputTokens: number | string;
+            /** Format: int32 */
+            reasoningChars: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            cacheReadTokens: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            cacheWriteTokens: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            cacheWrite5mTokens: number | string;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            peakContextTokens: number | string;
         };
         RuntimeUsageLimit: {
             kind: string;
@@ -2063,12 +3162,64 @@ export interface components {
             limitGuards: {
                 [key: string]: number | string;
             };
+            cacheTtl?: null | string;
         };
         Spec: {
             summary: string;
             architecture: string;
             rules: string[];
             tasks: components["schemas"]["RunTask"][];
+            knowledge?: null | string[];
+            codeMap?: null | components["schemas"]["CodeNote"][];
+        };
+        SpendLine: {
+            source: string;
+            project: string;
+            model: string;
+            /** Format: int32 */
+            messages: number | string;
+            /** Format: int64 */
+            inputTokens: number | string;
+            /** Format: int64 */
+            outputTokens: number | string;
+            /** Format: int64 */
+            cacheReadTokens: number | string;
+            /** Format: int64 */
+            cacheWriteTokens: number | string;
+            /** Format: double */
+            costUsd: null | number | string;
+        };
+        SpendReport: {
+            /** Format: date-time */
+            since: string;
+            /** Format: date-time */
+            until: null | string;
+            /** Format: double */
+            weeklyPercent: null | number | string;
+            /** Format: date-time */
+            weeklyResetsAt: null | string;
+            /** Format: double */
+            officeRecordedUsd: number | string;
+            /** Format: int32 */
+            officeRecordedTurns: number | string;
+            sources: components["schemas"]["SpendSource"][];
+            notes: string[];
+        };
+        SpendSource: {
+            key: string;
+            label: string;
+            /** Format: int32 */
+            messages: number | string;
+            /** Format: int64 */
+            inputTokens: number | string;
+            /** Format: int64 */
+            outputTokens: number | string;
+            /** Format: double */
+            costUsd: null | number | string;
+            /** Format: double */
+            quotaPoints: null | number | string;
+            lines: components["schemas"]["SpendLine"][];
+            unpricedModels?: null | string[];
         };
         /** @enum {unknown} */
         StageKind: "analyze" | "design" | "implement" | "review" | "handoff";
@@ -2079,6 +3230,14 @@ export interface components {
             role: string;
             officeRole: string;
             description: string;
+        };
+        StagedAttachment: {
+            id: string;
+            name: string;
+            mediaType: string;
+            /** Format: int64 */
+            size: number | string;
+            kind: components["schemas"]["AttachmentKind"];
         };
         TaskPhases: {
             id: string;
@@ -2122,6 +3281,15 @@ export interface components {
             cacheWriteTokens?: null | number | string;
             toolsOffered?: null | boolean;
             context?: null | components["schemas"]["ContextStats"];
+            cutShort?: null | boolean;
+            mcpServers?: null | string[];
+            /** Format: int32 */
+            cacheWrite5mTokens?: null | number | string;
+            /** Format: int32 */
+            peakContextTokens?: null | number | string;
+            cacheTtl?: null | string;
+            modelUsage?: null | components["schemas"]["ModelTokens"][];
+            worker?: null | string;
         };
         UpdateAgentRequest: {
             name: string;
@@ -2133,6 +3301,11 @@ export interface components {
             canAsk: null | string;
             prompt: string;
             effort?: null | string;
+            mcp?: null | string[];
+            sprite?: null | string;
+            exploreModel?: null | string;
+            /** Format: int32 */
+            maxInstances?: null | number | string;
         };
         UsageItem: {
             provider: string;

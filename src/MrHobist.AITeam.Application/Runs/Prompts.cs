@@ -1,8 +1,16 @@
 using System.Text;
+using MrHobist.AITeam.Application.Abstractions;
+using MrHobist.AITeam.Domain.Agents;
 using MrHobist.AITeam.Domain.Runs;
 using MrHobist.AITeam.Domain.Workflows;
 
 namespace MrHobist.AITeam.Application.Runs;
+
+/// <summary>Calismanin ekleri ve diskteki dizini (mutlak). Istemde yalniz yol ve tur gecer; icerik gomulmez.</summary>
+public sealed record AttachmentContext(string Directory, IReadOnlyList<RunAttachment> Items);
+
+/// <summary>Bagimli olunan, bitmis bir gorevin raporu: sonraki gorev ayni dosyalari yeniden kesfetmesin.</summary>
+public sealed record PriorTask(string Id, string Title, string Report);
 
 /// <summary>
 /// Ajanlara giden kullanici mesajlari. Sistem promptu ajan md'sinden gelir; burasi calismaya ozel baglamdir.
@@ -11,15 +19,29 @@ namespace MrHobist.AITeam.Application.Runs;
 public static class Prompts
 {
     /// <summary>Analistin ilk mesaji: brief, proje dizini, akis, beklenen sema.</summary>
-    public static string AnalystBrief(Run run, Workflow wf, string projectRoot)
+    public static string AnalystBrief(Run run, Workflow wf, string projectRoot, IReadOnlyList<Knowledge>? knowledge = null, AttachmentContext? attachments = null, WorkspaceScan? existing = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(wf);
         var sb = new StringBuilder();
         sb.AppendLine("# Brief").AppendLine(run.Brief).AppendLine();
+        if (attachments is { Items.Count: > 0 })
+        {
+            AppendAttachments(sb, attachments);
+            sb.AppendLine("Brief bu eklere dayanıyorsa planlamadan ÖNCE ilgili olanları oku. Görev açıklamasına hangi ekin ne için gerektiğini yaz (uygulayıcı da aynı listeyi görür).").AppendLine();
+        }
+
         sb.AppendLine("# Proje dizini");
         sb.AppendLine($"Tüm dosyalar şu dizinin İÇİNDE yaşar: `{projectRoot}`. Plandaki dosya yolları bu dizine göre GÖRELİ yazılır (ör. `src/App/Program.cs`), dizinin adı yola eklenmez, dışına çıkılmaz.");
-        sb.AppendLine("Dizinde zaten kod olabilir; okuma araçların varsa önce bak, var olanın üstüne planla.").AppendLine();
+        if (existing is { Exists: true, Code.IsEmpty: false })
+        {
+            AppendExistingCode(sb, existing);
+        }
+        else
+        {
+            sb.AppendLine("Dizinde zaten kod olabilir; okuma araçların varsa önce bak, var olanın üstüne planla.").AppendLine();
+        }
+
         sb.AppendLine("# İş akışı");
         sb.AppendLine("Her görev sırayla şu adımlardan geçer: " + string.Join(" → ", wf.TaskStages.Select(s => $"{s.Title} ({s.Role})")) + ".");
         sb.AppendLine("Sen yalnız planı üretirsin; kod yazmazsın.").AppendLine();
@@ -27,11 +49,57 @@ public static class Prompts
         sb.AppendLine("Verilen JSON şemasına birebir uyan bir plan: summary, architecture, rules[], tasks[].");
         sb.AppendLine("Görev kimlikleri kısa ve küçük harf (t1, api-ucu). Görevler tek bir ajanın tek oturumda bitirebileceği büyüklükte olsun; gereksiz parçalama yapma (hello world tek görevdir).");
         sb.AppendLine("Kabul ölçütleri çalıştırılabilir olsun (build/test komutu, beklenen çıktı). dependsOn yalnız gerçek bağımlılıkları içersin; sıralama bundan türetilir.");
-        sb.AppendLine("Bu plan bir insanın onayına sunulacak; onaylanmadan hiçbir iş başlamaz. Belirsizlikte en makul varsayımı seç ve rules içinde açıkça yaz.");
+        // Onay cumlesi akisa bagli: `auto` akista "insan onaylayacak" demek ajani yaniltiyordu (2026-09-23 incelemesi).
+        sb.AppendLine(wf.PlanNeedsUser
+            ? "Bu plan bir insanın onayına sunulacak; onaylanmadan hiçbir iş başlamaz."
+            : wf.PlanApproverAgent is { } approver
+                ? $"Bu planı `{approver}` onaylayacak; onaylanmadan hiçbir iş başlamaz."
+                : "Bu plan onaya sunulmaz: üretilir üretilmez uygulanır. Kimse gözden geçirmeyecek, planı buna göre sağlam kur.");
+        sb.AppendLine("Belirsizlikte en makul varsayımı seç ve rules içinde açıkça yaz.");
+        // 2026-09-23 maliyet kaldiraclari: her gorev tum kurallari ve tum bilgi dosyalarini her ic turda yeniden okuyordu.
+        sb.AppendLine("Her görevin ruleRefs alanına o görevi bağlayan kuralların 0 tabanlı sıra numaralarını yaz (tüm görevleri bağlayan kural her görevde yer alır); emin değilsen boş bırak, o zaman tüm kurallar gider.");
+        // 2026-09-24: gorevler analizin okudugu dosyalari anlamak icin yeniden okuyordu; harita her gorevin istemine gider.
+        sb.AppendLine("Okuduğun dosyalardan uygulayıcının bilmesi gerekenleri codeMap'e yaz (en çok 25): yol + tek satır not (imza, desen, dikkat). Uygulayıcı bu dosyaları anlamak için yeniden okumaz; yalnız değiştireceğini açar. Dosya içeriği kopyalama, yalnız özü.");
+        if (knowledge is { Count: > 1 })
+        {
+            sb.AppendLine().AppendLine("# Bilgi dosyaları");
+            sb.AppendLine("Uygulayıcının sistem istemine eklenebilecek referans belgeler. knowledge alanına bu işin GERÇEKTEN ihtiyaç duyduklarının anahtarlarını yaz (ör. iş yalnız ön yüzse yalnız ön yüz belgesi); emin değilsen boş bırak, hepsi gider.");
+            foreach (var k in knowledge)
+            {
+                sb.Append("- `").Append(k.Key).Append("` — ").AppendLine(k.Title);
+            }
+        }
+
         return sb.ToString();
     }
 
-    /// <summary>Kullanicinin revize notu, analistin gecmisine kullanici mesaji olarak eklenir.</summary>
+    /// <summary>
+    /// Dizin bos degil (2026-09-26, iceri alinan proje ya da ofisin onceki isleri): ajan "sifirdan kur" sanmasin. Dil payi,
+    /// derleme dosyalari ve git bilgisi taramadan gelir -- ajan bunlari bulmak icin dizini dolasmak zorunda kalmaz; ama
+    /// koda bakmadan plan yapmasin diye okumasi gerekenler acikca yazilir. Projenin kendi git gecmisi kullanicinindir.
+    /// </summary>
+    private static void AppendExistingCode(StringBuilder sb, WorkspaceScan scan)
+    {
+        var code = scan.Code;
+        sb.AppendLine("# Mevcut kod");
+        sb.Append("Dizin boş değil — bu bir DEVAM işi: ").Append(code.Files).Append(" dosya");
+        sb.Append(scan.Truncated ? " (sınır aşıldı, ilk kısım sayıldı)" : "");
+        sb.Append(code.Languages.Count > 0 ? $", diller: {code.LanguageLine()}" : "").AppendLine(".");
+        if (code.Manifests.Count > 0)
+        {
+            sb.AppendLine("Derleme/paket dosyaları: " + string.Join(", ", code.Manifests.Select(m => $"`{m}`")) + ".");
+        }
+
+        if (scan.IsGit)
+        {
+            sb.Append("Proje kendi git deposu").Append(scan.GitBranch is { } b ? $" (`{b}` dalı)" : "")
+              .AppendLine(": geçmişi kullanıcınındır. Brief istemedikçe commit atma, dal açma/değiştirme, push yapma; `.gitignore`'a uy.");
+        }
+
+        sb.AppendLine("Var olan yapıyı, adlandırmayı, klasör düzenini ve derleme/test komutlarını KORU; brief istemedikçe yeniden yazma, taşıma, çatı ya da sürüm değiştirme.");
+        sb.AppendLine("Planlamadan önce giriş noktalarını ve yukarıdaki derleme dosyalarını oku; kabul ölçütleri projenin KENDİ komutlarıyla çalışsın.").AppendLine();
+    }
+
     /// <summary>
     /// Plani onaylayan ajanin istemi (akis <c>planApprover</c> verdiginde insanin yerine gecer).
     /// Kod yazdirmaz, dosya okutmaz: karar PLANIN kendisi uzerine verilir.
@@ -73,6 +141,7 @@ public static class Prompts
         return sb.ToString();
     }
 
+    /// <summary>Kullanicinin revize notu, analistin gecmisine kullanici mesaji olarak eklenir.</summary>
     public static string RevisionNote(string note)
         => $"# Revize notu\n{note}\n\nPlanı bu nota göre güncelle; değişmeyen kısımları koru. Aynı şemayla planın tamamını yeniden ver.";
 
@@ -110,17 +179,227 @@ public static class Prompts
         return sb.ToString().TrimEnd();
     }
 
+    /// <summary>
+    /// <paramref name="task"/>'in (dolayli) bagimliliklarinin son uygulama raporu, plandaki sirayla. Rapor kisaltilir: amac
+    /// "hangi dosyada ne var" bilgisini vermek, tekrar okumayi kesmek (2026-09-23: gorev basina tekrar kesif ~%6 maliyet).
+    /// </summary>
+    public static IReadOnlyList<PriorTask> PriorTasks(Spec spec, RunTask task, IReadOnlyList<Message> messages, int maxChars = 1500)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(messages);
+        var byId = spec.Tasks.ToDictionary(t => t.Id, StringComparer.Ordinal);
+        var ancestors = new HashSet<string>(StringComparer.Ordinal);
+        var stack = new Stack<string>(task.DependsOn);
+        while (stack.Count > 0)
+        {
+            var id = stack.Pop();
+            if (id != task.Id && ancestors.Add(id) && byId.TryGetValue(id, out var t))
+            {
+                foreach (var d in t.DependsOn)
+                {
+                    stack.Push(d);
+                }
+            }
+        }
+
+        var list = new List<PriorTask>();
+        foreach (var t in spec.Tasks.Where(t => ancestors.Contains(t.Id)))
+        {
+            var report = messages.Where(m => m.Task == t.Id && m.Subject == "implement-report").OrderBy(m => m.Ts).LastOrDefault();
+            if (report is not null)
+            {
+                var body = report.Body.Trim();
+                list.Add(new PriorTask(t.Id, t.Title, body.Length <= maxChars ? body : body[..(maxChars - 1)] + "…"));
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Ek listesi (docs/DOMAIN.md → Ekler). Icerik GOMULMEZ: her ic turda yeniden odenirdi (2026-09-23 maliyet olcumleri); ajan
+    /// yolu gorur, gerektiginde okur. Claude'un Read araci PDF'i sayfa sayfa, resmi goruntu olarak okur; Word'un metni yaninda .txt.
+    /// </summary>
+    private static void AppendAttachments(StringBuilder sb, AttachmentContext attachments)
+    {
+        sb.AppendLine("# Ekler");
+        sb.AppendLine($"Kullanıcı işi verirken bu dosyaları ekledi. Çalışma dizininin DIŞINDALAR ve yalnız okunur: `{attachments.Directory}`. "
+            + "İçerikleri isteme gömülmedi; gerektiğinde Read aracıyla mutlak yoluyla oku (Read PDF'i sayfa sayfa, resmi görüntü olarak okur). "
+            + "Projede dosya olarak kullanılacaksa (ör. logo, örnek veri) Bash ile çalışma dizinine KOPYALA; eki değiştirme, silme.");
+        foreach (var a in attachments.Items)
+        {
+            var path = Path.Combine(attachments.Directory, a.FileName);
+            sb.Append("- `").Append(a.Name).Append("` — ").Append(KindLabel(a.Kind)).Append(", ").Append(Size(a.Size)).Append(": `").Append(path).Append('`');
+            if (a.TextFile is not null)
+            {
+                sb.Append(" · metni: `").Append(Path.Combine(attachments.Directory, a.TextFile)).Append('`');
+            }
+            else if (a.Kind == AttachmentKind.Word)
+            {
+                sb.Append(" · metni çıkarılamadı");
+            }
+
+            sb.AppendLine();
+        }
+
+        sb.AppendLine();
+    }
+
+    private static string KindLabel(AttachmentKind kind) => kind switch
+    {
+        AttachmentKind.Document => "PDF",
+        AttachmentKind.Image => "resim",
+        AttachmentKind.Word => "Word",
+        _ => "metin",
+    };
+
+    private static string Size(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / 1024.0 / 1024.0:0.#} MB",
+    };
+
+    /// <summary>Kod haritasinin istemdeki ust siniri (karakter): her ic turda yeniden okunur, buyurse kazanctan cok maliyet olur.</summary>
+    public const int CodeMapMaxChars = 3000;
+
+    /// <summary>
+    /// Analizin kod haritasi (<see cref="Spec.CodeMap"/>): once gorevin dosyalari, sonra digerleri; <see cref="CodeMapMaxChars"/>'ta kesilir.
+    /// Not satiri 200 karakterle sinirli. Bos harita = bolum yok.
+    /// </summary>
+    private static void AppendCodeMap(StringBuilder sb, Spec spec, RunTask task)
+    {
+        if (spec.CodeMap is not { Count: > 0 } map)
+        {
+            return;
+        }
+
+        var own = new HashSet<string>(task.Files.Select(Normalize), StringComparer.OrdinalIgnoreCase);
+        var ordered = map.Where(n => !string.IsNullOrWhiteSpace(n.Path)).OrderBy(n => own.Contains(Normalize(n.Path)) ? 0 : 1).ToList();
+        var lines = new List<string>();
+        var used = 0;
+        foreach (var n in ordered)
+        {
+            var note = n.Note.Trim().ReplaceLineEndings(" ");
+            var line = $"- `{n.Path.Trim()}` — {(note.Length <= 200 ? note : note[..199] + "…")}";
+            if (used + line.Length > CodeMapMaxChars)
+            {
+                break;
+            }
+
+            lines.Add(line);
+            used += line.Length;
+        }
+
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("# Kod haritası (analizden)");
+        sb.AppendLine("Analiz bu dosyaları okudu. Anlamak için yeniden OKUMA; yalnız değiştireceğin dosyayı düzenlemeden önce aç.");
+        sb.AppendJoin('\n', lines).AppendLine().AppendLine();
+
+        static string Normalize(string path) => path.Trim().Replace('\\', '/').TrimStart('.', '/');
+    }
+
+    /// <summary>
+    /// Bu iste simdiye kadar yazilan kod (<see cref="CodeDigest"/>): dosya satiri + imzalar, <see cref="CodeDigest.MaxChars"/>'ta
+    /// kesilir. Sigmayan dosyanin imzalari duser, yalniz satiri kalir; o da sigmazsa sayisi yazilir. Bos liste = bolum yok.
+    /// </summary>
+    private static void AppendWrittenCode(StringBuilder sb, IReadOnlyList<WrittenFile> files)
+    {
+        var entries = new List<string>();
+        var used = 0;
+        var left = 0;
+        foreach (var f in files)
+        {
+            var head = $"- `{f.Path}` — {f.Status switch { 'A' => "yeni", 'D' => "silindi", _ => "değişti" }}{(f.Status == 'D' ? "" : f.Deleted > 0 ? $", +{f.Added} −{f.Deleted}" : $", +{f.Added}")}";
+            var full = f.Signatures.Count == 0 ? head : head + "\n" + string.Join('\n', f.Signatures.Select(s => "  " + s));
+            var entry = used + full.Length <= CodeDigest.MaxChars ? full : used + head.Length <= CodeDigest.MaxChars ? head : null;
+            if (entry is null)
+            {
+                left++;
+                continue;
+            }
+
+            entries.Add(entry);
+            used += entry.Length + 1;
+        }
+
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("# Bu işte şimdiye kadar yazılan kod");
+        sb.AppendLine("Önceki görevlerin ve bu görevin önceki denemelerinin diske yazdıkları; liste dosya farkından kodla çıkarıldı (rapora değil diske dayanır). "
+            + "Girintili satırlar dosyanın imzalarıdır: bir dosyayı ANLAMAK için açma, yalnız DEĞİŞTİRECEĞİN dosyayı aç.");
+        sb.AppendJoin('\n', entries).AppendLine();
+        if (left > 0)
+        {
+            sb.AppendLine($"(+{left} dosya daha sığmadı.)");
+        }
+
+        sb.AppendLine();
+    }
+
     /// <summary>Gorev baglami: plan + gorev + kurallar + dizin. Uc yurutucu de bunu kullanir.</summary>
-    private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes)
+    /// <summary>Kopyanin dogrulama port araligi: 5200'den itibaren kopya basina 20 port (kopya 2 → 5220–5239).</summary>
+    public static (int From, int To) PortRange(string worker)
+    {
+        var start = 5200 + (20 * (Workers.InstanceOf(worker) - 1));
+        return (start, start + 19);
+    }
+
+    private static StringBuilder TaskContext(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null, IReadOnlyList<WrittenFile>? written = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# Görev {a.Task.Id} — {a.Task.Title}").AppendLine(a.Task.Description).AppendLine();
         sb.AppendLine("## Kabul ölçütleri").AppendJoin('\n', a.Task.Acceptance.Select(x => "- " + x)).AppendLine();
         sb.AppendLine("## Dosyalar").AppendJoin('\n', a.Task.Files.Select(x => "- " + x)).AppendLine().AppendLine();
         sb.AppendLine("# Çalışma dizini");
-        sb.AppendLine($"`{projectRoot}` — araçların bu dizinde açıldı; yollar buna göre görelidir. Bu dizinin DIŞINA yazma (engellenir).").AppendLine();
+        sb.AppendLine($"`{projectRoot}` — araçların bu dizinde açıldı; yollar buna göre görelidir. Bu dizinin DIŞINA yazma (engellenir).");
+        if (a.Worker is not null)
+        {
+            // Kopya (docs/DOMAIN.md → Kopyalar): ayni anda baska kopyalar baska projelerde calisir; dogrulama sunuculari carpismasin.
+            var (from, to) = PortRange(a.WorkerId);
+            sb.AppendLine($"Sen bu ajanın {Workers.InstanceOf(a.WorkerId)}. kopyasısın; aynı anda başka kopyalar da çalışıyor. Brief port vermediyse doğrulama için yalnız {from}–{to} portlarını kullan; başka bir süreci durdurma.");
+        }
+
+        sb.AppendLine();
         sb.AppendLine("# Plan").AppendLine("## Özet").AppendLine(spec.Summary).AppendLine("## Mimari").AppendLine(spec.Architecture).AppendLine();
-        sb.AppendLine("## Bağlayıcı kurallar").AppendJoin('\n', spec.Rules.Select(x => "- " + x)).AppendLine().AppendLine();
+        var refs = a.Task.RuleRefs?.Where(i => i >= 0 && i < spec.Rules.Count).Distinct().Order().ToList();
+        var rules = refs is { Count: > 0 } ? refs.Select(i => spec.Rules[i]).ToList() : spec.Rules;
+        sb.AppendLine("## Bağlayıcı kurallar").AppendJoin('\n', rules.Select(x => "- " + x)).AppendLine();
+        if (rules.Count < spec.Rules.Count)
+        {
+            sb.AppendLine($"(Plandaki diğer {spec.Rules.Count - rules.Count} kural başka görevlere ait.)");
+        }
+
+        sb.AppendLine();
+        AppendCodeMap(sb, spec, a.Task);
+        if (attachments is { Items.Count: > 0 })
+        {
+            AppendAttachments(sb, attachments);
+        }
+
+        if (prior is { Count: > 0 })
+        {
+            sb.AppendLine("# Bağımlı olduğun biten görevler");
+            sb.AppendLine("Bu dosyalar yazıldı ve doğrulandı. Tamamını yeniden okuma; yalnız ihtiyacın olan imzaya/sözleşmeye bak.");
+            foreach (var p in prior)
+            {
+                sb.AppendLine($"## {p.Id} — {p.Title}").AppendLine(p.Report).AppendLine();
+            }
+        }
+
+        if (written is { Count: > 0 })
+        {
+            AppendWrittenCode(sb, written);
+        }
+
         if (notes.Count > 0)
         {
             sb.AppendLine("# Bu görevle ilgili notlar (eskiden yeniye)");
@@ -134,46 +413,79 @@ public static class Prompts
     }
 
     /// <summary>Developer: araclarla dosyalari yazar, build'i kosar, sonunda rapor semasini doldurur.</summary>
-    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round)
+    public static string ImplementTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, int round, bool resumed = false, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null, IReadOnlyList<WrittenFile>? written = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
-        var sb = TaskContext(spec, a, projectRoot, notes);
+        var sb = TaskContext(spec, a, projectRoot, notes, prior, attachments, written);
         sb.AppendLine("# Yapılacak");
         sb.AppendLine(round > 1
             ? $"Bu görevin {round}. turu: yukarıdaki geri bildirimi (red/hata notu) MADDE MADDE gider, sonra kabul ölçütlerini yeniden doğrula."
             : "Görevi uygula: dosyaları Write/Edit ile yaz, gerekiyorsa Bash ile build/test kos ve çıktısını kontrol et.");
+        if (resumed)
+        {
+            // 2026-09-23: kesilen tur diskte bitmis is birakmisti (build temiz, testler gecer); ajan bastan yazsaydi ayni turu iki kez odenirdi.
+            sb.AppendLine("DEVAM: bu görevin önceki denemesi yarıda KESİLDİ (zaman aşımı ya da süreç yeniden başladı), raporu alınamadı. Dizindeki dosyalar o denemeden kaldı ve büyük ölçüde senin işin: BAŞTAN YAZMA. "
+                + "Önce durumu çıkar (dosyalara bak, build/test koş), yalnız eksik ya da bozuk olanı tamamla, sonra kabul ölçütlerini doğrula ve raporu ver.");
+        }
+
         sb.AppendLine("Önce dizine bak (Glob/Read); var olan dosyayı ezmeden değiştir. Kabul ölçütlerindeki komutları FİİLEN çalıştır ve geçtiğini gör.");
-        sb.AppendLine("Ofisteki \"Projeyi başlat\" düğmesi proje kökündeki `run.cmd` dosyasını YENİ BİR KONSOL PENCERESİNDE çalıştırır: uygulama çalıştırılabilir hâle gelince bu dosyayı yaz ya da güncelle (yoksa kullanıcı projeyi açamaz). "
+        // Var olan bir depoya (kendi CLAUDE.md'si, kendi baslatma yolu olan) run.cmd eklemek o depoyu kirletiyordu (2026-09-23).
+        sb.AppendLine("Ofisteki \"Projeyi başlat\" düğmesi proje kökündeki `run.cmd` dosyasını YENİ BİR KONSOL PENCERESİNDE çalıştırır. Dosya yoksa ve uygulama çalıştırılabilir hâldeyse yaz (içeri alınmış projede de); varsa güncel tut. "
+            + "Kendi başlatma yolu olan var olan bir depoda (kökte `CLAUDE.md`, betikler, launch ayarları) `run.cmd` yoksa EKLEME — o depo kullanıcının kendi yoluyla başlatılır. "
             + "İçeriği ASCII olsun; `@echo off`, `cd /d \"%~dp0\"`, sonra uygulamayı başlatan komut (konsol uygulaması: `dotnet run --project ...` ve bitince `pause`; web: sunucuyu başlat ve `start http://127.0.0.1:PORT`; masaüstü/oyun: exe). Kurulum gereken projede (npm install, restore) bunu da run.cmd yapsın.");
         sb.AppendLine("Kural çelişkisi ya da eksik bilgi varsa TAHMİN ETME: blocked=true ve question ile sor; işi yarım bırak.");
         sb.AppendLine("Bitince verilen JSON şemasına uyan raporu ver: summary, filesChanged (göreli yollar), commandsRun, blocked, question.");
         return sb.ToString();
     }
 
-    /// <summary>Testci / manager: kurallari denetler, testi kosar, kabul ya da gerekceli red.</summary>
-    public static string ReviewTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, Stage stage, int round, int maxRounds)
+    /// <summary>
+    /// Inceleme adimi. Istem, kapinin BEKLETTIGI URETICI adima gore sekillenir
+    /// (<see cref="Workflow.ProducerBefore(Stage)"/>): <c>implement</c> kapisinda ortada kod vardir, komutlar fiilen
+    /// kosulur; <c>design</c> kapisinda HENUZ KOD YOKTUR, degerlendirilen sey rehber metnidir.
+    ///
+    /// Tek istem ikisine birden uymuyordu: tasarim kapisindaki ajana "developer dosyalari yazdi, build'i kos"
+    /// deniyor, kosacak sey bulamiyor, sonra "supheyle reddet" talimatini uyguluyordu. Olculdu 2026-09-21:
+    /// tam-kadro ard arda 3 red verdi, $1.70 harcadi, tek satir kod uretmedi (docs/LESSONS.md).
+    /// Supheyle red yonu de kapiya baglidir: ARA kapida red bedava degil, bir tur daha maliyet demek ve
+    /// eksigi zaten sonraki test adimi yakalar; SON kapida ise hatali kodu gecirmek daha pahalidir.
+    /// </summary>
+    public static string ReviewTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, Stage stage, Stage producer, int round, int maxRounds, IReadOnlyList<PriorTask>? prior = null, AttachmentContext? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(stage);
-        var sb = TaskContext(spec, a, projectRoot, notes);
+        ArgumentNullException.ThrowIfNull(producer);
+        var sb = TaskContext(spec, a, projectRoot, notes, prior, attachments);
         sb.AppendLine($"# Yapılacak — {stage.Title} ({round}/{maxRounds}. tur)");
         sb.AppendLine(stage.Description);
-        sb.AppendLine("Developer dosyaları bu dizine yazdı. Read/Glob/Grep ile kodu oku; kabul ölçütlerindeki ve kurallardaki komutları Bash ile FİİLEN çalıştır (build, test, çalıştırma). Tahminle karar verme.");
-        sb.AppendLine("Gerekirse test dosyası yazabilirsin; uygulama kodunu DEĞİŞTİRME — düzeltme developer'ın işidir, feedback'e yaz.");
-        sb.AppendLine("Her kural ve kabul ölçütünü tek tek kontrol et. İhlal varsa verdict=reject ve findings'e yaz; feedback developer'a doğrudan gider: somut, adım adım.");
-        sb.AppendLine("Kozmetik tercih için reddetme. Şüphedeyken reddet. testsRun yalnız fiilen çalıştırdıysan true.");
+
+        if (producer.Kind == StageKind.Design)
+        {
+            sb.AppendLine($"Değerlendirdiğin şey KOD DEĞİL: \"{producer.Title}\" adımının ürettiği tasarım rehberi. Bu noktada dizinde henüz kod yok — build/test koşma, komut çalıştırma: commandsRun boş kalsın, testsRun=false.");
+            sb.AppendLine("Tek ölçüt şu: developer bu rehberle işe başlayıp TAHMİN ETMEDEN ilerleyebilir mi? Kabul ölçütlerinin her biri için rehberde bir karşılık var mı?");
+            sb.AppendLine("Şüphedeyken KABUL ET. Burası bir ARA kapı: eksik kalanı ilerideki test adımı zaten yakalar, ama her red bir tur daha maliyet demektir. Red yalnız developer'ı GERÇEKTEN tıkayan bir boşluk için doğrudur: çelişkili karar, ya da hiç karşılığı olmayan bir kabul ölçütü.");
+            sb.AppendLine($"RED verirsen iş \"{producer.Title}\" adımına döner ve feedback oraya gider: hangi kabul ölçütü karşılıksız, ne eklenmeli.");
+        }
+        else
+        {
+            sb.AppendLine($"\"{producer.Title}\" adımı dosyaları bu dizine yazdı. Read/Glob/Grep ile kodu oku; kabul ölçütlerindeki ve kurallardaki komutları Bash ile FİİLEN çalıştır (build, test, çalıştırma). Tahminle karar verme.");
+            sb.AppendLine("Gerekirse test dosyası yazabilirsin; uygulama kodunu DEĞİŞTİRME — düzeltme üreten adımın işidir, feedback'e yaz.");
+            sb.AppendLine("Her kural ve kabul ölçütünü tek tek kontrol et. İhlal varsa verdict=reject ve findings'e yaz; feedback doğrudan üreten ajana gider: somut, adım adım.");
+            sb.AppendLine("Kozmetik tercih için reddetme. Şüphedeyken reddet. testsRun yalnız fiilen çalıştırdıysan true.");
+        }
+
+        sb.AppendLine("Kapsamla orantılı ol: brief'in ve kabul ölçütlerinin istemediği ek özellik, ek belge ya da ek mimari talep etme. Küçük bir iş küçük bir çıktı ister.");
         sb.AppendLine("Verilen JSON şemasına uyan raporu ver: verdict, testsRun, findings, feedback, commandsRun.");
         return sb.ToString();
     }
 
     /// <summary>Tasarimci: kod yazmaz, developer'in uyacagi rehberligi uretir.</summary>
-    public static string DesignTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes)
+    public static string DesignTask(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, AttachmentContext? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
-        var sb = TaskContext(spec, a, projectRoot, notes);
+        var sb = TaskContext(spec, a, projectRoot, notes, attachments: attachments);
         sb.AppendLine("# Yapılacak — Tasarım");
         sb.AppendLine("Bu görev için developer'ın uyacağı tasarım rehberliğini yaz: arayüz/akış kararları, isimlendirme, hata durumları, kabul ölçütlerine nasıl ulaşılacağı. Kod yazma, dosya değiştirme. Dizini okuyabilirsin.");
         sb.AppendLine("Verilen JSON şemasına uyan çıktıyı ver: guidance, decisions.");
@@ -184,11 +496,11 @@ public static class Prompts
     /// <c>can_ask</c> hedefine (manager) giden soru: gorev baglami + takilan ajanin raporu + sorusu. Hedef kod yazmaz;
     /// dizini okuyabilir. Tek karar ister; yetki disiysa yukseltir (docs/DOMAIN.md → Takilma, ajan → ajan sorusu).
     /// </summary>
-    public static string AskColleague(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, string askerName, string question, string report)
+    public static string AskColleague(Spec spec, Assignment a, string projectRoot, IReadOnlyList<Message> notes, string askerName, string question, string report, AttachmentContext? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(a);
-        var sb = TaskContext(spec, a, projectRoot, notes);
+        var sb = TaskContext(spec, a, projectRoot, notes, attachments: attachments);
         sb.AppendLine($"# Soru — {askerName} ({a.Agent}) takıldı");
         sb.AppendLine("## Raporu").AppendLine(report).AppendLine();
         sb.AppendLine("## Sorusu").AppendLine(question).AppendLine();

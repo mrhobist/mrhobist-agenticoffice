@@ -28,6 +28,50 @@ class Message(BaseModel):
     content: str
 
 
+class McpServerConfig(BaseModel):
+    """Bir MCP sunucusuna baglanti (Agent SDK bicimi). Hangi ajanin hangisini alacagi .NET'in karari; burasi yalniz iletir.
+    `stdio`: command/args/env · `http` | `sse`: url/headers. Degerler sir tasiyabilir: gunluge ve yanita yazilmaz."""
+
+    type: Literal["stdio", "http", "sse"] = "stdio"
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    #: Izin listesi (arac adlari, oneksiz); None = hepsi. SDK'ya gitmez: izin denetimi (`_guard`) disindakileri reddeder.
+    #: Secimi .NET yapar; burasi yalniz uygular.
+    tools: list[str] | None = None
+
+
+class McpToolInfo(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class McpProbeResult(BaseModel):
+    """Baglanti denemesi: sunucu acildi mi, hangi araclari sunuyor. Durum degil, anlik olcum; hata da sonuctur (ok=false)."""
+
+    ok: bool
+    detail: str = ""
+    tools: list[McpToolInfo] = Field(default_factory=list)
+    server_name: str | None = Field(default=None, alias="serverName")
+    server_version: str | None = Field(default=None, alias="serverVersion")
+
+    model_config = {"populate_by_name": True}
+
+
+class SubagentDef(BaseModel):
+    """Ajanin cagirabilecegi bir alt ajan (SDK `AgentDefinition`). Hangi ajanin hangisini aldigi .NET'in karari; burasi yalniz esler."""
+
+    description: str
+    prompt: str
+    tools: list[str] = Field(default_factory=list)
+    model: str
+    max_turns: int | None = Field(default=None, alias="maxTurns")
+
+    model_config = {"populate_by_name": True}
+
+
 class TurnRequest(BaseModel):
     """Bir LLM cagrisinin tamami. Gecmis `messages` ile gelir; sunucu hicbir sey hatirlamaz."""
 
@@ -53,9 +97,25 @@ class TurnRequest(BaseModel):
     cwd: str | None = None
     #: Ajan dongusunun en fazla tur sayisi. None = araclara gore varsayilan.
     max_turns: int | None = Field(default=None, alias="maxTurns")
-    #: Canli arac akisi: her arac cagrisinda buraya `{tool, target}` POST edilir (loopback, tek kullanimlik belirtecli adres).
-    #: .NET verir; runtime yalniz bildirir, cevabi beklemez, hata yutulur. None = akis yok.
+    #: Canli akis: tur surerken buraya `ProgressEvent` POST edilir (loopback, tek kullanimlik belirtecli adres) --
+    #: arac cagrisi, ajanin metni/dusuncesi, mesaj basina kullanim. .NET verir; runtime yalniz bildirir, cevabi
+    #: beklemez, hata yutulur. None = akis yok.
     progress_url: str | None = Field(default=None, alias="progressUrl")
+    #: Ajana acilan MCP sunuculari (anahtar -> baglanti). Yalniz aracli turda anlamli; araclari `mcp__{anahtar}__{arac}` adini alir.
+    #: Hangi ajanin hangisini aldigi .NET'in karari (ajan md'si `mcp`); None = yok.
+    mcp_servers: dict[str, McpServerConfig] | None = Field(default=None, alias="mcpServers")
+    #: cwd DISINDA okunabilecek dizinler (is ekleri). Yazma araclari yine yalniz cwd'de; Bash bu dizinlerdeki yollari
+    #: kullanabilir (ornegin bir resmi projeye kopyalamak). .NET verir; runtime hicbir yolu kendisi secmez.
+    read_dirs: list[str] | None = Field(default=None, alias="readDirs")
+    #: Modele hic sunulmayacak araclar (SDK `disallowed_tools`): MCP'de secilmemis araclar, `mcp__{anahtar}__{arac}`.
+    #: Semalari baglama girmez. .NET hesaplar; None = yok.
+    disallowed_tools: list[str] | None = Field(default=None, alias="disallowedTools")
+    #: Istem onbelleginin omru: `5m` (yazma 1,25x) | `1h` (yazma 2x) | None = CLI varsayilani (olculdu 2026-09-24: 1 sa).
+    #: Secim .NET'in (Ayarlar); burasi yalniz CLI ortam degiskenine esler. Onbellek tutmayan saglayici yok sayar.
+    cache_ttl: Literal["5m", "1h"] | None = Field(default=None, alias="cacheTtl")
+    #: Alt ajanlar (ad -> tanim). Ana ajanin `Agent` araci `tools`'ta gelir ve YALNIZ bu adlari cagirabilir (yerlesik
+    #: general-purpose/Explore gibi alt ajanlar reddedilir: araclari ve modeli .NET'in secmedigi bir ajan kosmasin). None = yok.
+    subagents: dict[str, SubagentDef] | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -76,6 +136,62 @@ class Usage(BaseModel):
     #: Ikisi de 0 ise ya saglayici onbellek kullanmiyor ya da bildirmiyordur -- "olculemedi" demektir.
     cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
     cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
+    #: `cache_write_tokens` icindeki 5 DAKIKALIK yazma payi (fiyati 1 saatliginden ucuz). 0 = hepsi 1 saatlik ya da
+    #: saglayici ayirmiyor: fiyat hesabi bugunku (1 sa) varsayima duser.
+    cache_write_5m_tokens: int = Field(default=0, alias="cacheWrite5mTokens")
+    #: Turdaki en buyuk tek API cagrisinin girdisi (dogrudan + okunan + yazilan) = ajanin baglaminin tepe noktasi.
+    #: Toplam girdi ic turlarin toplamidir; baglamin ne kadar buyudugunu yalniz bu soyler. 0 = olculemedi.
+    peak_context_tokens: int = Field(default=0, alias="peakContextTokens")
+
+    model_config = {"populate_by_name": True}
+
+
+class ProgressEvent(BaseModel):
+    """Tur sirasindaki tek bildirim. `kind`: tool (arac cagrisi) · text (ajanin yazdigi) · thinking (dusunce ozeti) ·
+    usage (bir API mesajinin kullanimi; ayni `message_id` icin son deger gecerlidir -- tur kesilirse maliyet bundan
+    kurtarilir). Yeni bir tur maliyet dogurmaz: akista zaten uretilen icerik iletilir."""
+
+    kind: Literal["tool", "text", "thinking", "usage"] = "tool"
+    tool: str | None = None
+    target: str | None = None
+    text: str | None = None
+    message_id: str | None = Field(default=None, alias="messageId")
+    usage: Usage | None = None
+    #: O API mesajinda o ana kadar uretilen icerigin karakter sayisi (metin + dusunce + arac girdisi). Akistaki
+    #: `usage.output_tokens` mesajin basindaki degerdir; kesilen turun ciktisini .NET bundan tahmin eder.
+    chars: int | None = None
+    #: Mesaji ureten model: alt ajanin mesajlari ana modelden ucuz olabilir, kesilen tur .NET'te model basina fiyatlanir.
+    model: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class ModelUsage(BaseModel):
+    """Turdaki tek modelin kullanimi (ana model + alt ajanlar). `input_tokens` TOPLAMDIR: dogrudan + onbellek okuma + yazma."""
+
+    model: str
+    input_tokens: int = Field(default=0, alias="inputTokens")
+    output_tokens: int = Field(default=0, alias="outputTokens")
+    cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
+    cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
+    cost_usd: float | None = Field(default=None, alias="costUsd")
+
+    model_config = {"populate_by_name": True}
+
+
+class LocalUsage(BaseModel):
+    """Makinedeki CLI oturum kayitlarindan toplanan kullanim (kim ne harcadi). `source` CLI'nin giris noktasidir
+    (ofis ajani `sdk-py`; etkilesimli oturum `cli`, `claude-desktop`...), `project` kaydin klasoru."""
+
+    source: str
+    project: str
+    model: str
+    messages: int = 0
+    input_tokens: int = Field(default=0, alias="inputTokens")
+    output_tokens: int = Field(default=0, alias="outputTokens")
+    cache_read_tokens: int = Field(default=0, alias="cacheReadTokens")
+    cache_write_tokens: int = Field(default=0, alias="cacheWriteTokens")
+    cache_write_5m_tokens: int = Field(default=0, alias="cacheWrite5mTokens")
 
     model_config = {"populate_by_name": True}
 
@@ -94,6 +210,8 @@ class TurnResponse(BaseModel):
     tool_uses: list[ToolUse] = Field(default_factory=list, alias="toolUses")
     #: Ajan dongusunun tur sayisi (saglayici bildirirse).
     turns: int = 1
+    #: Model basina kirilim (saglayici bildirirse; alt ajan varsa birden cok satir). Bos = bildirilmedi.
+    model_usage: list[ModelUsage] = Field(default_factory=list, alias="modelUsage")
 
     model_config = {"populate_by_name": True}
 

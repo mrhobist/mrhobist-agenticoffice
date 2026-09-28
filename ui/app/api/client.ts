@@ -32,6 +32,10 @@ export interface ApiClient {
   post<T>(path: string, body?: unknown): Promise<T>
   /** Govdesiz 204 icin T verilmez; govdeli silme (projeler) sonucu T ile okunur. */
   del<T = void>(path: string): Promise<T>
+  /** multipart/form-data (ek yukleme). content-type tarayiciya birakilir: sinir (boundary) onu gerektirir. */
+  upload<T>(path: string, form: FormData): Promise<T>
+  /** Ikili yanit (ek indirme): JWT basligi gerektigi icin duz <a href> olmaz; Blob alinir. */
+  blob(path: string): Promise<Blob>
 }
 
 /** Setup icinde cagrilir (useRuntimeConfig). Donen nesne sonradan her yerde kullanilir. */
@@ -50,6 +54,18 @@ export function useApiClient(): ApiClient {
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
     del: path => request(base, path, { method: 'DELETE' }),
+    upload: (path, form) => request(base, path, { method: 'POST', body: form }),
+    blob: async (path) => {
+      let res: Response
+      try {
+        res = await fetch(`${base}${path}`, { headers: { ...authHeaders() } })
+      } catch {
+        throw new ApiError(0, null, path)
+      }
+      if (res.status === 401) setSession(null)
+      if (!res.ok) throw new ApiError(res.status, await readErrorCode(res), path)
+      return await res.blob()
+    },
   }
 }
 

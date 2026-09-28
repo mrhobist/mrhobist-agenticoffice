@@ -3,6 +3,7 @@ using MrHobist.AITeam.Api.Auth;
 using MrHobist.AITeam.Api.Config;
 using MrHobist.AITeam.Api.Errors;
 using MrHobist.AITeam.Api.Jobs;
+using MrHobist.AITeam.Api.Mcp;
 using MrHobist.AITeam.Api.Projects;
 using MrHobist.AITeam.Api.Runs;
 using MrHobist.AITeam.Api.Runtime;
@@ -87,6 +88,23 @@ var app = builder.Build();
 // Canli arac akisi geri cagrisi: runtime bu adrese POST eder (loopback; ApiUrl zaten loopback dogrulandi).
 app.Services.GetRequiredService<MrHobist.AITeam.Application.Runs.ProgressRegistry>().BaseUrl = new Uri(apiUrl, "/api/v1/progress").ToString();
 
+// Md'si yetkili ama bu makinede kaydi olmayan katalog sunuculari (ornek: tarayici) varsayilan kurulumla kurulur: yetki git'te,
+// kayit data/'da; yeni makinede ya da silinen veritabaninda ajan yetkili kalip araci alamazdi. Basarisizlik kalkisi durdurmaz.
+try
+{
+    using var scope = app.Services.CreateScope();
+    var installed = await scope.ServiceProvider.GetRequiredService<MrHobist.AITeam.Application.Mcp.IMcpService>().EnsureGrantedAsync(CancellationToken.None).ConfigureAwait(false);
+    if (installed.Count > 0)
+    {
+        var keys = string.Join(", ", installed);
+        Log.McpDefaultsInstalled(app.Logger, keys);
+    }
+}
+catch (Exception ex) when (ex is MrHobist.AITeam.Domain.DomainException or IOException or InvalidOperationException)
+{
+    Log.McpDefaultsFailed(app.Logger, ex);
+}
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseCors();
@@ -100,6 +118,7 @@ app.MapConfig();
 app.MapScene();
 app.MapRuns();
 app.MapProjects();
+app.MapMcp();
 app.MapGet("/api/v1/jobs/health", (JobChannel q) => Results.Ok(new { status = "ok", pending = q.Pending }));
 
 if (appliedScripts > 0)

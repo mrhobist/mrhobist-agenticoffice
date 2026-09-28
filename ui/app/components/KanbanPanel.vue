@@ -19,7 +19,7 @@ import { deriveCards, HIDDEN_RUN_STATUS, type DerivedCard } from '~/api/board'
  * sutunu: zille ayni kaynak (`inbox`). Iptal / politika reddi kartlari gosterilmez.
  */
 const props = defineProps<{ board: BoardSnapshot; inbox: InboxItem[] }>()
-const emit = defineEmits<{ close: []; open: [runId: string] }>()
+const emit = defineEmits<{ close: []; open: [runId: string, task?: string] }>()
 
 const api = useApiClient()
 
@@ -150,6 +150,11 @@ function stageTitle(c: Card): string {
   return details.value[c.run.id]?.workflowDef?.stages.find(s => s.id === c.stage)?.title ?? c.stage
 }
 function toggle(id: string) { selectedId.value = selectedId.value === id ? null : id }
+/** Calisan kart dogrudan isin canli detayina gider (kullanici istegi 2026-09-23); digerleri alt seritte ozet acar. */
+function pick(t: Card) {
+  if (t.state === 'active') emit('open', t.run.id, t.task)
+  else toggle(t.id)
+}
 
 function fmtWhen(ts: string): string {
   const d = new Date(ts)
@@ -194,7 +199,7 @@ function fmtWhen(ts: string): string {
           <b v-if="pendingOfProject(p.key)" class="ask" :aria-label="`${pendingOfProject(p.key)} senden bekliyor`">{{ pendingOfProject(p.key) }}</b>
         </button>
         <span v-if="!projects.length" class="sub">henüz proje yok</span>
-        <button v-if="selected" type="button" class="open" @click="emit('open', selected.run.id)">Çalışmayı aç →</button>
+        <button v-if="selected" type="button" class="open" @click="emit('open', selected.run.id, selected.task)">Çalışmayı aç →</button>
       </nav>
       <p v-if="!visibleRuns.length" class="empty tabnote">{{ tab ? 'Bu projede gösterilecek iş yok.' : 'Henüz iş yok. Bir projeden "Yeni iş" ile brief gönder; onaylanan plan burada görünür.' }}</p>
 
@@ -221,13 +226,13 @@ function fmtWhen(ts: string): string {
                 class="card"
                 :class="[t.state, { on: t.id === selectedId }]"
                 :style="{ borderColor: g.color }"
-                :title="tab === null ? t.run.label : undefined"
-                @click="toggle(t.id)"
+                :title="t.state === 'active' ? 'Çalışıyor — canlı detayı aç' : (tab === null ? t.run.label : undefined)"
+                @click="pick(t)"
               >
                 <span class="id">{{ t.task }}</span>
                 <span class="title">{{ t.title }}</span>
                 <span v-if="tab === null" class="runlabel">{{ t.run.label }}</span>
-                <span class="badge" :class="t.state">{{ TASK_LABEL[t.state] }}</span>
+                <span class="badge" :class="t.state">{{ TASK_LABEL[t.state] }}<template v-if="t.state === 'active'"> · canlı →</template></span>
               </button>
             </section>
           </div>

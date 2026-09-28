@@ -13,7 +13,7 @@ namespace MrHobist.AITeam.Infrastructure.Persistence;
 /// </summary>
 internal sealed class SqliteSettingsStore(IDbContextFactory<AiTeamContext> factory) : ISettingsStore
 {
-    private sealed record Dto(Dictionary<string, int>? LimitGuards);
+    private sealed record Dto(Dictionary<string, int>? LimitGuards, string? CacheTtl = null);
 
     private (DateTimeOffset Stamp, AppSettings Value)? _cache;
 
@@ -43,7 +43,7 @@ internal sealed class SqliteSettingsStore(IDbContextFactory<AiTeamContext> facto
             }
         }
 
-        var settings = new AppSettings(guards);
+        var settings = new AppSettings(guards, string.IsNullOrWhiteSpace(dto.CacheTtl) ? null : dto.CacheTtl);
         settings.Validate();
         _cache = (row.UpdatedAt, settings);
         return settings;
@@ -53,7 +53,7 @@ internal sealed class SqliteSettingsStore(IDbContextFactory<AiTeamContext> facto
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings.Validate();
-        var dto = new Dto(settings.LimitGuards.ToDictionary(kv => Providers.Wire(kv.Key), kv => kv.Value));
+        var dto = new Dto(settings.LimitGuards.ToDictionary(kv => Providers.Wire(kv.Key), kv => kv.Value), settings.CacheTtl);
 
         await using var db = await factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var row = await db.Settings.FirstOrDefaultAsync(x => x.Id == 1, ct).ConfigureAwait(false);

@@ -10,10 +10,12 @@ Burada is mantigi YOKTUR: istek geldigi gibi tek bir cagriya cevrilir.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +33,7 @@ from claude_agent_sdk import (
     PermissionResultDeny,
     ResultMessage,
     TextBlock,
+    ThinkingBlock,
     ToolPermissionContext,
     ToolUseBlock,
 )
@@ -43,6 +46,10 @@ from ..contracts import (
     LoginRequest,
     LoginStarted,
     ModelInfo,
+    LocalUsage,
+    McpServerConfig,
+    ModelUsage,
+    ProgressEvent,
     ProviderLimits,
     ToolUse,
     UsageLimit,
@@ -53,6 +60,8 @@ from ..contracts import (
 
 PROVIDER_NAME = "anthropic"
 
+#: Yalniz ek kesif: listelenen modellerin tek dogru kaynagi .NET'in config/models.json'udur (ModelListService);
+#: yeni model icin burayi degil o dosyayi guncelle.
 ANTHROPIC_MODELS: list[str] = [
     "claude-fable-5-1",
     "claude-opus-5",
@@ -66,6 +75,23 @@ AUTH_CACHE_TTL_S = 60.0
 LIMITS_CACHE_TTL_S = 90.0
 #: Kota ucu 429 verdiyse bu sure yeniden sorulmaz (uc sik sorguyu cezalandiriyor); son iyi deger gosterilir.
 LIMITS_BACKOFF_429_S = 600.0
+
+
+#: Bu uzunlugu asan sistem istemi komut satiri yerine gecici dosyadan verilir. Windows'ta komut satiri ~32k karakter:
+#: 2026-09-23'te iki ek bilgi dosyasi + ajan md'si (~24 KB) + --json-schema siniri asti ve surec "Access is denied"
+#: (40 KB'ta "claude.exe bulunamadi") diye YANILTICI bir hatayla hic baslamadi. Esik kucuk tutuldu: kisa istemler eskisi gibi.
+PROMPT_FILE_THRESHOLD = 8000
+
+
+def _write_prompt_file(text: str) -> str | None:
+    """Uzun istemi gecici dosyaya yazar, yolunu dondurur; kisaysa None. Tasima ayrintisi: cagri bitince silinir,
+    durum degildir (CLAUDE.md §1: runtime is ciktisi yazmaz -- bu dosya tek cagrinin argumanidir)."""
+    if len(text) <= PROMPT_FILE_THRESHOLD:
+        return None
+    fd, path = tempfile.mkstemp(prefix="aiteam-prompt-", suffix=".md")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
 
 
 def _limits_cache_file() -> Path:
@@ -181,6 +207,16 @@ def _limit_reached(text: str) -> bool:
     return any(k in t for k in ("usage limit reached", "rate_limit", "rate limit", "429", "quota exceeded", "limit exceeded"))
 
 
+def _parse_ts(v: Any) -> float | None:
+    """Oturum kaydindaki ISO zaman (`...Z`) -> epoch saniye; okunamazsa None."""
+    if not isinstance(v, str) or not v:
+        return None
+    try:
+        return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"errorCode": code, "message": message})
 
@@ -196,26 +232,107 @@ def _classify(exc: Exception) -> HTTPException:
     return _error(502, "runtime.provider_error", text)
 
 
-async def _report_progress(url: str | None, use: ToolUse) -> None:
-    """Canli arac akisi: .NET'e tek POST, 2 s zaman asimi, hata yutulur (akis gorunurluk icindir, turu bozmaz)."""
-    if not url:
+#: Canli akista tek metin/dusunce parcasinin ust siniri (karakter). Tam metin tur sonunda gunluge zaten yazilir.
+PROGRESS_TEXT_MAX = 4000
+
+
+async def _report_progress(client: httpx.AsyncClient | None, url: str | None, event: ProgressEvent) -> None:
+    """Canli akis: .NET'e tek POST, 2 s zaman asimi, hata yutulur (akis gorunurluk icindir, turu bozmaz)."""
+    if not url or client is None:
         return
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            await client.post(url, json=use.model_dump())
+        await client.post(url, json=event.model_dump(by_alias=True, exclude_none=True))
     except Exception:  # noqa: BLE001 — bildirim basarisizligi turu etkilemez
         pass
 
 
-async def _report_progress(url: str | None, use: ToolUse) -> None:
-    """Canli arac akisi: .NET'e tek POST, 2 s zaman asimi, hata yutulur (akis gorunurluk icindir, turu bozmaz)."""
-    if not url:
-        return
-    try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            await client.post(url, json=use.model_dump())
-    except Exception:  # noqa: BLE001 — bildirim basarisizligi turu etkilemez
-        pass
+def _block_chars(block: Any) -> int:
+    """Bir icerik blogunun uretilen karakter sayisi (cikti tahmini icin; .NET boler)."""
+    if isinstance(block, TextBlock):
+        return len(block.text or "")
+    if isinstance(block, ThinkingBlock):
+        return len(block.thinking or "")
+    if isinstance(block, ToolUseBlock):
+        return len(json.dumps(block.input or {}, ensure_ascii=False))
+    return 0
+
+
+def _sdk_mcp(cfg: McpServerConfig) -> dict[str, Any]:
+    """Sozlesmedeki baglanti -> SDK bicimi (McpStdioServerConfig / McpHttpServerConfig / McpSSEServerConfig). Bos alan yazilmaz."""
+    if cfg.type == "stdio":
+        out: dict[str, Any] = {"type": "stdio", "command": cfg.command or ""}
+        if cfg.args:
+            out["args"] = list(cfg.args)
+        if cfg.env:
+            out["env"] = dict(cfg.env)
+        return out
+    out = {"type": cfg.type, "url": cfg.url or ""}
+    if cfg.headers:
+        out["headers"] = dict(cfg.headers)
+    return out
+
+
+def _usage_of(raw: dict[str, Any] | None) -> Usage:
+    """SDK kullanim sozlugu -> sozlesme. Girdi = dogrudan + onbellege yazilan + onbellekten okunan.
+    Yazmanin omur kirilimi `cache_creation.ephemeral_5m_input_tokens`'ta; yoksa 0 (fiyat 1 sa varsayar)."""
+    raw = raw or {}
+    read = int(raw.get("cache_read_input_tokens") or 0)
+    write = int(raw.get("cache_creation_input_tokens") or 0)
+    split = raw.get("cache_creation")
+    short = int(split.get("ephemeral_5m_input_tokens") or 0) if isinstance(split, dict) else 0
+    return Usage(
+        input_tokens=int(raw.get("input_tokens") or 0) + read + write,
+        output_tokens=int(raw.get("output_tokens") or 0),
+        cache_read_tokens=read,
+        cache_write_tokens=write,
+        cache_write_5m_tokens=min(short, write),
+    )
+
+
+def _model_usage_of(raw: dict[str, Any] | None) -> list[ModelUsage]:
+    """SDK `model_usage` (CLI'nin `modelUsage`'i, camelCase) -> sozlesme. Girdi toplamdir: dogrudan + onbellek okuma + yazma."""
+    out: list[ModelUsage] = []
+    for model, u in (raw or {}).items():
+        if not isinstance(u, dict):
+            continue
+        read = int(u.get("cacheReadInputTokens") or 0)
+        write = int(u.get("cacheCreationInputTokens") or 0)
+        cost = u.get("costUSD")
+        out.append(ModelUsage(
+            model=str(model),
+            input_tokens=int(u.get("inputTokens") or 0) + read + write,
+            output_tokens=int(u.get("outputTokens") or 0),
+            cache_read_tokens=read,
+            cache_write_tokens=write,
+            cost_usd=float(cost) if isinstance(cost, (int, float)) else None,
+        ))
+    return out
+
+
+#: `local_usage` dosya onbellegi: yol -> (mtime, boyut, [(mesaj kimligi, zaman, (kaynak, klasor, model, kullanim))]).
+_USAGE_FILE_CACHE: dict[str, tuple[float, int, list[tuple[str, float, tuple[str, str, str, dict[str, Any]]]]]] = {}
+
+
+def _read_usage_entries(f: Path, project: str) -> list[tuple[str, float, tuple[str, str, str, dict[str, Any]]]]:
+    """Tek oturum kaydindaki asistan kullanim satirlari (araliktan bagimsiz: suzme cagiranda). Okunamayan satir atlanir."""
+    out: list[tuple[str, float, tuple[str, str, str, dict[str, Any]]]] = []
+    with f.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if '"assistant"' not in line or '"usage"' not in line:
+                continue
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            msg = o.get("message") if o.get("type") == "assistant" else None
+            if not isinstance(msg, dict) or not isinstance(msg.get("usage"), dict):
+                continue
+            ts = _parse_ts(o.get("timestamp"))
+            if ts is None:
+                continue
+            key = str(msg.get("id") or o.get("requestId") or o.get("uuid"))
+            out.append((key, ts, (str(o.get("entrypoint") or "bilinmiyor"), project, str(msg.get("model") or "?"), msg["usage"])))
+    return out
 
 
 class AnthropicProvider:
@@ -234,7 +351,7 @@ class AnthropicProvider:
     def cli(self) -> str | None:
         return self._cli_path or find_claude_cli()
 
-    def _options(self, request: TurnRequest) -> ClaudeAgentOptions:
+    def _options(self, request: TurnRequest, prompt_file: str | None = None) -> ClaudeAgentOptions:
         tools = list(request.tools or [])
         opts: dict[str, Any] = {
             "model": request.model,
@@ -250,7 +367,29 @@ class AnthropicProvider:
             ),
             "effort": request.reasoning_effort,
             "cli_path": self.cli,
+            # Alt surec kullanicinin Claude Code ortamini DEVRALMAZ (2026-09-23 olcumu): ayar/CLAUDE.md/hook
+            # kaynaklari ve claude.ai MCP baglayicilari (Docs, Figma...) kapali. Onceden cagri basina ~32K token MCP
+            # semasi geliyor, her gorevde ~47K yeniden onbellege yaziliyordu (~%18 maliyet); kullanicinin e-postasi ve
+            # commit imza kurali da ajanin baglamina siziyordu. Ajan hedef projenin CLAUDE.md'sini kendi araciyla okur.
+            "setting_sources": [],
+            "strict_mcp_config": True,
+            # Otomatik hafiza da kapali (2026-09-24 olcumu): acikken ajan `~/.claude/projects/<cwd>/memory/` altina 9 turda
+            # yazdi/okudu. CLI kendi hafiza dizinini izin sormadan onayliyor, `_guard`'a hic ugramiyor: "yazma yalniz cwd"
+            # sinirini deliyor ve veritabani disinda gizli, calismadan calismaya tasinan durum biriktiriyordu.
+            "env": {"ENABLE_CLAUDEAI_MCP_SERVERS": "false", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"},
         }
+        if request.cache_ttl == "5m":
+            # Onbellek omru .NET'in secimi (Ayarlar); burasi yalniz CLI'nin degiskenine esler. 5 dk yazma 1,25x, 1 sa 2x.
+            opts["env"]["FORCE_PROMPT_CACHING_5M"] = "1"
+        elif request.cache_ttl == "1h":
+            opts["env"]["ENABLE_PROMPT_CACHING_1H"] = "1"
+        if prompt_file:
+            # Uzun istem komut satirina sigmaz (bkz. PROMPT_FILE_THRESHOLD): ayni metin dosyadan okunur.
+            if request.system_prompt_mode == "claude_code":
+                opts["system_prompt"] = {"type": "preset", "preset": "claude_code"}
+                opts["extra_args"] = {"append-system-prompt-file": prompt_file}
+            else:
+                opts["system_prompt"] = {"type": "file", "path": prompt_file}
         if tools:
             # Aracli tur (kullanici karari 2026-09-19: developer/testci dosyayi kendisi yazar, testi kendisi kosar).
             # Izin listesi ve dizin .NET'ten gelir; runtime secmez. Sunucu etkilesimsizdir, izin sorusu soracak
@@ -258,10 +397,28 @@ class AnthropicProvider:
             # `allowed_tools` VERILMEZ: verilirse SDK araci geri cagriyi sormadan onaylar (CanUseToolShadowedWarning) ve
             # yazma siniri devre disi kalir. Arac kumesi `tools`, her cagrinin karari `_guard`.
             opts["tools"] = tools
-            opts["can_use_tool"] = self._guard(request.cwd)
+            mcp_allow = {k: (set(v.tools) if v.tools is not None else None) for k, v in (request.mcp_servers or {}).items()}
+            opts["can_use_tool"] = self._guard(request.cwd, request.read_dirs, mcp_allow, set(request.subagents or {}))
+            if request.disallowed_tools:
+                # Secilmeyen MCP araclari modele hic sunulmaz (semalari baglama girmez); `_guard` izin listesini ayrica uygular.
+                opts["disallowed_tools"] = list(request.disallowed_tools)
             opts["max_turns"] = request.max_turns or 80
             if request.cwd:
                 opts["cwd"] = request.cwd
+            if request.read_dirs:
+                # Is ekleri cwd disinda: Claude Code okumayi bu dizinlerde de serbest birakir. Yazma siniri `_guard`'da, cwd'de kalir.
+                opts["add_dirs"] = list(request.read_dirs)
+            if request.subagents:
+                # Alt ajanlar .NET'ten (hangi ajan, hangi model, hangi arac). Ana ajan `Agent` araciyla cagirir; `_guard` bu adlar
+                # disindakini (yerlesik general-purpose/Explore) reddeder. Alt ajanin araclari da `_guard`'dan gecer.
+                opts["agents"] = {
+                    name: sdk.AgentDefinition(description=d.description, prompt=d.prompt, tools=list(d.tools), model=d.model, maxTurns=d.max_turns)
+                    for name, d in request.subagents.items()
+                }
+            if request.mcp_servers:
+                # Ajanin MCP sunuculari (.NET secti). `strict_mcp_config` acik: kullanicinin kendi MCP'leri DEGIL yalniz bunlar yuklenir.
+                # Araclar `mcp__{anahtar}__{arac}` adini alir; izin karari yine `_guard` (dosya yazmayan arac serbest).
+                opts["mcp_servers"] = {key: _sdk_mcp(cfg) for key, cfg in request.mcp_servers.items()}
         else:
             # Yerlesik arac tanimlari prompt'a girmesin: 23k → 4.5k token / cagri (olculdu, 2026-09-19).
             opts["allowed_tools"] = []
@@ -273,8 +430,11 @@ class AnthropicProvider:
         key = credentials.api_key(PROVIDER_NAME)
         if key:
             # Kayitli API anahtari varsa CLI onu kullanir: fatura Anthropic Console'a, Claude Code oturumu devre disi.
-            opts["env"] = {"ANTHROPIC_API_KEY": key}
+            opts["env"] = {**opts["env"], "ANTHROPIC_API_KEY": key}
         return ClaudeAgentOptions(**opts)
+
+    #: Alt ajan araci (Claude Code'da eski adi Task).
+    AGENT_TOOLS = frozenset({"Agent", "Task"})
 
     #: Dosya degistiren araclar: hedef yol cwd disindaysa reddedilir.
     WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
@@ -285,18 +445,50 @@ class AnthropicProvider:
     _BASH_ALLOW_PREFIXES = ("/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/tmp")
 
     @classmethod
-    def _guard(cls, cwd: str | None):
-        """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: dosya yazma ve Bash yalniz verilen dizinde."""
+    def _guard(cls, cwd: str | None, read_dirs: list[str] | None = None, mcp_allow: dict[str, set[str] | None] | None = None,
+               subagents: set[str] | None = None):
+        """Arac izin karari (SDK `can_use_tool`). Is kurali degil, sinir: dosya yazma yalniz verilen dizinde; Bash verilen
+        dizinde ve .NET'in actigi okuma dizinlerinde (is ekleri: ornegin bir resmi projeye kopyalamak). `Agent` yalniz
+        .NET'in verdigi alt ajanlari cagirabilir."""
         root = Path(cwd).resolve() if cwd else None
+        extra = [Path(d).resolve() for d in (read_dirs or [])]
 
-        def inside(raw: str) -> bool:
+        def under(raw: str, base: Path) -> bool:
             try:
-                target = (root / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+                target = (base / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
             except (OSError, ValueError):
                 return False
-            return root == target or root in target.parents
+            return base == target or base in target.parents
+
+        def inside(raw: str) -> bool:
+            return under(raw, root)
+
+        def readable(raw: str) -> bool:
+            return inside(raw) or any(under(raw, d) for d in extra if Path(raw).is_absolute())
+
+        def mcp_denied(tool: str) -> str | None:
+            """MCP aracinin izin listesi disinda olup olmadigi. Sunucu anahtari `__` icerebilir: en uzun eslesen onek."""
+            if not tool.startswith("mcp__") or not mcp_allow:
+                return None
+            rest = tool[len("mcp__"):]
+            keys = sorted((k for k in mcp_allow if rest.startswith(k + "__")), key=len, reverse=True)
+            if not keys:
+                return None
+            allowed = mcp_allow[keys[0]]
+            name = rest[len(keys[0]) + 2:]
+            if allowed is not None and name not in allowed:
+                return f"'{name}' araci bu ajana acilmadi ({keys[0]} sunucusunda secili degil)."
+            return None
 
         async def decide(tool: str, tool_input: dict[str, Any], _ctx: ToolPermissionContext):
+            denied = mcp_denied(tool)
+            if denied:
+                return PermissionResultDeny(message=denied)
+            if tool in cls.AGENT_TOOLS:
+                kind = str(tool_input.get("subagent_type") or "")
+                if kind not in (subagents or set()):
+                    names = ", ".join(sorted(subagents or [])) or "yok"
+                    return PermissionResultDeny(message=f"'{kind or 'varsayilan'}' alt ajani bu ajana acilmadi; kullanilabilir: {names}.")
             if root is None:
                 return PermissionResultAllow()
             if tool in cls.WRITE_TOOLS:
@@ -312,7 +504,7 @@ class AnthropicProvider:
                     raw = m.group(0)
                     if raw.startswith(cls._BASH_ALLOW_PREFIXES):
                         continue
-                    if raw.startswith("~") or not inside(raw):
+                    if raw.startswith("~") or not readable(raw):
                         return PermissionResultDeny(message=f"Komut bu dizinin disina cikiyor: {raw}. Yalniz {root} altinda calis.")
             return PermissionResultAllow()
 
@@ -331,7 +523,8 @@ class AnthropicProvider:
     @staticmethod
     def _tool_target(block: ToolUseBlock) -> str | None:
         inp = block.input or {}
-        for key in ("file_path", "path", "command", "pattern", "notebook_path", "url"):
+        # `element`: tarayici araclarinin (Playwright MCP click/type/find) insan okunur hedefi; yoksa kayitta bos kaliyordu.
+        for key in ("file_path", "path", "command", "pattern", "notebook_path", "url", "element"):
             v = inp.get(key)
             if isinstance(v, str) and v:
                 return v[:300]
@@ -355,10 +548,24 @@ class AnthropicProvider:
         turns = 1
         started = time.monotonic()
 
+        prompt_file = _write_prompt_file(request.system_prompt)
+        # Tur basina tek istemci (bildirim sik: her arac, metin, kullanim). Akis yoksa acilmaz.
+        client = httpx.AsyncClient(timeout=2.0) if request.progress_url else None
+        # Ayni API mesaji blok basina tekrar gelir (ayni message_id, ayni kullanim): degismeyen kullanim yeniden bildirilmez.
+        sent_usage: dict[str, tuple[Usage, int]] = {}
+        chars: dict[str, int] = {}
+        # Tek API cagrisinin girdisi = o anki baglam; turun tepesi olcu olarak doner (is kurali degil, sayim).
+        peak = 0
+        short_by_msg: dict[str, int] = {}
+        # Alt ajan cagrisi (Agent tool_use kimligi) -> alt ajanin adi: alt ajanin mesajlari parent_tool_use_id ile gelir.
+        sub_of: dict[str, str] = {}
+        model_usage: list[ModelUsage] = []
+        stream: Any = None
         try:
             prompt_text = self._prompt(request)
             prompt: Any = self._stream(prompt_text) if request.tools else prompt_text
-            async for msg in sdk.query(prompt=prompt, options=self._options(request)):
+            stream = sdk.query(prompt=prompt, options=self._options(request, prompt_file))
+            async for msg in stream:
                 if isinstance(msg, AssistantMessage):
                     if msg.error:
                         err_text = f"Claude hatası: {msg.error}"
@@ -367,13 +574,39 @@ class AnthropicProvider:
                         if _limit_reached(err_text):
                             raise _error(503, "runtime.provider_limit", err_text)
                         raise _error(502, "runtime.provider_error", err_text)
+                    sub = sub_of.get(msg.parent_tool_use_id, "alt") if msg.parent_tool_use_id else None
                     for block in msg.content:
+                        if sub is not None:
+                            # Alt ajanin mesaji: metni ana yanita girmez (alt ajanin sonucu ana ajana arac sonucu olarak doner).
+                            # Arac cagrilari kayda ve canli akisa `ad/Arac` diye girer: ana ajanin kendi okumasiyla karismasin.
+                            if isinstance(block, ToolUseBlock):
+                                use = ToolUse(tool=f"{sub}/{block.name}", target=self._tool_target(block))
+                                tool_uses.append(use)
+                                await _report_progress(client, request.progress_url, ProgressEvent(kind="tool", tool=use.tool, target=use.target))
+                            continue
                         if isinstance(block, TextBlock):
                             parts.append(block.text)
+                            if block.text.strip():
+                                await _report_progress(client, request.progress_url, ProgressEvent(kind="text", text=block.text[:PROGRESS_TEXT_MAX]))
+                        elif isinstance(block, ThinkingBlock):
+                            if (block.thinking or "").strip():
+                                await _report_progress(client, request.progress_url, ProgressEvent(kind="thinking", text=block.thinking[:PROGRESS_TEXT_MAX]))
                         elif isinstance(block, ToolUseBlock):
+                            if block.name in self.AGENT_TOOLS:
+                                sub_of[block.id] = str((block.input or {}).get("subagent_type") or "alt")
                             use = ToolUse(tool=block.name, target=self._tool_target(block))
                             tool_uses.append(use)
-                            await _report_progress(request.progress_url, use)
+                            await _report_progress(client, request.progress_url, ProgressEvent(kind="tool", tool=use.tool, target=use.target))
+                    if msg.usage and msg.message_id:
+                        chars[msg.message_id] = chars.get(msg.message_id, 0) + sum(_block_chars(b) for b in msg.content)
+                        state = (_usage_of(msg.usage), chars[msg.message_id])
+                        if sub is None:
+                            # Tepe baglam ANA ajanin baglamidir; alt ajanin kendi (ayri) baglami olcuyu bozmasin.
+                            peak = max(peak, state[0].input_tokens)
+                        short_by_msg[msg.message_id] = state[0].cache_write_5m_tokens
+                        if sent_usage.get(msg.message_id) != state:
+                            sent_usage[msg.message_id] = state
+                            await _report_progress(client, request.progress_url, ProgressEvent(kind="usage", message_id=msg.message_id, usage=state[0], chars=state[1], model=msg.model or None))
                 elif isinstance(msg, ResultMessage):
                     if msg.is_error:
                         detail = "; ".join(msg.errors or []) or msg.result or "bilinmiyor"
@@ -386,35 +619,44 @@ class AnthropicProvider:
                     cost = msg.total_cost_usd
                     usage_raw = msg.usage or {}
                     turns = int(msg.num_turns or 1)
+                    model_usage = _model_usage_of(msg.model_usage)
                     if msg.result and not parts:
                         parts.append(msg.result)
         except HTTPException:
             raise
         except ClaudeSDKError as exc:
             raise _classify(exc) from exc
+        finally:
+            if stream is not None:
+                # Tur iptal edildiyse (istemci koptu) akis HEMEN kapatilir: SDK alt sureci (claude.exe) bununla durur.
+                # Kapatilmazsa uretec yalniz cop toplayicida kapanir ve ajan kimse beklemeden calismaya devam eder.
+                with contextlib.suppress(Exception):
+                    await stream.aclose()
+            if prompt_file:
+                Path(prompt_file).unlink(missing_ok=True)
+            if client is not None:
+                await client.aclose()
 
+        usage = _usage_of(usage_raw)
+        if usage.cache_write_tokens and not usage.cache_write_5m_tokens and short_by_msg:
+            # Sonuc toplaminda kirilim yoksa mesajlardan toplanir (ayni mesajin son degeri).
+            usage.cache_write_5m_tokens = min(sum(short_by_msg.values()), usage.cache_write_tokens)
+        usage.peak_context_tokens = peak
         return TurnResponse(
             text="\n".join(parts).strip(),
             structured=structured,
             provider=PROVIDER_NAME,
             model=request.model,
             destination=DESTINATION_OF[PROVIDER_NAME],
-            usage=Usage(
-                # Girdi = dogrudan + onbellege yazilan + onbellekten okunan: kullanici "kac token gitti" diye bakar.
-                input_tokens=int(usage_raw.get("input_tokens") or 0)
-                + int(usage_raw.get("cache_creation_input_tokens") or 0)
-                + int(usage_raw.get("cache_read_input_tokens") or 0),
-                output_tokens=int(usage_raw.get("output_tokens") or 0),
-                # Kirilim ayrica tasinir: toplam tek basina "baglam bosa mi gitti" sorusunu cevaplamaz.
-                # Ajan araci dongusunde toplam her turda buyur ama buyuyen kismin cogu onbellekten okunur.
-                cache_read_tokens=int(usage_raw.get("cache_read_input_tokens") or 0),
-                cache_write_tokens=int(usage_raw.get("cache_creation_input_tokens") or 0),
-            ),
+            # Girdi = dogrudan + onbellege yazilan + onbellekten okunan: kullanici "kac token gitti" diye bakar.
+            # Kirilim ayrica tasinir: toplam tek basina "baglam bosa mi gitti" sorusunu cevaplamaz.
+            usage=usage,
             cost_usd=cost,
             duration_s=round(time.monotonic() - started, 3),
             attempts=1,
             tool_uses=tool_uses,
             turns=turns,
+            model_usage=model_usage,
         )
 
     def auth(self, refresh: bool = False) -> AuthStatus:
@@ -644,6 +886,56 @@ class AnthropicProvider:
             fetched_at=datetime.now(timezone.utc).isoformat(),
             limits=items,
         )
+
+    def local_usage(self, since: datetime, until: datetime | None = None) -> list[LocalUsage]:
+        """Kim ne harcadi: CLI'nin makinedeki oturum kayitlari (`~/.claude/projects/**/*.jsonl`) taranir, `[since, until)`
+        araligindaki asistan mesajlarinin kullanimi (kaynak, klasor, model) basina toplanir. Her cagri (ofis ajani da,
+        etkilesimli oturum da) buraya yazilir; `entrypoint` kaynagi soyler. Ayni mesaj blok basina tekrar yazilir: mesaj
+        kimligiyle tekillenir. Dosya yazilmaz; kayit okunamazsa o satir atlanir.
+
+        Dosya basina ayristirma onbellegi (`_USAGE_FILE_CACHE`, anahtar yol + mtime + boyut): her istekte yuzlerce MB'lik
+        kaydi bastan JSON'a cevirmek harcama ekranini saniyelerce bekletiyordu. Durum degil (CLAUDE.md §1): diskteki dosyadan
+        turer, sonucu degistirmez, dosya degisince kendiliginden gecersizlesir; kota onbellegi gibi yalniz hiz icindir."""
+        base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")) / "projects"
+        if not base.is_dir():
+            return []
+        lo = since.timestamp()
+        hi = until.timestamp() if until else None
+        seen: dict[str, tuple[str, str, str, dict[str, Any]]] = {}
+        alive: set[str] = set()
+        for f in base.rglob("*.jsonl"):
+            try:
+                st = f.stat()
+                if st.st_mtime < lo:
+                    continue
+                path = str(f)
+                alive.add(path)
+                cached = _USAGE_FILE_CACHE.get(path)
+                if cached is None or cached[0] != st.st_mtime or cached[1] != st.st_size:
+                    cached = (st.st_mtime, st.st_size, _read_usage_entries(f, f.relative_to(base).parts[0]))
+                    _USAGE_FILE_CACHE[path] = cached
+                for key, ts, entry in cached[2]:
+                    if ts >= lo and (hi is None or ts < hi):
+                        seen[key] = entry
+            except OSError:
+                continue
+        # Silinen/araligin disina dusen dosyalarin girdisi tutulmaz: onbellek yalniz son taramanin dosyalari kadardir.
+        for stale in _USAGE_FILE_CACHE.keys() - alive:
+            _USAGE_FILE_CACHE.pop(stale, None)  # eszamanli bir istek ayni anahtari silmis olabilir
+
+        groups: dict[tuple[str, str, str], LocalUsage] = {}
+        for source, project, model, raw in seen.values():
+            if model.startswith("<"):  # "<synthetic>": CLI'nin kendi urettigi, API'ye gitmeyen mesaj
+                continue
+            g = groups.setdefault((source, project, model), LocalUsage(source=source, project=project, model=model))
+            u = _usage_of(raw)
+            g.messages += 1
+            g.input_tokens += u.input_tokens
+            g.output_tokens += u.output_tokens
+            g.cache_read_tokens += u.cache_read_tokens
+            g.cache_write_tokens += u.cache_write_tokens
+            g.cache_write_5m_tokens += u.cache_write_5m_tokens
+        return sorted(groups.values(), key=lambda g: (g.source, g.project, g.model))
 
     def models(self) -> list[ModelInfo]:
         status = self.auth()

@@ -92,7 +92,39 @@ export interface SceneConfig {
   spots: Record<string, SpotDef>
   blocked: [number, number, number, number][]
   agents: AgentDef[]
-  cat: { bed: Pt; spots: Pt[] }
+  cat: { bed: Pt; spots: Pt[]; bowls?: CatBowlsDef }
+  /**
+   * Dinlenme koltuklari (kanepe). `seats`'ten AYRI: Api ajanlara ev koltugunu `seats`'ten atar, kanepe kimsenin evi olmasin.
+   * Bosta olan ajanlar ve misafirler ara sira burada oturur (on kareler: yuzu kameraya donuk).
+   */
+  lounge?: { seats: SeatDef[] }
+  /**
+   * Misafirler (kullanici istegi 2026-09-24): ekipte olmayan karakterler ara sira kapidan girer, kahve/su alir, kanepede
+   * oturur, pencereden bakar, birine ugrar ve kapidan cikar. Tiklanmaz, is almaz. `sprites` bos = ekibin kullanmadigi karakterler.
+   */
+  guests?: { max?: number; firstMs?: number; everyMs?: [number, number]; sprites?: string[] }
+  /** Balkon (kullanici istegi 2026-09-26): alt duvardaki cam surgulu kapi, balkon zemini, korkuluk, sohbet noktalari. */
+  balcony?: BalconyDef
+}
+
+export interface Rect { x: number; y: number; w: number; h: number }
+
+/** Kedinin mama/su kaplari (2026-09-25): kap noktalari zemine degen orta nokta; `mat` altindaki paspas [x, y, w, h]. */
+export interface CatBowlsDef {
+  food: Pt
+  water: Pt
+  mat: [number, number, number, number]
+}
+
+export interface BalconyDef {
+  /** Cam kapi (arka planda cizili): kanatlar buradan kesilip kayar. */
+  door: Rect
+  /** Balkon zemini: acik kapi boslugu bunun dokusunu gosterir; sohbet sayimi bunu okur. */
+  floor: Rect
+  /** Korkuluk: balkonda duranlarin onune cizilir. */
+  rail: Rect
+  /** Durulacak noktalar (ayak ucu); `facing` tek basina durana bakis. */
+  spots: Array<Pt & { facing?: Facing }>
 }
 
 export type StageKind = 'analyze' | 'design' | 'implement' | 'review' | 'handoff'
@@ -116,7 +148,7 @@ export type TaskState = 'queued' | 'active' | 'blocked' | 'done'
 export type BubbleKind = 'talk' | 'ask' | 'alert'
 export type MeetKind = 'handoff' | 'ask' | 'reject'
 export type DoorState = 'closed' | 'open'
-export type CatAction = 'sleep' | 'wander' | 'sit'
+export type CatAction = 'sleep' | 'wander' | 'sit' | 'eat'
 
 export interface BoardTask {
   id: string

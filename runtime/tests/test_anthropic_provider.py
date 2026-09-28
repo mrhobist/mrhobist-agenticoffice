@@ -256,7 +256,7 @@ def test_http_turn_anthropic_yonlenir(monkeypatch, cli_present):
     body = r.json()
     assert body["text"] == "ok" and body["costUsd"] == 0.5
     assert body["usage"] == {"inputTokens": 1, "outputTokens": 2, "reasoningChars": 0,
-                             "cacheReadTokens": 0, "cacheWriteTokens": 0}
+                             "cacheReadTokens": 0, "cacheWriteTokens": 0, "cacheWrite5mTokens": 0, "peakContextTokens": 0}
     assert body["destination"] == "anthropic"
 
 
@@ -436,7 +436,7 @@ def test_apikey_girisi_dogrular_saklar_ve_oturumun_onune_gecer(monkeypatch, cli_
     st = p.auth(refresh=True)
     assert st.logged_in and st.method == "apikey" and st.account == "sk-…wxyz"
     opts = p._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m"}))
-    assert opts.env == {"ANTHROPIC_API_KEY": "sk-ant-test-1234wxyz"}
+    assert opts.env["ANTHROPIC_API_KEY"] == "sk-ant-test-1234wxyz"
     lim = p.limits(refresh=True)
     assert not lim.available and "fatura" in lim.detail
 
@@ -453,9 +453,76 @@ def test_apikey_reddedilirse_saklanmaz(cli_present):
     assert not r.started and credentials.api_key("anthropic") is None
 
 
+def test_uzun_istem_komut_satiri_yerine_dosyadan_verilir(cli_present):
+    """2026-09-23: ~24 KB istem + sema Windows komut satirini asti, surec 'Access is denied' ile hic baslamadi."""
+    assert mod._write_prompt_file("kisa") is None
+    long_text = "ğ" * (mod.PROMPT_FILE_THRESHOLD + 1)
+    path = mod._write_prompt_file(long_text)
+    try:
+        with open(path, encoding="utf-8") as f:
+            assert f.read() == long_text
+        base = {"systemPrompt": long_text, "messages": [], "provider": "anthropic", "model": "m"}
+        replace = AnthropicProvider()._options(TurnRequest.model_validate(base), path)
+        assert replace.system_prompt == {"type": "file", "path": path}
+        preset = AnthropicProvider()._options(TurnRequest.model_validate({**base, "systemPromptMode": "claude_code"}), path)
+        assert preset.system_prompt == {"type": "preset", "preset": "claude_code"}
+        assert preset.extra_args == {"append-system-prompt-file": path}
+    finally:
+        import os
+        os.unlink(path)
+
+
 def test_apikey_yokken_options_env_tasimaz(cli_present):
     opts = AnthropicProvider()._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m"}))
-    assert not opts.env
+    assert "ANTHROPIC_API_KEY" not in opts.env
+
+
+def test_alt_surec_kullanici_ortamini_devralmaz(cli_present):
+    """2026-09-23: CLI kullanicinin ayarlarini ve claude.ai MCP baglayicilarini devraliyordu (~32K token/cagri, e-posta sizintisi)."""
+    opts = AnthropicProvider()._options(TurnRequest.model_validate({"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m", "tools": ["Read"], "cwd": "."}))
+    assert opts.setting_sources == [] and opts.strict_mcp_config is True
+    assert opts.env["ENABLE_CLAUDEAI_MCP_SERVERS"] == "false"
+    # 2026-09-24: otomatik hafiza `_guard`'a ugramadan cwd disina yaziyordu.
+    assert opts.env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+
+
+def test_onbellek_omru_cli_degiskenine_eslenir(cli_present):
+    """Secim .NET'in (Ayarlar); runtime yalniz esler. Bos = CLI varsayilani, hicbir degisken yazilmaz."""
+    def env(ttl):
+        body = {"systemPrompt": "s", "messages": [], "provider": "anthropic", "model": "m", "tools": ["Read"], "cwd": "."}
+        if ttl:
+            body["cacheTtl"] = ttl
+        return AnthropicProvider()._options(TurnRequest.model_validate(body)).env
+
+    assert env("5m")["FORCE_PROMPT_CACHING_5M"] == "1" and "ENABLE_PROMPT_CACHING_1H" not in env("5m")
+    assert env("1h")["ENABLE_PROMPT_CACHING_1H"] == "1" and "FORCE_PROMPT_CACHING_5M" not in env("1h")
+    assert "FORCE_PROMPT_CACHING_5M" not in env(None) and "ENABLE_PROMPT_CACHING_1H" not in env(None)
+    with pytest.raises(ValueError):
+        env("2h")
+
+
+async def test_tepe_baglam_ve_5dk_yazma_payi_olculur(monkeypatch, cli_present):
+    """Toplam girdi ic turlarin toplamidir; baglamin tepesi en buyuk tek cagridir. Sonuc toplaminda omur kirilimi yoksa
+    mesajlardan (her mesajin son degeri) toplanir."""
+    def u(ctx, write, short):
+        return {"input_tokens": 2, "cache_read_input_tokens": ctx - write - 2, "cache_creation_input_tokens": write,
+                "cache_creation": {"ephemeral_5m_input_tokens": short, "ephemeral_1h_input_tokens": write - short}, "output_tokens": 5}
+    monkeypatch.setattr(claude_agent_sdk, "query", _fake_query({}, messages=[
+        AssistantMessage(content=[TextBlock(text="a")], model="m", message_id="m1", usage=u(20_000, 20_000, 20_000)),
+        AssistantMessage(content=[TextBlock(text="b")], model="m", message_id="m2", usage=u(90_000, 5_000, 5_000)),
+        AssistantMessage(content=[TextBlock(text="c")], model="m", message_id="m3", usage=u(60_000, 1_000, 0)),
+        _result(result="ok", usage={"input_tokens": 6, "cache_read_input_tokens": 143_994, "cache_creation_input_tokens": 26_000, "output_tokens": 15}),
+    ]))
+    req = TurnRequest(systemPrompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m", tools=["Read"], cwd=".")
+    resp = await AnthropicProvider().complete(req)
+    assert resp.usage.peak_context_tokens == 90_000
+    assert resp.usage.cache_write_tokens == 26_000 and resp.usage.cache_write_5m_tokens == 25_000
+
+
+def test_kullanim_omur_kirilimi_okunur():
+    raw = {"input_tokens": 1, "cache_creation_input_tokens": 300, "cache_creation": {"ephemeral_5m_input_tokens": 200, "ephemeral_1h_input_tokens": 100}}
+    assert mod._usage_of(raw).cache_write_5m_tokens == 200
+    assert mod._usage_of({"cache_creation_input_tokens": 300}).cache_write_5m_tokens == 0, "kirilim yoksa 1 sa varsayilir"
 
 
 def test_scope_nesneden_model_adi_cikarilir():
@@ -498,3 +565,199 @@ def test_kota_reddi_ayri_kodla_siniflandirilir():
     assert mod._classify(RuntimeError("bilinmeyen patlama")).detail["errorCode"] == "runtime.provider_error"
     # Giris hatasi limitten ONCE bakilir: ikisi de gecerliyse kok sebep giristir.
     assert mod._classify(RuntimeError("Not logged in")).detail["errorCode"] == "runtime.not_logged_in"
+
+
+# -- canli akis, kesilen tur, kim ne harcadi (2026-09-23) ----------------------------------------------------------
+
+
+@respx.mock
+async def test_canli_akis_metin_dusunce_arac_ve_kullanimi_bildirir(monkeypatch, cli_present):
+    """Tur surerken metin, dusunce, arac ve mesaj basina kullanim .NET'e gider; ayni kullanim ikinci kez gitmez."""
+    from claude_agent_sdk import ThinkingBlock, ToolUseBlock
+
+    sent: list[dict] = []
+    respx.post("http://127.0.0.1:5080/api/v1/progress/tok").mock(
+        side_effect=lambda req: (sent.append(json.loads(req.content)), httpx.Response(204))[1])
+    usage = {"input_tokens": 2, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 900, "output_tokens": 7}
+    monkeypatch.setattr(claude_agent_sdk, "query", _fake_query({}, messages=[
+        AssistantMessage(content=[ThinkingBlock(thinking="once dizine bakayim", signature="x")], model="m", message_id="m1", usage=usage),
+        AssistantMessage(content=[ToolUseBlock(id="u1", name="Read", input={"file_path": "a.cs"})], model="m", message_id="m1", usage=usage),
+        AssistantMessage(content=[TextBlock(text="bitti")], model="m", message_id="m2", usage={**usage, "output_tokens": 3}),
+        _result(result="bitti", usage={}),
+    ]))
+    req = TurnRequest(systemPrompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m",
+                      tools=["Read"], progressUrl="http://127.0.0.1:5080/api/v1/progress/tok")
+    await AnthropicProvider().complete(req)
+
+    # m1 ikinci blokta ayni kullanimla gelir ama icerik buyudu (arac girdisi): yeniden bildirilir.
+    assert [e["kind"] for e in sent] == ["thinking", "usage", "tool", "usage", "text", "usage"]
+    assert sent[0]["text"] == "once dizine bakayim"
+    assert sent[1] == {"kind": "usage", "messageId": "m1", "chars": 19, "usage": {"inputTokens": 1002, "outputTokens": 7, "reasoningChars": 0, "cacheReadTokens": 900, "cacheWriteTokens": 100, "cacheWrite5mTokens": 0, "peakContextTokens": 0}, "model": "m"}
+    assert sent[2]["tool"] == "Read" and sent[2]["target"] == "a.cs"
+    assert sent[3]["chars"] == 19 + len(json.dumps({"file_path": "a.cs"}))
+    assert sent[5]["messageId"] == "m2" and sent[5]["chars"] == 5
+
+
+async def test_iptal_edilen_tur_sdk_akisini_hemen_kapatir(monkeypatch, cli_present):
+    """Tur iptal edilince SDK uretecinin finally'si calisir (alt surec orada durur); cop toplayiciya kalmaz."""
+    import asyncio
+
+    closed = asyncio.Event()
+
+    async def fake(*, prompt, options=None, transport=None):
+        try:
+            yield AssistantMessage(content=[TextBlock(text="basladim")], model="m")
+            await asyncio.sleep(3600)
+        finally:
+            closed.set()
+
+    monkeypatch.setattr(claude_agent_sdk, "query", fake)
+    req = TurnRequest(systemPrompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m")
+    task = asyncio.create_task(AnthropicProvider().complete(req))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert closed.is_set()
+
+
+async def test_istemci_koparsa_tur_durdurulur_499(monkeypatch):
+    """Starlette kopan istegin isleyicisini durdurmaz: runtime kendisi yoklar ve turu iptal eder."""
+    import asyncio
+
+    cancelled = asyncio.Event()
+
+    class Slow:
+        async def complete(self, request):
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    class Gone:
+        async def is_disconnected(self):
+            return True
+
+    monkeypatch.setitem(main.PROVIDERS, "anthropic", Slow())
+    monkeypatch.setattr(main, "DISCONNECT_POLL_S", 0.01)
+    req = TurnRequest(systemPrompt="s", messages=[{"role": "user", "content": "x"}], provider="anthropic", model="m")
+    with pytest.raises(main.HTTPException) as err:
+        await main.run_turn(req, Gone())
+    assert err.value.status_code == 499
+    assert cancelled.is_set()
+
+
+def test_yerel_kullanim_kaynak_ve_klasore_gore_toplanir_mesaj_tekillenir(tmp_path, monkeypatch):
+    """Ofis ajani (sdk-py) ile etkilesimli oturum ayri toplanir; blok basina tekrar yazilan mesaj bir kez sayilir;
+    aralik disi ve sentetik mesaj sayilmaz."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    proj = tmp_path / "projects"
+    (proj / "C--Hedef").mkdir(parents=True)
+    (proj / "C--Ofis" / "s1" / "subagents").mkdir(parents=True)
+    u = {"input_tokens": 1, "cache_creation_input_tokens": 10, "cache_read_input_tokens": 100, "output_tokens": 5}
+
+    def line(ts, ep, mid, model="claude-opus-5-5"):
+        return json.dumps({"type": "assistant", "timestamp": ts, "entrypoint": ep, "message": {"id": mid, "model": model, "usage": u}}) + "\n"
+
+    (proj / "C--Hedef" / "a.jsonl").write_text(
+        line("2026-09-23T10:00:00Z", "sdk-py", "m1") + line("2026-09-23T10:00:01Z", "sdk-py", "m1")
+        + line("2026-09-23T10:05:00Z", "sdk-py", "m2") + line("2026-09-22T10:00:00Z", "sdk-py", "eski")
+        + line("2026-09-23T10:06:00Z", "sdk-py", "s", model="<synthetic>") + "{bozuk\n", encoding="utf-8")
+    (proj / "C--Ofis" / "s1" / "subagents" / "b.jsonl").write_text(line("2026-09-23T11:00:00Z", "claude-desktop", "m3"), encoding="utf-8")
+
+    from datetime import datetime, timezone
+    out = AnthropicProvider().local_usage(datetime(2026, 9, 23, tzinfo=timezone.utc))
+
+    by = {(g.source, g.project): g for g in out}
+    assert set(by) == {("sdk-py", "C--Hedef"), ("claude-desktop", "C--Ofis")}
+    office = by[("sdk-py", "C--Hedef")]
+    assert office.messages == 2 and office.input_tokens == 222 and office.output_tokens == 10
+    assert office.cache_read_tokens == 200 and office.cache_write_tokens == 20
+    assert office.cache_write_5m_tokens == 0, "kirilimsiz kayit 1 sa sayilir"
+    assert by[("claude-desktop", "C--Ofis")].messages == 1
+
+
+def test_yerel_kullanim_degismeyen_kaydi_yeniden_ayristirmaz(tmp_path, monkeypatch):
+    """Dosya basina onbellek: ayni kayit ikinci istekte okunmaz; dosya buyuyunce yeniden okunur ve yeni satir sayilir."""
+    from datetime import datetime, timezone
+
+    from app.providers import anthropic as mod
+
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(mod, "_USAGE_FILE_CACHE", {})
+    (tmp_path / "projects" / "C--P").mkdir(parents=True)
+    f = tmp_path / "projects" / "C--P" / "a.jsonl"
+    u = {"input_tokens": 1, "output_tokens": 1}
+
+    def line(mid):
+        return json.dumps({"type": "assistant", "timestamp": "2026-09-23T10:00:00Z", "entrypoint": "cli", "message": {"id": mid, "model": "m", "usage": u}}) + "\n"
+
+    f.write_text(line("m1"), encoding="utf-8")
+    reads = []
+    real = mod._read_usage_entries
+    monkeypatch.setattr(mod, "_read_usage_entries", lambda p, proj: reads.append(p) or real(p, proj))
+    since = datetime(2026, 9, 23, tzinfo=timezone.utc)
+
+    assert AnthropicProvider().local_usage(since)[0].messages == 1
+    assert AnthropicProvider().local_usage(since)[0].messages == 1
+    assert len(reads) == 1, "degismeyen dosya yeniden ayristirildi"
+
+    with f.open("a", encoding="utf-8") as fh:
+        fh.write(line("m2"))
+    assert AnthropicProvider().local_usage(since)[0].messages == 2
+    assert len(reads) == 2
+
+
+async def test_alt_ajan_sdk_agents_olur_mesajlari_ana_yanita_karismaz(monkeypatch, cli_present):
+    """Kesif alt ajani (.NET karari): SDK `agents`e eslenir. Alt ajanin mesaji (parent_tool_use_id) ana yanita ve tepe
+    baglama girmez; arac cagrisi `kesif/Grep` diye kayda girer; model basina kirilim `modelUsage`da doner."""
+    from claude_agent_sdk import ToolUseBlock
+
+    captured: dict = {}
+    monkeypatch.setattr(claude_agent_sdk, "query", _fake_query(captured, messages=[
+        AssistantMessage(content=[ToolUseBlock(id="call1", name="Agent", input={"subagent_type": "kesif", "prompt": "bul"})],
+                         model="claude-opus-5-5", message_id="m1", usage={"input_tokens": 1000}),
+        AssistantMessage(content=[ToolUseBlock(id="s1", name="Grep", input={"pattern": "Login"}), TextBlock(text="alt metin")],
+                         model="claude-haiku-4-5-20251001", parent_tool_use_id="call1", message_id="m2", usage={"input_tokens": 90000}),
+        AssistantMessage(content=[TextBlock(text="bitti")], model="claude-opus-5-5", message_id="m3", usage={"input_tokens": 1200}),
+        _result(total_cost_usd=0.5, usage={"input_tokens": 2200, "output_tokens": 10}, model_usage={
+            "claude-opus-5-5": {"inputTokens": 2200, "outputTokens": 10, "cacheReadInputTokens": 100, "cacheCreationInputTokens": 50, "costUSD": 0.45},
+            "claude-haiku-4-5-20251001": {"inputTokens": 900, "outputTokens": 40, "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0, "costUSD": 0.05},
+        }),
+    ]))
+    req = TurnRequest.model_validate({
+        "systemPrompt": "s", "messages": [{"role": "user", "content": "x"}], "provider": "anthropic", "model": "claude-opus-5-5",
+        "tools": ["Read", "Glob", "Grep", "Agent"], "cwd": ".",
+        "subagents": {"kesif": {"description": "d", "prompt": "p", "tools": ["Read", "Glob", "Grep"], "model": "claude-haiku-4-5-20251001", "maxTurns": 25}},
+    })
+
+    resp = await AnthropicProvider().complete(req)
+
+    agent = captured["options"].agents["kesif"]
+    assert agent.model == "claude-haiku-4-5-20251001" and agent.tools == ["Read", "Glob", "Grep"] and agent.maxTurns == 25
+    assert resp.text == "bitti", "alt ajanin metni ana yanita girmez"
+    assert [t.tool for t in resp.tool_uses] == ["Agent", "kesif/Grep"]
+    assert resp.usage.peak_context_tokens == 1200, "tepe baglam ana ajanin; alt ajanin 90K'si sayilmaz"
+    by = {m.model: m for m in resp.model_usage}
+    assert by["claude-opus-5-5"].input_tokens == 2350 and by["claude-opus-5-5"].cost_usd == 0.45
+    assert by["claude-haiku-4-5-20251001"].output_tokens == 40
+
+
+async def test_agent_araci_yalniz_verilen_alt_ajanlari_cagirir(tmp_path):
+    """Yerlesik general-purpose/Explore reddedilir: araclarini ve modelini .NET'in secmedigi bir ajan kosmasin."""
+    guard = AnthropicProvider._guard(str(tmp_path), None, None, {"kesif"})
+    ok = await guard("Agent", {"subagent_type": "kesif", "prompt": "bul"}, None)
+    gp = await guard("Agent", {"subagent_type": "general-purpose", "prompt": "yaz"}, None)
+    bare = await AnthropicProvider._guard(str(tmp_path))("Task", {"prompt": "x"}, None)
+    assert type(ok).__name__ == "PermissionResultAllow"
+    assert type(gp).__name__ == "PermissionResultDeny" and "kesif" in gp.message
+    assert type(bare).__name__ == "PermissionResultDeny", "alt ajan verilmediyse Agent/Task hic calismaz"
+
+
+def test_tarayici_aracinin_hedefi_kayda_girer():
+    """Playwright MCP click/type hedefini `element` alaninda verir; kayitta bos kalmasin."""
+    from claude_agent_sdk import ToolUseBlock
+
+    block = ToolUseBlock(id="b1", name="mcp__playwright__browser_click", input={"element": "Giriş düğmesi", "target": "e12"})
+    assert AnthropicProvider._tool_target(block) == "Giriş düğmesi"

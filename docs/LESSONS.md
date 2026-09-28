@@ -193,3 +193,82 @@ girdi tokeni **iç turların toplamı** (yapısal çıktı en az 2 tur, araçlı
 istemde görünmeyen ~4,5k token ekliyor. 10k karakterlik bir istemde düz oran ~1,4 çıkar, tahmin ~3 kat şişer ve
 sıkıştırma hep erken tetiklenir. Doğrusu: yalnız araçsız turlar, tur başına girdi, eğim (sabit terim ek yükü yutar).
 
+## Bir istem iki işe hizmet ediyorsa, biri sessizce bozulur (2026-09-22)
+
+`tam-kadro` tasarım kapısında 3 kez reddedip $1,70 harcadı ve kod üretmedi. Önce ajanın md'si suçlandı.
+Asıl neden `ReviewTask` isteminin tek bir inceleme türü varsaymasıydı: "dosyalar yazıldı, build'i koş" +
+"şüphedeyken reddet". Tasarım kapısında ortada kod yok, koşacak şey yok → ikinci cümle devreye giriyor.
+
+**Ders:** aynı istem iki farklı bağlamda kullanılıyorsa, **bağlamı isteme yaz**. Burada bilgi zaten tek
+kaynakta duruyordu (`Workflow.ProducerBefore`) — istem onu sormuyordu. Özel durum eklemek yerine istemi
+o bilgiye bağlamak hem `tam-kadro`'yu hem gelecekteki her ara kapıyı düzeltti.
+
+**İkinci ders:** "şüphedeyken reddet" bedava değil. Ara kapıda her red bir tur daha maliyet demek ve
+eksiği zaten sonraki test adımı yakalıyor; son kapıda ise hatalı kodu geçirmek daha pahalı. Aynı ilke
+iki kapıda **zıt** yönde doğru.
+
+**Üçüncü ders:** `karar-ilkeleri.md`'deki "karşılanmamış kabul ölçütü varsa hüküm RED'dir" kuralı, bir
+rehber metni değerlendirirken manager'ı reddetmeye **zorluyordu** — bir rehber kabul ölçütünü karşılamaz,
+onu kod karşılar. Mutlak yazılmış bir bilgi kuralı, yazıldığı bağlamın dışında bir yerde kullanılırsa
+kural olmaktan çıkıp hataya dönüşür. Kuralın kapsamını kuralın yanına yaz.
+
+## Saat tek başına "bugün" sanılır (2026-09-22)
+
+Limit beklemesi mesajı `{resumeAt:HH:mm}` basıyordu. Haftalık kota 3 gün sonrasına sıfırlandığında
+kullanıcı "07:00'de sürer" okuyup bir buçuk saat bekledi. Kullanıcıya gelecekteki bir an yazılıyorsa
+**gün bilgisi de** yazılmalı; aynı gün değilse tarih şart.
+
+## Kopan istek sunucuda ölmez (2026-09-23)
+
+.NET tur bekçisi HTTP isteğini kesti, iş "zaman aşımı" diye kapandı; ama Starlette kopan isteğin işleyicisini
+durdurmaz ve SDK üreteci kapatılmadan bırakılırsa `claude.exe` ancak çöp toplayıcıda kapanır. Kesilen t1 18 dk
+daha koştu, ~3 $ harcadı, kayda geçmedi; "Yeniden dene" aynı dizinde ikinci bir ajan başlatabiliyordu. Belirti
+"ajan kesildi ama iş yine de bitmiş"ti — iyi haber gibi göründüğü için sorgulanmadı. **İptali uçtan uca
+test et:** istemci iptali sunucudaki alt süreci durduruyor mu? Runtime artık bağlantıyı yoklar, turu iptal eder
+ve akışı `aclose()` ile hemen kapatır.
+
+**İkinci ders:** "Kim ne harcadı" ölçülemez sanılıyordu (kota yüzdesi kaynağa göre ayrılmaz). Oysa her CLI
+çağrısı kendi oturum kaydına kullanımıyla ve giriş noktasıyla yazılıyordu. İlk ölçüm: haftalık %92'nin ≥~83
+puanı yöneten Claude Code oturumları, ~9 puanı ofis ajanıydı — uzun bağlamlı yönetim oturumu her mesajda
+yüz binlerce token'ı yeniden okur. Tahmin etmeden önce verinin zaten bir yerde yazılı olup olmadığına bak.
+
+## İzin geri çağrısı her yazmayı görmez (2026-09-24)
+
+Runtime'ın `_guard`'ı "dosya yazma yalnız cwd altında" sınırını uyguluyordu ve testleri geçiyordu. Ama ofis ajanı
+4 işte 9 turda `~/.claude/projects/<cwd>/memory/` altına dosya **yazdı ve düzenledi**: Claude Code'un otomatik
+hafızası açıktı ve CLI kendi hafıza dizinine yazmayı **izin sormadan** onaylıyor — `can_use_tool` hiç çağrılmıyor.
+Sonuç iki kat kötü: sınır delindi ve veritabanı dışında, çalışmadan çalışmaya taşınan gizli bir durum birikti
+(ajan her görevin başında o notları okuyordu). `setting_sources=[]` bunu kapatmıyor; ayrı değişken gerekiyor
+(`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`).
+
+**Ders:** bir izin kancasının sınırı, yalnız kancanın **gördüğü** çağrılar için geçerlidir. Sınırı test ederken
+"kanca reddediyor mu"ya değil, **gerçek bir koşunun araç kayıtlarında cwd dışı yol var mı**ya bak — o kayıt zaten
+`run_turn.data.toolUses`'ta duruyordu. Notların işe yarayanları bilgi dosyasına ve ajan md'sine taşındı.
+
+## "Kolaylık, çalışmayı durdurmaz" sessiz ölüm demektir (2026-09-24)
+
+Anlık görüntü "bir kolaylık" diye tasarlanmıştı: alınamazsa `null`, çalışma sürer. Canlı projede **bir gün boyunca
+hiç** alınamadı — proje Visual Studio'da açıktı, `.vs` altındaki kilitli indeks dosyası `git add`'i tamamen
+düşürüyordu. Hiçbir şey kırmızıya dönmedi; "son turu geri al" seçeneği sessizce hiç sunulmadı. Fark eden, üstüne
+yeni bir özellik kurmaya çalışan oldu. Testler geçiyordu: test dizininde kilitli dosya yoktu.
+
+**Ders:** hatayı yutan bir yol, yuttuğunu **kayda** düşmeli ve kayıt okunmalı. "Durdurmaz" ile "görünmez"
+aynı şey değil. Yeni bir özelliği mevcut bir mekanizmaya bağlamadan önce, o mekanizmanın canlı veride gerçekten
+ürettiğine bak (`run_phase.data.snapshot` boştu). Testte gerçek ortamın kötü hâlini kur: burada açık bir IDE.
+
+## Sahne donması tuval boyutundan gelir, koddan değil (2026-09-26)
+
+"Ajanlar dolaşırken donuyor" şikâyetinde sahne kodu masum çıktı (kare 0,5 ms, yol bulma 1 ms, uzun görev yok).
+Bu makinede tarayıcının çizim motoru **Microsoft Basic Render Driver** (ekran kartı sürücüsü yok). Tarayıcı
+~3,3 Mpx üstündeki tuvali hızlandırılmış yoldan çıkarıp yazılımla rasterliyor; eşik keskin:
+
+| Arka tampon | Kare |
+|---|---|
+| 1800×1787 (3,22 Mpx) | 0,6 ms |
+| 1900×1887 (3,59 Mpx) | 29,5 ms |
+| 2300×2284 (5,25 Mpx) | 41,6 ms |
+
+Maliyet tek bir çağrıda görünmez: toplu rasterleştirme ilk senkron noktada ödenir (profilde masum bir `save()`
+40 ms görünür). **Kural:** tuval arka tamponu sınırlıdır (`OfficeScene.vue → maxCanvasPx`, 2,4 Mpx) ve kareler
+yavaş kaldıkça sınır kendini küçültür. Performansı küçük panelde ölçme; büyük tuvalde (`canvas.width = 2400`) ölç,
+`webgl` renderer adına bak.

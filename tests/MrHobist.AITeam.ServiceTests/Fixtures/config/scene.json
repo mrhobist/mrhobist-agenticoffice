@@ -1,0 +1,826 @@
+{
+  "_comment": "Canli ofis sahnesi. Koordinatlar arka plan gorselinin pikselidir (1292x1218, assets/raw/background.png). Api GET /api/v1/scene ile oldugu gibi sunar; UI kopya tutmaz. Arka plan sabit bir resimdir; uzerine yalniz eksikler (monitorler, kapi, pano) sprite olarak konur. overlays: arka plandan kesilip varliklarin ONUNE cizilen bolgeler (cam duvar onu). Sema: docs/SCENE.md.",
+  "world": {
+    "w": 1292,
+    "h": 1218
+  },
+  "background": {
+    "image": "background.png",
+    "erase": [
+      [
+        240,
+        462,
+        350,
+        182,
+        0,
+        240
+      ],
+      [
+        644,
+        332,
+        280,
+        176,
+        0,
+        240
+      ],
+      [
+        85,
+        66,
+        178,
+        33,
+        130,
+        80,
+        60,
+        14
+      ]
+    ],
+    "_comment": "erase: [x,y,w,h,dx,dy] otelenmis kopya; [x,y,w,h,sx,sy,sw,sh] donor yamayi doseyerek doldurur (kahve barinin ahsap arka panosu duvara ve menu tahtasina hizalanir).",
+    "stretch": [
+      {
+        "src": [
+          84,
+          98,
+          150,
+          77
+        ],
+        "dst": [
+          84,
+          66,
+          179,
+          109
+        ],
+        "border": 8
+      }
+    ],
+    "_stretchComment": "stretch: menu tahtasi 9-dilim buyutulur; src kaynak dikdortgen, dst hedef, border kose/cerceve kalinligi. Tahta sagindaki ve ustundeki ahsap panoyu komple kapatir."
+  },
+  "window": {
+    "x": 610,
+    "y": 0,
+    "w": 580,
+    "h": 196,
+    "_comment": "Cam bolgesi: build-sprites arka planda bunu seffaf yapar, UI arkasina saate gore gokyuzu cizer."
+  },
+  "walkable": [
+    28,
+    62,
+    1236,
+    1000
+  ],
+  "overlays": [
+    [
+      352,
+      344,
+      272,
+      20
+    ]
+  ],
+  "props": [
+    {
+      "id": "laptopM",
+      "sprite": "laptop",
+      "x": 500,
+      "y": 236,
+      "w": 40,
+      "layer": "object",
+      "sortY": 300
+    },
+    {
+      "id": "deskC1",
+      "sprite": "desk-wide",
+      "x": 655,
+      "y": 640,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "deskC2",
+      "sprite": "desk-wide",
+      "x": 822,
+      "y": 640,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "plantC",
+      "sprite": "plant-b",
+      "x": 662,
+      "y": 668,
+      "w": 34,
+      "layer": "object",
+      "sortY": 790
+    },
+    {
+      "id": "deskA1",
+      "sprite": "desk-wide",
+      "x": 247,
+      "y": 478,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "deskA2",
+      "sprite": "desk-wide",
+      "x": 415,
+      "y": 478,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "monA1",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 300,
+      "y": 484,
+      "w": 58,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "monA2",
+      "sprite": "monitor-b",
+      "spriteOff": "monitor-off",
+      "x": 466,
+      "y": 484,
+      "w": 62,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "plantA",
+      "sprite": "plant-b",
+      "x": 256,
+      "y": 506,
+      "w": 34,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "booksA",
+      "sprite": "books-green",
+      "x": 540,
+      "y": 518,
+      "w": 36,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "mugA",
+      "sprite": "mug-white",
+      "x": 420,
+      "y": 540,
+      "w": 16,
+      "layer": "object",
+      "sortY": 628
+    },
+    {
+      "id": "deskB1",
+      "sprite": "desk-wide",
+      "x": 652,
+      "y": 348,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "deskB2",
+      "sprite": "desk-wide",
+      "x": 820,
+      "y": 348,
+      "w": 165,
+      "layer": "object"
+    },
+    {
+      "id": "monB1",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 706,
+      "y": 354,
+      "w": 58,
+      "layer": "object",
+      "sortY": 498
+    },
+    {
+      "id": "monB2",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 872,
+      "y": 354,
+      "w": 58,
+      "layer": "object",
+      "sortY": 498
+    },
+    {
+      "id": "plantB",
+      "sprite": "plant-b",
+      "x": 660,
+      "y": 376,
+      "w": 34,
+      "layer": "object",
+      "sortY": 498
+    },
+    {
+      "id": "monC1",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 708,
+      "y": 646,
+      "w": 58,
+      "layer": "object",
+      "sortY": 790
+    },
+    {
+      "id": "monC2",
+      "sprite": "monitor-b",
+      "spriteOff": "monitor-off",
+      "x": 874,
+      "y": 646,
+      "w": 62,
+      "layer": "object",
+      "sortY": 790
+    },
+    {
+      "id": "coffeeMachine",
+      "sprite": "coffee-machine",
+      "x": 126,
+      "y": 190,
+      "w": 110,
+      "layer": "object",
+      "sortY": 262
+    },
+    {
+      "id": "deskD1",
+      "sprite": "desk-wide",
+      "x": 190,
+      "y": 772,
+      "w": 158,
+      "layer": "object"
+    },
+    {
+      "id": "deskD2",
+      "sprite": "desk-wide",
+      "x": 348,
+      "y": 772,
+      "w": 158,
+      "layer": "object"
+    },
+    {
+      "id": "monD1",
+      "sprite": "monitor-a",
+      "spriteOff": "monitor-off",
+      "x": 241,
+      "y": 778,
+      "w": 56,
+      "layer": "object",
+      "sortY": 915
+    },
+    {
+      "id": "monD2",
+      "sprite": "monitor-b",
+      "spriteOff": "monitor-off",
+      "x": 405,
+      "y": 778,
+      "w": 60,
+      "layer": "object",
+      "sortY": 915
+    },
+    {
+      "id": "plantD",
+      "sprite": "plant-b",
+      "x": 198,
+      "y": 800,
+      "w": 34,
+      "layer": "object",
+      "sortY": 915
+    }
+  ],
+  "door": {
+    "x": 1182,
+    "y": 68,
+    "w": 107,
+    "h": 182,
+    "_comment": "Sag ust girinti: sol kenar pencere pervazi (1182), ust kenar duvar yuzu bandi (y 68), sag kenar dis duvar (1289), alt kenar bitki dibi (250). Giris/cikislar buradan."
+  },
+  "board": {
+    "x": 972,
+    "y": 878,
+    "w": 280,
+    "h": 148,
+    "title": "KANBAN",
+    "_comment": "Sag alt, ayaksiz pano. Kucuk gorunum 4 serit (Yapilacak / Yapiliyor / Inceleme / Bitti); tiklaninca buyuk gorunum acilir (tum is akisi sutunlari, gorev adlari)."
+  },
+  "seats": {
+    "deskA-left": {
+      "x": 328,
+      "y": 668,
+      "facing": "up",
+      "monitor": "monA1",
+      "mug": {
+        "x": 365,
+        "y": 545,
+        "w": 16
+      }
+    },
+    "deskA-right": {
+      "x": 498,
+      "y": 668,
+      "facing": "up",
+      "monitor": "monA2",
+      "mug": {
+        "x": 535,
+        "y": 545,
+        "w": 16
+      }
+    },
+    "deskB-left": {
+      "x": 734,
+      "y": 534,
+      "facing": "up",
+      "monitor": "monB1",
+      "mug": {
+        "x": 772,
+        "y": 415,
+        "w": 16
+      }
+    },
+    "deskB-right": {
+      "x": 902,
+      "y": 534,
+      "facing": "up",
+      "monitor": "monB2",
+      "mug": {
+        "x": 938,
+        "y": 415,
+        "w": 16
+      }
+    },
+    "meeting": {
+      "x": 487,
+      "y": 338,
+      "facing": "up",
+      "mug": {
+        "x": 508,
+        "y": 262,
+        "w": 14
+      }
+    },
+    "deskC-left": {
+      "x": 737,
+      "y": 822,
+      "facing": "up",
+      "monitor": "monC1",
+      "mug": {
+        "x": 774,
+        "y": 707,
+        "w": 16
+      }
+    },
+    "deskC-right": {
+      "x": 904,
+      "y": 822,
+      "facing": "up",
+      "monitor": "monC2",
+      "mug": {
+        "x": 944,
+        "y": 707,
+        "w": 16
+      }
+    },
+    "deskD-left": {
+      "x": 269,
+      "y": 954,
+      "facing": "up",
+      "monitor": "monD1",
+      "mug": {
+        "x": 305,
+        "y": 839,
+        "w": 16
+      }
+    },
+    "deskD-right": {
+      "x": 427,
+      "y": 954,
+      "facing": "up",
+      "monitor": "monD2",
+      "mug": {
+        "x": 465,
+        "y": 839,
+        "w": 16
+      }
+    }
+  },
+  "spots": {
+    "coffee": {
+      "x": 180,
+      "y": 362,
+      "look": {
+        "x": 160,
+        "y": 300
+      },
+      "queue": {
+        "x": 250,
+        "y": 380
+      }
+    },
+    "board": {
+      "x": 928,
+      "y": 986,
+      "look": {
+        "x": 1110,
+        "y": 950
+      },
+      "queue": {
+        "x": 872,
+        "y": 1012
+      },
+      "_comment": "Panonun solunda durup panoya bakar."
+    },
+    "water": {
+      "x": 62,
+      "y": 832,
+      "look": {
+        "x": 58,
+        "y": 760
+      },
+      "_comment": "Sebilin altinda, sirt sol alttaki bitkiye donuk.",
+      "queue": {
+        "x": 130,
+        "y": 850
+      }
+    },
+    "sofa": {
+      "x": 1180,
+      "y": 614,
+      "look": {
+        "x": 1180,
+        "y": 520
+      },
+      "queue": {
+        "x": 1004,
+        "y": 664
+      },
+      "_comment": "Kanepe onundeki serit: ajan minderin onunde durur."
+    },
+    "meeting": {
+      "x": 487,
+      "y": 400,
+      "look": {
+        "x": 487,
+        "y": 300
+      }
+    },
+    "door": {
+      "x": 1236,
+      "y": 292,
+      "look": {
+        "x": 1236,
+        "y": 200
+      }
+    },
+    "entrance": {
+      "x": 650,
+      "y": 975,
+      "facing": "up"
+    },
+    "deskA": {
+      "x": 413,
+      "y": 720,
+      "facing": "up"
+    },
+    "deskB": {
+      "x": 785,
+      "y": 590,
+      "facing": "up"
+    },
+    "window": {
+      "x": 900,
+      "y": 290,
+      "look": {
+        "x": 900,
+        "y": 150
+      },
+      "queue": {
+        "x": 960,
+        "y": 300
+      }
+    },
+    "deskC": {
+      "x": 820,
+      "y": 880
+    },
+    "deskD": {
+      "x": 348,
+      "y": 1000,
+      "facing": "up"
+    }
+  },
+  "blocked": [
+    [
+      24,
+      92,
+      308,
+      232
+    ],
+    [
+      352,
+      112,
+      272,
+      250
+    ],
+    [
+      1224,
+      500,
+      44,
+      112
+    ],
+    [
+      26,
+      676,
+      64,
+      116
+    ],
+    [
+      28,
+      940,
+      84,
+      116
+    ],
+    [
+      444,
+      928,
+      74,
+      100
+    ],
+    [
+      774,
+      928,
+      76,
+      100
+    ],
+    [
+      618,
+      200,
+      576,
+      44
+    ],
+    [
+      632,
+      148,
+      54,
+      74
+    ],
+    [
+      1138,
+      168,
+      52,
+      84
+    ],
+    [
+      448,
+      1022,
+      84,
+      196
+    ],
+    [
+      768,
+      1022,
+      92,
+      196
+    ],
+    [
+      1186,
+      0,
+      104,
+      256
+    ],
+    [
+      650,
+      636,
+      340,
+      152
+    ],
+    [
+      245,
+      474,
+      337,
+      152
+    ],
+    [
+      650,
+      344,
+      337,
+      152
+    ],
+    [
+      188,
+      768,
+      320,
+      146
+    ],
+    [
+      1048,
+      514,
+      178,
+      76
+    ],
+    [
+      1068,
+      642,
+      144,
+      46
+    ],
+    [
+      966,
+      872,
+      292,
+      160
+    ]
+  ],
+  "sprites": [
+    "shirt-tie",
+    "green-hoodie",
+    "ponytail",
+    "bun",
+    "blond-maroon",
+    "curly-yellow",
+    "hipster",
+    "blue-hoodie"
+  ],
+  "agents": [
+    {
+      "key": "analyst",
+      "name": "Analist",
+      "sprite": "shirt-tie",
+      "home": {
+        "seat": "deskA-left"
+      }
+    },
+    {
+      "key": "designer",
+      "name": "Tasarımcı",
+      "sprite": "ponytail",
+      "home": {
+        "seat": "deskA-right"
+      }
+    },
+    {
+      "key": "tester",
+      "name": "Testçi",
+      "sprite": "bun",
+      "home": {
+        "seat": "deskB-left"
+      }
+    },
+    {
+      "key": "developer",
+      "name": "Developer",
+      "sprite": "green-hoodie",
+      "home": {
+        "seat": "deskB-right"
+      }
+    },
+    {
+      "key": "manager",
+      "name": "Manager",
+      "sprite": "blond-maroon",
+      "home": {
+        "seat": "meeting"
+      }
+    },
+    {
+      "key": "organizer",
+      "name": "Organizatör",
+      "sprite": "curly-yellow",
+      "home": {
+        "spot": "board"
+      }
+    },
+    {
+      "key": "analist-developer",
+      "name": "Analist-Developer",
+      "sprite": "hipster",
+      "home": {
+        "seat": "deskC-left"
+      }
+    },
+    {
+      "key": "analist-tasarimci",
+      "name": "Analist-Tasarımcı",
+      "sprite": "blue-hoodie",
+      "home": {
+        "seat": "deskC-right"
+      }
+    },
+    {
+      "key": "developer-testci",
+      "name": "Developer-Testçi",
+      "sprite": "shirt-tie",
+      "home": {
+        "seat": "deskD-left"
+      }
+    },
+    {
+      "key": "solo",
+      "name": "Solo",
+      "sprite": "green-hoodie",
+      "home": {
+        "seat": "deskD-right"
+      }
+    }
+  ],
+  "cat": {
+    "bed": {
+      "x": 1088,
+      "y": 606,
+      "_comment": "Kanepe minderi: artik engelli alanda DEGIL, kedi yuruyerek cikip oraya oturur (siçrama yok)."
+    },
+    "spots": [
+      {
+        "x": 900,
+        "y": 300
+      },
+      {
+        "x": 650,
+        "y": 970
+      },
+      {
+        "x": 413,
+        "y": 740
+      },
+      {
+        "x": 190,
+        "y": 400
+      },
+      {
+        "x": 1130,
+        "y": 800
+      },
+      {
+        "x": 560,
+        "y": 570
+      }
+    ]
+  },
+  "cafe": {
+    "board": {
+      "x": 90,
+      "y": 72,
+      "w": 168,
+      "h": 97
+    },
+    "specials": [
+      "Filtre Kahve",
+      "Türk Kahvesi",
+      "Latte",
+      "Cortado",
+      "Sıcak Çikolata",
+      "Flat White",
+      "Chai Latte",
+      "Americano"
+    ],
+    "intervalMs": 20000,
+    "_comment": "Kahve bari panosu: gunun ozeli. Liste sirayla doner; cafe.special olayi ile sabitlenir."
+  },
+  "lights": [
+    {
+      "id": "manager",
+      "name": "Müdür odası",
+      "hit": [
+        450,
+        120,
+        50,
+        50
+      ],
+      "room": [
+        358,
+        116,
+        264,
+        250
+      ],
+      "glow": {
+        "x": 476,
+        "y": 168,
+        "r": 190
+      },
+      "on": true,
+      "_comment": "hit: sarkit lambanin tiklama dikdortgeni; room: isigi sonunce karartilan cam oda; glow: lambanin altindaki sicak hale."
+    },
+    {
+      "id": "floorLamp",
+      "name": "Abajur",
+      "hit": [
+        1226,
+        502,
+        40,
+        46
+      ],
+      "bulb": [
+        1230,
+        508,
+        31,
+        36
+      ],
+      "on": true,
+      "_comment": "Kanepenin yanindaki abajur: yalniz baslik koyulasir (bulb), oda karartmasi yok."
+    }
+  ]
+}

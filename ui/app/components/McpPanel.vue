@@ -1,0 +1,798 @@
+<script setup lang="ts">
+import type { AgentListItem, McpAuthOption, McpCatalogEntry, McpInstallRequest, McpOAuthStart, McpServerRequest, McpServerView, McpServerUsage, McpTestResult, McpTransport, McpUsageReport } from '~/api/types'
+import { isApiError } from '~/api/client'
+import { useApiClient } from '~/api/client'
+import { errorText } from '~/api/errors'
+import { PROVIDER_LABEL } from '~/api/labels'
+
+/**
+ * MCP sunuculari (docs/DOMAIN.md → MCP sunuculari): ekle, duzenle, baglantiyi dene, sil; ekipteki ajanlara yetki ver.
+ * Tanim veritabaninda (makineye ozgu, belirtec tasir), yetki ajan md'sinde (`mcp: [...]`). Ortam degiskeni / baslik
+ * degerleri Api'den hic donmez: formda "kayitli" gorunur, bos birakilirsa korunur.
+ */
+const props = defineProps<{
+  /** GET /agents listesi (kabuk yukler). null = alinamadi. */
+  agents: AgentListItem[] | null
+}>()
+const emit = defineEmits<{ close: []; changed: [] }>()
+
+const api = useApiClient()
+
+const servers = ref<McpServerView[] | null>(null)
+const loadError = ref<string | null>(null)
+const busy = ref<string | null>(null)
+const actError = ref<string | null>(null)
+const tests = ref<Record<string, McpTestResult | 'running'>>({})
+
+const TRANSPORT_LABEL: Record<McpTransport, string> = { stdio: 'stdio (yerel süreç)', http: 'HTTP', sse: 'SSE' }
+
+async function load() {
+  try {
+    servers.value = await api.get<McpServerView[]>('/api/v1/mcp')
+    loadError.value = null
+  } catch (e) {
+    loadError.value = errorText(e)
+  }
+}
+onMounted(() => { void load(); void loadCatalog(); void loadUsage() })
+onBeforeUnmount(() => { for (const t of oauthTimers.values()) clearInterval(t) })
+
+// ------------------------------------------------------------------ arac secimi (izin listesi)
+// Secenekler son basarili "Baglantiyi dene"de gorulen araclardir. null = hepsi; secilmeyen arac modele hic sunulmaz.
+
+const toolDraft = ref<Record<string, string[] | null>>({})
+
+function toolsOf(s: McpServerView): string[] | null {
+  return s.key in toolDraft.value ? toolDraft.value[s.key]! : (s.tools ?? null)
+}
+
+function toolChecked(s: McpServerView, name: string): boolean {
+  const t = toolsOf(s)
+  return t === null || t.includes(name)
+}
+
+function toggleTool(s: McpServerView, name: string, on: boolean) {
+  const all = (s.knownTools ?? []).map(t => t.name)
+  const cur = toolsOf(s) ?? all
+  const next = on ? [...new Set([...cur, name])] : cur.filter(n => n !== name)
+  toolDraft.value = { ...toolDraft.value, [s.key]: next.length === all.length && all.every(n => next.includes(n)) ? null : next }
+}
+
+function setAllTools(s: McpServerView, value: 'all' | 'none') {
+  toolDraft.value = { ...toolDraft.value, [s.key]: value === 'all' ? null : [] }
+}
+
+function toolsDirty(s: McpServerView): boolean {
+  if (!(s.key in toolDraft.value)) return false
+  const a = toolDraft.value[s.key] ?? null
+  const b = s.tools ?? null
+  return JSON.stringify(a === null ? null : [...a].sort()) !== JSON.stringify(b === null ? null : [...b].sort())
+}
+
+function toolSummary(s: McpServerView): string {
+  const known = s.knownTools?.length ?? 0
+  const t = s.tools
+  if (!known) return 'araç listesi yok'
+  return t === null || t === undefined ? `hepsi (${known})` : `${t.length}/${known} seçili`
+}
+
+async function saveTools(s: McpServerView) {
+  busy.value = `tools:${s.key}`
+  actError.value = null
+  try {
+    const updated = await api.put<McpServerView>(`/api/v1/mcp/${encodeURIComponent(s.key)}/tools`, { tools: toolsOf(s) })
+    servers.value = (servers.value ?? []).map(x => x.key === s.key ? updated : x)
+    const { [s.key]: _, ...rest } = toolDraft.value
+    toolDraft.value = rest
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
+
+// ------------------------------------------------------------------ OAuth girisi
+// Tarayici sekmesi tiklamayla ACILIR (acilir pencere engeline takilmasin), adres Api'den gelince oraya gider. Sonra sunucu
+// 2 s'de bir yoklanir; giris tamamlaninca baglanti kendiliginden denenir.
+
+const oauthForm = ref<Record<string, { clientId: string; clientSecret: string; scope: string } | undefined>>({})
+const oauthError = ref<Record<string, string | undefined>>({})
+const oauthWaiting = ref<Record<string, boolean>>({})
+const oauthTimers = new Map<string, ReturnType<typeof setInterval>>()
+
+async function oauthLogin(key: string, creds?: { clientId?: string; clientSecret?: string; scope?: string }) {
+  const tab = window.open('about:blank', '_blank')
+  oauthError.value = { ...oauthError.value, [key]: undefined }
+  try {
+    const start = await api.post<McpOAuthStart>(`/api/v1/mcp/${encodeURIComponent(key)}/oauth/start`, {
+      clientId: creds?.clientId?.trim() || null,
+      clientSecret: creds?.clientSecret?.trim() || null,
+      scope: creds?.scope?.trim() || null,
+    })
+    if (tab) tab.location.href = start.authorizationUrl
+    else window.open(start.authorizationUrl, '_blank')
+    watchOAuth(key)
+  } catch (e) {
+    tab?.close()
+    if (isApiError(e) && e.errorCode === 'mcp.oauth_client_required') oauthForm.value = { ...oauthForm.value, [key]: { clientId: '', clientSecret: '', scope: '' } }
+    oauthError.value = { ...oauthError.value, [key]: errorText(e) }
+  }
+}
+
+function watchOAuth(key: string) {
+  clearInterval(oauthTimers.get(key))
+  oauthWaiting.value = { ...oauthWaiting.value, [key]: true }
+  const started = Date.now()
+  oauthTimers.set(key, setInterval(async () => {
+    try {
+      const s = await api.get<McpServerView>(`/api/v1/mcp/${encodeURIComponent(key)}`)
+      if (s.oAuth?.loggedIn || Date.now() - started > 5 * 60_000) {
+        clearInterval(oauthTimers.get(key))
+        oauthWaiting.value = { ...oauthWaiting.value, [key]: false }
+        servers.value = (servers.value ?? []).map(x => x.key === key ? s : x)
+        if (s.oAuth?.loggedIn) { oauthForm.value = { ...oauthForm.value, [key]: undefined }; void test(s) }
+      }
+    } catch { /* bir sonraki yoklamada */ }
+  }, 2000))
+}
+
+async function oauthLogout(s: McpServerView) {
+  busy.value = `oauth:${s.key}`
+  try {
+    const updated = await api.post<McpServerView>(`/api/v1/mcp/${encodeURIComponent(s.key)}/oauth/logout`)
+    servers.value = (servers.value ?? []).map(x => x.key === s.key ? updated : x)
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
+
+// ------------------------------------------------------------------ kullanim raporu
+
+const usage = ref<McpUsageReport | null>(null)
+const usageError = ref<string | null>(null)
+const usageOpen = ref<string | null>(null)
+
+async function loadUsage() {
+  try {
+    usage.value = await api.get<McpUsageReport>('/api/v1/mcp/usage?runs=200')
+    usageError.value = null
+  } catch (e) {
+    usageError.value = errorText(e)
+  }
+}
+
+function unused(u: McpServerUsage): boolean { return Number(u.offeredTurns) > 0 && Number(u.usedTurns) === 0 }
+
+// ------------------------------------------------------------------ hazir sunucular (config/mcp-catalog.json)
+// Katalog yontemleri ve alanlari tanimlar; degerler (sirlar dahil) sunucuda birlestirilir (Basic basligi, Bearer...).
+
+const catalog = ref<McpCatalogEntry[] | null>(null)
+const catalogError = ref<string | null>(null)
+const installing = ref<McpCatalogEntry | null>(null)
+const installOption = ref<string>('')
+const installValues = ref<Record<string, string>>({})
+const installKey = ref('')
+const installName = ref('')
+const installError = ref<string | null>(null)
+
+async function loadCatalog() {
+  try {
+    catalog.value = await api.get<McpCatalogEntry[]>('/api/v1/mcp/catalog')
+    catalogError.value = null
+  } catch (e) {
+    catalogError.value = errorText(e)
+  }
+}
+
+const installedKeys = computed(() => new Set((servers.value ?? []).map(s => s.key)))
+
+function freeKey(base: string): string {
+  if (!installedKeys.value.has(base)) return base
+  for (let i = 2; ; i++) if (!installedKeys.value.has(`${base}-${i}`)) return `${base}-${i}`
+}
+
+function startInstall(entry: McpCatalogEntry) {
+  closeForm()
+  installing.value = entry
+  installKey.value = freeKey(entry.key)
+  installName.value = entry.name
+  installError.value = null
+  const first = entry.options.find(o => o.supported !== false)
+  selectOption(first?.id ?? entry.options[0]?.id ?? '')
+}
+
+function selectOption(id: string) {
+  installOption.value = id
+  const opt = installing.value?.options.find(o => o.id === id)
+  const values: Record<string, string> = {}
+  for (const f of opt?.fields ?? []) values[f.name] = f.default ?? ''
+  installValues.value = values
+  installError.value = null
+}
+
+const selectedOption = computed<McpAuthOption | null>(() => installing.value?.options.find(o => o.id === installOption.value) ?? null)
+
+function cancelInstall() {
+  installing.value = null
+  installValues.value = {}
+}
+
+async function install() {
+  const entry = installing.value
+  const opt = selectedOption.value
+  if (!entry || !opt || busy.value) return
+  const body: McpInstallRequest = {
+    option: opt.id,
+    key: installKey.value.trim() || null,
+    name: installName.value.trim() || null,
+    values: Object.fromEntries(Object.entries(installValues.value).map(([k, v]) => [k, v.trim()])),
+  }
+  busy.value = 'install'
+  installError.value = null
+  try {
+    const oauthCreds = opt.oAuth
+      ? { clientId: installValues.value.OAUTH_CLIENT_ID, clientSecret: installValues.value.OAUTH_CLIENT_SECRET, scope: installValues.value.OAUTH_SCOPE }
+      : null
+    const created = await api.post<McpServerView>(`/api/v1/mcp/catalog/${encodeURIComponent(entry.key)}/install`, body)
+    cancelInstall()
+    await load()
+    if (oauthCreds) {
+      // OAuth: kimlik tarayicida alinir; giris tamamlaninca baglanti kendiliginden denenir.
+      void oauthLogin(created.key, oauthCreds)
+      return
+    }
+    // Kurulan sunucu hemen denenir: token yanlissa kullanici burada gorur, ajan calisirken degil.
+    const fresh = (servers.value ?? []).find(s => s.key === created.key)
+    if (fresh) void test(fresh)
+  } catch (e) {
+    installError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
+
+// ------------------------------------------------------------------ form
+
+interface SecretRow { name: string; value: string; hasValue: boolean }
+interface Draft {
+  key: string
+  name: string
+  description: string
+  transport: McpTransport
+  command: string
+  args: string
+  url: string
+  env: SecretRow[]
+  headers: SecretRow[]
+  enabled: boolean
+}
+
+const editing = ref<string | null>(null) // '' = yeni, anahtar = duzenleme
+const draft = ref<Draft | null>(null)
+const formError = ref<string | null>(null)
+
+function blank(): Draft {
+  return { key: '', name: '', description: '', transport: 'stdio', command: '', args: '', url: '', env: [], headers: [], enabled: true }
+}
+
+function openNew() {
+  installing.value = null
+  editing.value = ''
+  draft.value = blank()
+  formError.value = null
+}
+
+function openEdit(s: McpServerView) {
+  installing.value = null
+  editing.value = s.key
+  draft.value = {
+    key: s.key,
+    name: s.name,
+    description: s.description,
+    transport: s.transport,
+    command: s.command ?? '',
+    args: s.args.join('\n'),
+    url: s.url ?? '',
+    env: s.env.map(e => ({ name: e.name, value: '', hasValue: e.hasValue })),
+    headers: s.headers.map(e => ({ name: e.name, value: '', hasValue: e.hasValue })),
+    enabled: s.enabled,
+  }
+  formError.value = null
+}
+
+function closeForm() {
+  editing.value = null
+  draft.value = null
+}
+
+/** Satir: kayitli degeri olan ve bos birakilan satir null gider (sunucu korur); yeni satir yazilan degeri gonderir. */
+function secrets(rows: SecretRow[]) {
+  return rows.filter(r => r.name.trim()).map(r => ({ name: r.name.trim(), value: r.hasValue && !r.value ? null : r.value }))
+}
+
+async function save() {
+  const d = draft.value
+  if (!d || busy.value) return
+  const body: McpServerRequest = {
+    key: d.key.trim(),
+    name: d.name.trim() || d.key.trim(),
+    description: d.description.trim(),
+    transport: d.transport,
+    command: d.transport === 'stdio' ? d.command.trim() || null : null,
+    args: d.transport === 'stdio' ? d.args.split('\n').map(a => a.trim()).filter(Boolean) : [],
+    url: d.transport === 'stdio' ? null : d.url.trim() || null,
+    env: d.transport === 'stdio' ? secrets(d.env) : [],
+    headers: d.transport === 'stdio' ? [] : secrets(d.headers),
+    enabled: d.enabled,
+  }
+  busy.value = 'save'
+  formError.value = null
+  try {
+    if (editing.value) await api.put<McpServerView>(`/api/v1/mcp/${encodeURIComponent(editing.value)}`, body)
+    else await api.post<McpServerView>('/api/v1/mcp', body)
+    closeForm()
+    await load()
+  } catch (e) {
+    formError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
+
+// ------------------------------------------------------------------ eylemler
+
+async function test(s: McpServerView) {
+  tests.value = { ...tests.value, [s.key]: 'running' }
+  try {
+    tests.value = { ...tests.value, [s.key]: await api.post<McpTestResult>(`/api/v1/mcp/${encodeURIComponent(s.key)}/test`) }
+    // Basarili deneme gorulen araclari saklar: secim listesi icin sunucuyu yeniden oku.
+    const fresh = await api.get<McpServerView>(`/api/v1/mcp/${encodeURIComponent(s.key)}`)
+    servers.value = (servers.value ?? []).map(x => x.key === s.key ? fresh : x)
+  } catch (e) {
+    tests.value = { ...tests.value, [s.key]: { ok: false, detail: errorText(e), tools: [], serverName: null, serverVersion: null } }
+  }
+}
+
+async function remove(s: McpServerView) {
+  if (busy.value || !confirm(`"${s.name}" MCP sunucusu silinsin mi? Tanım ve kayıtlı belirteçler gider.`)) return
+  busy.value = `del:${s.key}`
+  actError.value = null
+  try {
+    await api.del(`/api/v1/mcp/${encodeURIComponent(s.key)}`)
+    await load()
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
+
+/** Yetki: kutu isaretlenince hemen yazilir (ajan md'si guncellenir); kabuk ekibi yeniden yukler. */
+async function toggleAccess(s: McpServerView, agentKey: string, on: boolean) {
+  const next = on ? [...new Set([...s.agents, agentKey])] : s.agents.filter(a => a !== agentKey)
+  busy.value = `acc:${s.key}`
+  actError.value = null
+  try {
+    const updated = await api.put<McpServerView>(`/api/v1/mcp/${encodeURIComponent(s.key)}/access`, { agents: next })
+    servers.value = (servers.value ?? []).map(x => x.key === s.key ? updated : x)
+    emit('changed')
+  } catch (e) {
+    actError.value = errorText(e)
+  } finally {
+    busy.value = null
+  }
+}
+
+/** MCP yalniz Claude Agent SDK'da calisir: saglayicisi bos (varsayilan anthropic) ya da anthropic olan ajan. */
+function canUseMcp(a: AgentListItem): boolean { return !a.provider || a.provider === 'anthropic' }
+
+const sortedAgents = computed(() => [...(props.agents ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'tr')))
+
+function fmtWhen(iso: string | null | undefined): string {
+  return iso ? new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''
+}
+</script>
+
+<template>
+  <div class="wrap" @click.self="emit('close')">
+    <section class="panel" role="dialog" aria-labelledby="mcp-title">
+      <header>
+        <h2 id="mcp-title">MCP sunucuları</h2>
+        <button v-if="editing === null && !installing" type="button" class="small" @click="openNew" title="Katalogda olmayan bir sunucuyu elle tanımla">+ Elle ekle</button>
+        <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
+      </header>
+
+      <p class="sub">
+        Ajanlara dış araç açan Model Context Protocol sunucuları (GitHub, veritabanı, tarayıcı, belge…). Tanım bu makinedeki
+        veritabanında durur, git'e girmez; ortam değişkeni ve başlık değerleri bir daha gösterilmez. Yetkiyi aşağıdaki kutulardan
+        ajan bazında verirsin; yetkili ajan araçlı adımlarda (analiz, geliştirme, test) sunucunun araçlarını <code>mcp__anahtar__araç</code>
+        adıyla görür. Yalnız Claude (Anthropic) ajanlarında çalışır. Her aracın şeması her çağrıda bağlama girer: yalnız gereken sunucuyu ver.
+      </p>
+
+      <!-- ---------------------------------------------------------- hazir sunucular -->
+      <section v-if="!installing && editing === null" class="catalog">
+        <h3>Hazır sunucular</h3>
+        <p v-if="catalogError" class="err" role="alert">{{ catalogError }}</p>
+        <div class="cat-grid">
+          <article v-for="c in catalog ?? []" :key="c.key" class="cat">
+            <div class="cat-head">
+              <strong>{{ c.name }}</strong>
+              <span v-if="c.official" class="badge ok" title="Satıcının resmi MCP sunucusu (bazı yöntemler topluluk paketiyle)">resmi</span>
+              <span v-if="installedKeys.has(c.key)" class="badge">kurulu</span>
+            </div>
+            <p class="sub">{{ c.description }}</p>
+            <p class="sub vendor">{{ c.vendor }} · {{ c.options.filter(o => o.supported !== false).length }} yöntem</p>
+            <div class="cat-actions">
+              <button type="button" class="small primary" @click="startInstall(c)">{{ installedKeys.has(c.key) ? 'Yeniden kur' : 'Kur' }}</button>
+              <a v-if="c.docsUrl" class="doc" :href="c.docsUrl" target="_blank" rel="noopener noreferrer">belge ↗</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------- katalogdan kurulum -->
+      <form v-if="installing" class="card form" @submit.prevent="install">
+        <h3>{{ installing.name }} · kurulum</h3>
+        <p class="sub">{{ installing.description }}</p>
+
+        <div class="field">
+          <span class="lbl">Bağlantı yöntemi</span>
+          <label
+            v-for="o in installing.options" :key="o.id" class="opt"
+            :class="{ on: installOption === o.id, off: o.supported === false }"
+          >
+            <input type="radio" name="mcp-option" :value="o.id" :checked="installOption === o.id" :disabled="o.supported === false" @change="selectOption(o.id)">
+            <span class="opt-body">
+              <span class="opt-title">{{ o.label }}<span v-if="o.oAuth" class="badge oauth">tarayıcıda giriş</span><span v-if="o.supported === false" class="badge offb">henüz yok</span></span>
+              <span v-if="o.description" class="sub">{{ o.description }}</span>
+              <span v-if="o.requires?.length" class="reqs">gerekenler: <code v-for="r in o.requires" :key="r">{{ r }}</code></span>
+              <span v-if="o.notes" class="sub note">{{ o.notes }}</span>
+            </span>
+          </label>
+        </div>
+
+        <template v-if="selectedOption && selectedOption.supported !== false">
+          <p class="target"><code>{{ selectedOption.transport === 'stdio' ? [selectedOption.command, ...(selectedOption.args ?? [])].join(' ') : selectedOption.url }}</code></p>
+          <label v-for="f in selectedOption.fields ?? []" :key="f.name" class="field">
+            <span class="lbl">{{ f.label }} <span v-if="f.required === false" class="sub">(isteğe bağlı)</span></span>
+            <select v-if="f.choices?.length" v-model="installValues[f.name]">
+              <option v-for="c in f.choices" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <input
+              v-else v-model="installValues[f.name]" :type="f.secret ? 'password' : 'text'" autocomplete="off"
+              :placeholder="f.placeholder ?? ''" :required="f.required !== false"
+            >
+            <span v-if="f.help" class="sub">{{ f.help }}</span>
+          </label>
+          <p v-if="!(selectedOption.fields ?? []).length" class="sub">Bu yöntem kimlik bilgisi istemez.</p>
+          <div class="row">
+            <label class="field">
+              <span class="lbl">Anahtar</span>
+              <input v-model="installKey" type="text" required pattern="[a-z0-9][a-z0-9_\-]*" title="küçük harf, rakam, - ve _">
+            </label>
+            <label class="field">
+              <span class="lbl">Ad</span>
+              <input v-model="installName" type="text">
+            </label>
+          </div>
+          <p v-if="selectedOption.oAuth" class="sub">Kurulunca yeni bir sekmede sağlayıcının giriş sayfası açılır; onayladığında belirteç bu makinedeki veritabanına yazılır, süresi dolmadan kendiliğinden yenilenir. Dönüş adresi: <code>http://127.0.0.1:5080/api/v1/mcp/oauth/callback</code></p>
+          <p v-else class="sub">Kimlik bilgileri yalnız bu makinedeki veritabanına yazılır, bir daha gösterilmez. Kurulunca bağlantı hemen denenir.</p>
+        </template>
+
+        <div class="actions">
+          <button type="submit" class="primary" :disabled="busy === 'install' || !selectedOption || selectedOption.supported === false">{{ busy === 'install' ? 'Kuruluyor…' : selectedOption?.oAuth ? 'Kur ve tarayıcıda giriş yap' : 'Kur ve dene' }}</button>
+          <button type="button" class="ghost" @click="cancelInstall">Vazgeç</button>
+          <span v-if="installError" class="err" role="alert">{{ installError }}</span>
+        </div>
+      </form>
+
+      <!-- ---------------------------------------------------------- form -->
+      <form v-if="draft" class="card form" @submit.prevent="save">
+        <h3>{{ editing ? `Düzenle · ${editing}` : 'Yeni MCP sunucusu' }}</h3>
+        <div class="row">
+          <label class="field">
+            <span class="lbl">Anahtar</span>
+            <input v-model="draft.key" type="text" :disabled="!!editing" placeholder="ör. github" required pattern="[a-z0-9][a-z0-9_\-]*" title="küçük harf, rakam, - ve _">
+          </label>
+          <label class="field">
+            <span class="lbl">Ad</span>
+            <input v-model="draft.name" type="text" placeholder="ör. GitHub">
+          </label>
+        </div>
+        <label class="field">
+          <span class="lbl">Açıklama <span class="sub">(isteğe bağlı)</span></span>
+          <input v-model="draft.description" type="text" placeholder="Ne için? Ajanlara hangi işte gerekli?">
+        </label>
+        <div class="row">
+          <label class="field">
+            <span class="lbl">Taşıma</span>
+            <select v-model="draft.transport">
+              <option v-for="(label, t) in TRANSPORT_LABEL" :key="t" :value="t">{{ label }}</option>
+            </select>
+          </label>
+          <label class="field check">
+            <input v-model="draft.enabled" type="checkbox">
+            <span>Açık <span class="sub">(kapalıyken yetkili ajanlara da verilmez)</span></span>
+          </label>
+        </div>
+
+        <template v-if="draft.transport === 'stdio'">
+          <div class="row">
+            <label class="field">
+              <span class="lbl">Komut</span>
+              <input v-model="draft.command" type="text" placeholder="ör. npx, uvx, node, cmd" required>
+            </label>
+            <label class="field">
+              <span class="lbl">Argümanlar <span class="sub">(satır başına bir)</span></span>
+              <textarea v-model="draft.args" rows="3" placeholder="-y&#10;@modelcontextprotocol/server-github" />
+            </label>
+          </div>
+          <p class="sub">Windows'ta <code>npx</code> çalışmazsa komutu <code>cmd</code>, argümanları <code>/c</code>, <code>npx</code>, <code>-y</code>, <code>paket</code> olarak yaz. Belirteçleri argümana değil ortam değişkenine koy.</p>
+          <div class="field">
+            <span class="lbl">Ortam değişkenleri</span>
+            <div v-for="(r, i) in draft.env" :key="i" class="kv">
+              <input v-model="r.name" type="text" placeholder="AD (ör. GITHUB_TOKEN)">
+              <input v-model="r.value" type="password" autocomplete="off" :placeholder="r.hasValue ? 'kayıtlı — değiştirmek için yaz' : 'değer'">
+              <button type="button" class="small ghost" aria-label="Satırı sil" @click="draft.env.splice(i, 1)">×</button>
+            </div>
+            <button type="button" class="small ghost add" @click="draft.env.push({ name: '', value: '', hasValue: false })">+ değişken</button>
+          </div>
+        </template>
+        <template v-else>
+          <label class="field">
+            <span class="lbl">Adres</span>
+            <input v-model="draft.url" type="url" :placeholder="draft.transport === 'sse' ? 'https://ornek/sse' : 'https://ornek/mcp'" required>
+          </label>
+          <div class="field">
+            <span class="lbl">Başlıklar</span>
+            <div v-for="(r, i) in draft.headers" :key="i" class="kv">
+              <input v-model="r.name" type="text" placeholder="Ad (ör. Authorization)">
+              <input v-model="r.value" type="password" autocomplete="off" :placeholder="r.hasValue ? 'kayıtlı — değiştirmek için yaz' : 'değer (ör. Bearer …)'">
+              <button type="button" class="small ghost" aria-label="Satırı sil" @click="draft.headers.splice(i, 1)">×</button>
+            </div>
+            <button type="button" class="small ghost add" @click="draft.headers.push({ name: '', value: '', hasValue: false })">+ başlık</button>
+          </div>
+        </template>
+
+        <div class="actions">
+          <button type="submit" class="primary" :disabled="busy === 'save'">{{ busy === 'save' ? 'Kaydediliyor…' : 'Kaydet' }}</button>
+          <button type="button" class="ghost" @click="closeForm">Vazgeç</button>
+          <span v-if="formError" class="err" role="alert">{{ formError }}</span>
+        </div>
+      </form>
+
+      <!-- ---------------------------------------------------------- kullanim raporu -->
+      <details v-if="usage && usage.servers.length && !installing && editing === null" class="usage-box">
+        <summary>
+          <strong>Kullanım</strong>
+          <span class="sub"> · son {{ usage.runLimit }} iş · {{ usage.turnsWithMcp }} MCP'li tur · {{ usage.calls }} araç çağrısı</span>
+          <button type="button" class="small ghost" @click.prevent="loadUsage">yenile</button>
+        </summary>
+        <p class="sub">"Verildi" = sunucunun ajana açıldığı tur (her birinde araç şemaları bağlama girdi). Verilip hiç kullanılmayan sunucu bağlamı boşuna şişirir: yetkiyi kaldır ya da araçlarını daralt.</p>
+        <table class="usage">
+          <thead><tr><th>Sunucu</th><th class="num">Verildi</th><th class="num">Kullanıldı</th><th class="num">Çağrı</th><th class="num">İş</th><th>Son kullanım</th></tr></thead>
+          <tbody>
+            <template v-for="u in usage.servers" :key="u.key">
+              <tr class="srv" :class="{ warn: unused(u) }" @click="usageOpen = usageOpen === u.key ? null : u.key">
+                <td>{{ u.name ?? u.key }} <code>{{ u.key }}</code><span v-if="!u.registered" class="sub"> (silinmiş)</span><span v-if="unused(u)" class="badge offb">kullanılmadı</span></td>
+                <td class="num">{{ u.offeredTurns }}</td>
+                <td class="num">{{ u.usedTurns }}</td>
+                <td class="num">{{ u.calls }}</td>
+                <td class="num">{{ u.runs }}</td>
+                <td>{{ fmtWhen(u.lastUsedAt) || '—' }}</td>
+              </tr>
+              <tr v-if="usageOpen === u.key" class="detail">
+                <td colspan="6">
+                  <div v-if="u.tools.length"><span class="lbl">Araçlar</span> <span v-for="t in u.tools" :key="t.name" class="chip-t"><code>{{ t.name }}</code> {{ t.calls }}</span></div>
+                  <div v-if="u.agents.length"><span class="lbl">Ajanlar</span> <span v-for="a in u.agents" :key="a.agent" class="chip-t">{{ a.agent }}: {{ a.offeredTurns }} tur verildi · {{ a.calls }} çağrı</span></div>
+                  <span v-if="!u.tools.length && !u.agents.length" class="sub">Henüz kullanım yok.</span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </details>
+      <p v-else-if="usageError" class="err">{{ usageError }}</p>
+
+      <!-- ---------------------------------------------------------- liste -->
+      <p v-if="loadError" class="err" role="alert">{{ loadError }}</p>
+      <p v-else-if="!servers" class="sub">Yükleniyor…</p>
+      <h3 v-else-if="servers.length">Kurulu sunucular</h3>
+      <p v-else-if="!draft && !installing" class="empty">Henüz kurulu MCP sunucusu yok. Yukarıdaki hazır sunuculardan birini kur ya da "+ Elle ekle".</p>
+      <p v-if="actError" class="err" role="alert">{{ actError }}</p>
+
+      <article v-for="s in servers ?? []" :key="s.key" class="card" :class="{ off: !s.enabled }">
+        <div class="card-head">
+          <strong>{{ s.name }}</strong>
+          <code>{{ s.key }}</code>
+          <span class="badge">{{ s.transport }}</span>
+          <span class="badge" :class="s.enabled ? 'ok' : 'offb'">{{ s.enabled ? 'açık' : 'kapalı' }}</span>
+          <span class="sub right" :title="s.updatedAt ?? ''">{{ fmtWhen(s.updatedAt) }}</span>
+        </div>
+        <p v-if="s.description" class="sub">{{ s.description }}</p>
+        <p class="target"><code>{{ s.transport === 'stdio' ? [s.command, ...s.args].join(' ') : s.url }}</code></p>
+        <p v-if="s.env.length || s.headers.length" class="sub">
+          {{ s.transport === 'stdio' ? 'Ortam' : 'Başlıklar' }}:
+          <span v-for="e in (s.transport === 'stdio' ? s.env : s.headers)" :key="e.name" class="secret">{{ e.name }}<template v-if="e.hasValue"> ••••</template></span>
+        </p>
+
+        <div v-if="s.transport !== 'stdio'" class="oauth-row">
+          <span class="lbl">OAuth</span>
+          <template v-if="s.oAuth?.loggedIn">
+            <span class="badge ok">giriş yapıldı</span>
+            <span class="sub">{{ s.oAuth.expiresAt ? `${fmtWhen(s.oAuth.expiresAt)} tarihine kadar` : 'süresiz' }}{{ s.oAuth.canRefresh ? ' · kendiliğinden yenilenir' : '' }}</span>
+            <button type="button" class="small ghost" :disabled="busy === `oauth:${s.key}`" @click="oauthLogout(s)">Çıkış</button>
+          </template>
+          <template v-else>
+            <span class="sub">{{ s.oAuth ? 'giriş yok ya da süresi doldu' : 'kullanılmıyor (başlık/token ile bağlanıyor)' }}</span>
+            <button type="button" class="small" :disabled="oauthWaiting[s.key]" @click="oauthLogin(s.key, oauthForm[s.key])">{{ oauthWaiting[s.key] ? 'Tarayıcıda giriş bekleniyor…' : s.oAuth ? 'Yeniden giriş yap' : 'OAuth ile giriş yap' }}</button>
+          </template>
+          <div v-if="oauthForm[s.key]" class="oauth-creds">
+            <input v-model="oauthForm[s.key]!.clientId" type="text" placeholder="İstemci kimliği (client id)">
+            <input v-model="oauthForm[s.key]!.clientSecret" type="password" autocomplete="off" placeholder="Gizli anahtar (varsa)">
+            <input v-model="oauthForm[s.key]!.scope" type="text" placeholder="Kapsam (boş = önerilen)">
+          </div>
+          <span v-if="oauthError[s.key]" class="err">{{ oauthError[s.key] }}</span>
+        </div>
+
+        <details class="tools-box" :open="toolsDirty(s)">
+          <summary><span class="lbl">Araçlar</span> <span class="sub">{{ toolSummary(s) }}</span></summary>
+          <p v-if="!s.knownTools?.length" class="sub">Araç seçmek için önce "Bağlantıyı dene": sunucunun araç listesi oradan gelir. Seçim yoksa tüm araçlar açılır.</p>
+          <template v-else>
+            <div class="tool-actions">
+              <button type="button" class="small ghost" @click="setAllTools(s, 'all')">Tümü</button>
+              <button type="button" class="small ghost" @click="setAllTools(s, 'none')">Hiçbiri</button>
+              <span class="sub">Seçilmeyen araç modele hiç sunulmaz (şeması bağlama girmez). Liste {{ fmtWhen(s.toolsCheckedAt) }} tarihli.</span>
+            </div>
+            <label v-for="t in s.knownTools" :key="t.name" class="tool" :title="t.description ?? ''">
+              <input type="checkbox" :checked="toolChecked(s, t.name)" @change="toggleTool(s, t.name, ($event.target as HTMLInputElement).checked)">
+              <code>{{ t.name }}</code><span v-if="t.description" class="sub"> — {{ t.description }}</span>
+            </label>
+            <div v-if="toolsDirty(s)" class="tool-actions">
+              <button type="button" class="small primary" :disabled="busy === `tools:${s.key}`" @click="saveTools(s)">Seçimi kaydet</button>
+              <button type="button" class="small ghost" @click="toolDraft = Object.fromEntries(Object.entries(toolDraft).filter(([k]) => k !== s.key))">Vazgeç</button>
+            </div>
+          </template>
+        </details>
+
+        <div class="access">
+          <span class="lbl">Yetkili ajanlar</span>
+          <p v-if="!agents" class="sub">Ekip alınamadı.</p>
+          <label
+            v-for="a in sortedAgents" :key="a.key" class="agent"
+            :class="{ disabled: !canUseMcp(a) && !s.agents.includes(a.key) }"
+            :title="canUseMcp(a) ? '' : `${PROVIDER_LABEL[a.provider!] ?? a.provider}: MCP yalnız Claude (Anthropic) ajanlarında çalışır`"
+          >
+            <input
+              type="checkbox" :checked="s.agents.includes(a.key)"
+              :disabled="busy === `acc:${s.key}` || (!canUseMcp(a) && !s.agents.includes(a.key))"
+              @change="toggleAccess(s, a.key, ($event.target as HTMLInputElement).checked)"
+            >
+            <span>{{ a.name }}</span>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="small" :disabled="tests[s.key] === 'running'" @click="test(s)">{{ tests[s.key] === 'running' ? 'Deneniyor…' : 'Bağlantıyı dene' }}</button>
+          <button type="button" class="small ghost" :disabled="editing !== null" @click="openEdit(s)">Düzenle</button>
+          <button type="button" class="small ghost danger" :disabled="!!busy" @click="remove(s)">Sil</button>
+        </div>
+
+        <div v-if="tests[s.key] && tests[s.key] !== 'running'" class="test" :class="(tests[s.key] as McpTestResult).ok ? 'good' : 'bad'">
+          <template v-if="(tests[s.key] as McpTestResult).ok">
+            <strong>Bağlandı</strong>
+            <span v-if="(tests[s.key] as McpTestResult).serverName" class="sub"> · {{ (tests[s.key] as McpTestResult).serverName }} {{ (tests[s.key] as McpTestResult).serverVersion }}</span>
+            <span class="sub"> · {{ (tests[s.key] as McpTestResult).detail }}</span>
+            <span class="sub"> · araç seçimi aşağıdaki "Araçlar" bölümünde</span>
+          </template>
+          <template v-else>
+            <strong>Bağlanamadı</strong>
+            <pre>{{ (tests[s.key] as McpTestResult).detail }}</pre>
+          </template>
+        </div>
+      </article>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.wrap { position: absolute; inset: 0; background: rgba(10, 12, 18, 0.55); display: flex; justify-content: flex-end; }
+.panel {
+  background: #ede9dc; color: #23283a; border-left: 6px solid #6b4a2b;
+  width: min(680px, 100%); height: 100%; overflow: auto; padding: 16px 18px;
+  box-shadow: -20px 0 60px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 12px;
+  /* Kabuk koyu sema; panel acik zeminli: yerel radyo/kutu koyu cizilmesin. */
+  color-scheme: light; accent-color: #23283a;
+}
+.panel > header { display: flex; align-items: center; gap: 10px; }
+h2 { margin: 0; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; }
+h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #4a5068; }
+/* Kapat: 28x28 tiklama alani, isaret tam ortada, ustune gelince hafif zemin (tum panellerde ayni). */
+.x {
+  margin-left: auto; width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; padding: 0; font-size: 20px; line-height: 1; color: #23283a; cursor: pointer;
+}
+.x:hover { background: rgba(35,40,58,0.10); }
+.sub { font-size: 11px; color: #6b7285; line-height: 1.45; margin: 0; }
+.sub.right { margin-left: auto; }
+.empty { margin: 0; font-size: 13px; color: #4a5068; }
+.card { background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.card.off { opacity: 0.75; }
+.card-head { display: flex; align-items: center; gap: 8px; font-size: 14px; flex-wrap: wrap; }
+.badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; background: #e5e7ee; }
+.badge.ok { background: #7cc46b; }
+.badge.offb { background: #f3c34a; }
+.target { margin: 0; }
+.target code { font-size: 11px; word-break: break-all; }
+code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
+.secret { display: inline-block; margin-right: 8px; font-family: ui-monospace, monospace; }
+.access { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding-top: 4px; border-top: 1px solid rgba(0,0,0,0.06); }
+.access .lbl { width: 100%; }
+.agent { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+.agent.disabled { color: #9aa0b2; cursor: not-allowed; }
+.lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #4a5068; }
+.form { gap: 10px; border-color: #6b4a2b; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field.check { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; padding-top: 18px; }
+input[type="text"], input[type="url"], input[type="password"], select, textarea {
+  font: inherit; font-size: 13px; background: #fff; color: #23283a; border: 1px solid #c9c3b3; border-radius: 4px; padding: 6px 8px; width: 100%;
+}
+input:disabled { background: #f1eee5; color: #6b7285; }
+textarea { resize: vertical; font-family: ui-monospace, monospace; font-size: 12px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid #4f8ef7; outline-offset: 0; }
+.kv { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 6px; }
+.add { align-self: flex-start; }
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+button { font: inherit; cursor: pointer; border-radius: 4px; padding: 7px 14px; border: 1px solid #c9c3b3; background: #fff; color: #23283a; }
+button:disabled { opacity: 0.5; cursor: default; }
+.primary { background: #23283a; color: #fff; border-color: #23283a; }
+.ghost { background: transparent; }
+.small { padding: 3px 8px; font-size: 11px; }
+.danger { color: #b3261e; }
+.err { color: #b3261e; font-size: 12px; margin: 0; }
+.test { border-radius: 4px; padding: 6px 8px; font-size: 12px; }
+.test.good { background: #e3f4dc; border: 1px solid #7cc46b; }
+.test.bad { background: #fbe4e2; border: 1px solid #e0605e; }
+.test pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 11px; }
+.tools { margin: 4px 0 0; padding-left: 16px; max-height: 220px; overflow: auto; }
+.tools li { font-size: 12px; }
+.catalog { display: flex; flex-direction: column; gap: 8px; }
+.cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.cat { background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.cat-head { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.cat .vendor { font-size: 10px; }
+.cat-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 4px; }
+.doc { font-size: 11px; color: #4a5068; }
+.opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid #e3ddcc; border-radius: 4px; cursor: pointer; background: #faf8f2; }
+.opt.on { border-color: #4f8ef7; background: #eef4ff; }
+.opt.off { cursor: not-allowed; opacity: 0.65; }
+.opt input { margin-top: 3px; }
+.opt-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.opt-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.reqs { font-size: 11px; color: #6b7285; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.note { font-style: italic; }
+.badge.oauth { background: #d8ebfa; color: #1d4f7a; }
+.oauth-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-top: 4px; border-top: 1px solid rgba(0,0,0,0.06); }
+.oauth-creds { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; width: 100%; }
+.tools-box { border-top: 1px solid rgba(0,0,0,0.06); padding-top: 4px; }
+.tools-box summary { cursor: pointer; }
+.tool-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.tool { display: flex; align-items: baseline; gap: 6px; font-size: 12px; padding: 1px 0; cursor: pointer; }
+.tool code { font-size: 11px; }
+.usage-box { background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; padding: 8px 10px; }
+.usage-box summary { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.usage-box summary button { margin-left: auto; }
+.usage { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.usage th, .usage td { padding: 4px 6px; border-bottom: 1px solid rgba(0,0,0,0.08); text-align: left; vertical-align: top; }
+.usage th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7285; }
+.usage .num { text-align: right; font-variant-numeric: tabular-nums; }
+.usage tr.srv { cursor: pointer; }
+.usage tr.srv:hover { background: #f6f3ea; }
+.usage tr.warn td:first-child { box-shadow: inset 3px 0 0 #f3c34a; }
+.usage tr.detail td { background: #faf8f2; }
+.chip-t { display: inline-block; margin: 2px 6px 2px 0; font-size: 11px; background: #e5e7ee; border-radius: 999px; padding: 1px 7px; }
+@media (max-width: 560px) { .row { grid-template-columns: 1fr; } .kv { grid-template-columns: 1fr; } }
+</style>

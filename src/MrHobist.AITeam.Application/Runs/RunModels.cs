@@ -5,9 +5,10 @@ namespace MrHobist.AITeam.Application.Runs;
 
 /// <summary>
 /// <c>POST /runs</c> govdesi. <see cref="Workflow"/> yoksa <c>default</c>, <see cref="Sensitivity"/> yoksa <c>anthropic</c>,
-/// <see cref="MaxCostUsd"/> yoksa butce siniri yok.
+/// <see cref="MaxCostUsd"/> yoksa butce siniri yok. <see cref="Attachments"/>: <c>POST /attachments</c>'in dondurdugu gecici ek
+/// kimlikleri (docs/DOMAIN.md → Ekler); sona eklendi (CLAUDE.md §5).
 /// </summary>
-public sealed record RunRequest(string Brief, string? Workflow = null, Sensitivity? Sensitivity = null, string? Label = null, decimal? MaxCostUsd = null, string? Project = null);
+public sealed record RunRequest(string Brief, string? Workflow = null, Sensitivity? Sensitivity = null, string? Label = null, decimal? MaxCostUsd = null, string? Project = null, IReadOnlyList<string>? Attachments = null);
 
 /// <summary><c>POST /runs/{id}/revise</c> govdesi.</summary>
 public sealed record ReviseRequest(string Note);
@@ -47,7 +48,9 @@ public sealed record RunDetail(
     /// <summary>Kaldigi adim (<see cref="Run.Step"/>). Sona eklendi (CLAUDE.md §5).</summary>
     RunStep? Step = null,
     /// <summary>Running ama ajani baska calismada dolu (<see cref="Run.WaitingSince"/>). Sona eklendi.</summary>
-    DateTimeOffset? WaitingSince = null);
+    DateTimeOffset? WaitingSince = null,
+    /// <summary>Is verilirken eklenen dosyalar (<see cref="Run.Attachments"/>). Sona eklendi.</summary>
+    IReadOnlyList<RunAttachment>? Attachments = null);
 
 /// <summary>Bos birakilan ajan alanlari icin varsayilanlar (docs/DOMAIN.md → Model, efor ve kimlik; kullanici karari).</summary>
 public static class RunDefaults

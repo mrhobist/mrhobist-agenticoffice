@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AgentListItem, LaunchResult, ProjectCard, RunDetail, RunRequest, RunStatus, RunSummary, Turn, WorkflowListItem } from '~/api/types'
+import type { AgentListItem, AttachmentKind, AttachmentRules, LaunchResult, LiveTurn, ProjectCard, RunAttachment, RunDetail, RunRequest, RunStatus, RunSummary, StagedAttachment, Turn, WorkflowListItem } from '~/api/types'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { COST_TITLE, RUN_CANCELLABLE, RUN_RETRYABLE, RUN_STATUS_LABEL, fmtCost, subjectLabel } from '~/api/labels'
@@ -18,6 +18,8 @@ const props = defineProps<{
   project: string | null
   /** Canli arac akisi (SSE agent.tool → kabuk): suren turda ajanin yaptigi son cagrilar. */
   liveTools?: Array<{ ts: number; agent: string; tool: string; target: string | null; task: string | null }>
+  /** Panodan acildiysa kartin gorevi: canli akis bu goreve odaklanir. */
+  focusTask?: string | null
 }>()
 const emit = defineEmits<{ close: []; open: [id: string]; jobs: []; newRun: [project: string] }>()
 
@@ -37,6 +39,9 @@ const recent = ref<RunSummary[]>([])
 const projectCard = ref<ProjectCard | null>(null)
 async function loadForm() {
   try { workflows.value = await api.get<WorkflowListItem[]>('/api/v1/workflows') } catch { workflows.value = [] }
+  if (!attachRules.value) {
+    try { attachRules.value = await api.get<AttachmentRules>('/api/v1/attachments/rules') } catch { attachRules.value = null }
+  }
   if (props.project) {
     try {
       projectCard.value = await api.get<ProjectCard>(`/api/v1/projects/${encodeURIComponent(props.project)}`)
@@ -49,8 +54,97 @@ async function loadForm() {
   }
 }
 
+// ------------------------------------------------------------------ ekler (docs/DOMAIN.md → Ekler)
+// Dosya secilince hemen yuklenir (gecici alan, kimlik doner); is gonderilirken kimlikler govdeye girer. Icerik isteme
+// gomulmez: ajan yolu gorur, Read ile okur (PDF sayfa sayfa, resim goruntu olarak).
+
+const attachRules = ref<AttachmentRules | null>(null)
+const staged = ref<StagedAttachment[]>([])
+const uploading = ref(0)
+const uploadError = ref<string | null>(null)
+const dragOver = ref(false)
+const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
+const acceptList = computed(() => attachRules.value?.extensions.join(',') ?? '')
+
+const KIND_LABEL: Record<AttachmentKind, string> = { document: 'PDF', image: 'Resim', text: 'Metin', word: 'Word' }
+
+/** Sozlesmede 64 bit sayilar `number | string` uretilir (OpenAPI); ekranda sayiya cevrilir. */
+function fmtSize(value: number | string): string {
+  const bytes = Number(value)
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+async function addFiles(files: File[]) {
+  uploadError.value = null
+  const rules = attachRules.value
+  for (const f of files) {
+    if (rules && staged.value.length + uploading.value >= Number(rules.maxPerRun)) {
+      uploadError.value = `Bir işe en fazla ${rules.maxPerRun} dosya eklenebilir.`
+      break
+    }
+    if (rules && f.size > Number(rules.maxBytes)) {
+      uploadError.value = `${f.name}: ${fmtSize(f.size)}; üst sınır ${fmtSize(rules.maxBytes)}.`
+      continue
+    }
+    uploading.value++
+    try {
+      const form = new FormData()
+      form.append('files', f, f.name)
+      staged.value.push(...await api.upload<StagedAttachment[]>('/api/v1/attachments', form))
+    } catch (e) {
+      uploadError.value = `${f.name}: ${errorText(e)}`
+    } finally {
+      uploading.value--
+    }
+  }
+}
+
+function onPick(e: Event) {
+  const input = e.target as HTMLInputElement
+  void addFiles(Array.from(input.files ?? []))
+  input.value = ''
+}
+
+function onDrop(e: DragEvent) {
+  dragOver.value = false
+  void addFiles(Array.from(e.dataTransfer?.files ?? []))
+}
+
+/** Ekran goruntusu brief'e yapistirilabilir: panodaki dosya ek olur, metin yapistirma bozulmaz. */
+function onPaste(e: ClipboardEvent) {
+  const files = Array.from(e.clipboardData?.files ?? [])
+  if (!files.length) return
+  e.preventDefault()
+  const stamp = new Date().toISOString().slice(11, 19).replaceAll(':', '')
+  void addFiles(files.map((f, i) => f.name && f.name !== 'image.png' ? f : new File([f], `ekran-${stamp}${i ? `-${i}` : ''}.png`, { type: f.type })))
+}
+
+function removeStaged(id: string) {
+  staged.value = staged.value.filter(a => a.id !== id)
+}
+
+/** Ek indirme: JWT basligi gerekir, duz baglanti olmaz. PDF/resim yeni sekmede acilir, digerleri iner. */
+async function openAttachment(a: RunAttachment, file?: string) {
+  if (!run.value) return
+  const name = file ?? a.fileName
+  try {
+    const blob = await api.blob(`/api/v1/runs/${encodeURIComponent(run.value.id)}/attachments/${encodeURIComponent(name)}`)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    if (!file && (a.kind === 'document' || a.kind === 'image')) link.target = '_blank'
+    else link.download = file ?? a.name
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (e) {
+    actError.value = errorText(e)
+  }
+}
+
 async function start() {
-  if (starting.value || !brief.value.trim()) return
+  if (starting.value || !brief.value.trim() || uploading.value) return
   starting.value = true
   startError.value = null
   if (!props.project) { startError.value = 'İş bir projenin içinde başlar; önce proje seç.'; return }
@@ -62,10 +156,13 @@ async function start() {
       workflow: workflowKey.value || null,
       label: label.value.trim() || null,
       maxCostUsd: Number.isFinite(budget) && budget > 0 ? budget : null,
+      attachments: staged.value.length ? staged.value.map(a => a.id) : null,
     }
     const run = await api.post<RunSummary>('/api/v1/runs', body)
     brief.value = ''
     label.value = ''
+    staged.value = []
+    uploadError.value = null
     emit('open', run.id)
   } catch (e) {
     startError.value = errorText(e)
@@ -96,10 +193,59 @@ async function poll() {
     if (!LIVE.has(run.value.status)) stopPolling()
     else if (timer && pollInterval(run.value.status) !== currentInterval) startPolling()
     if (showLog.value) void loadTurns()
+    if (run.value.status === 'running') void loadLive()
+    else live.value = []
   } catch (e) {
     loadError.value = errorText(e)
   }
 }
+
+// ------------------------------------------------------------------ canli tur (kullanici istekleri 2026-09-23)
+// Ajanin dusuncesi/metni anlik, elindeki baglam ve gercekten calisip calismadigi (son hareket). Ek maliyet yok: runtime
+// akista zaten uretilen icerigi bildirir; burasi 2 s'de bir GET /runs/{id}/live okur.
+
+const live = ref<LiveTurn[]>([])
+const openContext = ref<string | null>(null)
+/** Akis kutulari (tur basina); yeni satir gelince kullanici en alttaysa asagi kayar. */
+const streamBox = new Map<string, HTMLElement>()
+function liveKey(t: LiveTurn): string { return t.agent + (t.task ?? '') + t.startedAt }
+async function loadLive() {
+  if (!props.runId) return
+  try {
+    // Baglam metni tur boyunca degismez ve buyuktur: yalniz biri acikken istenir (yoksa ad + boyut gelir).
+    const q = openContext.value ? '?context=true' : ''
+    const next = await api.get<LiveTurn[]>(`/api/v1/runs/${encodeURIComponent(props.runId)}/live${q}`)
+    // streamTotal yoksa (eski Api) satir sayisina dusulur: yeni UI eski Api'yle de asagi kaymayi surdurur.
+    const total = (t?: LiveTurn) => t ? (t.streamTotal ?? t.stream.length) : -1
+    const grew = next.some((t, i) => total(t) !== total(live.value[i]))
+    live.value = next
+    if (grew) {
+      await nextTick()
+      for (const el of streamBox.values()) if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight
+    }
+  } catch { /* canli gorunum yardimcidir; hata calisma panelini bozmaz */ }
+}
+/** Baglam acilinca metni hemen cekilir (sonraki yoklamayi beklemeden); kapaninca yoklama yine hafifler. */
+function onContextToggle(t: LiveTurn, open: boolean) {
+  const key = t.agent + t.startedAt
+  if (open && openContext.value !== key) { openContext.value = key; void loadLive() }
+  else if (!open && openContext.value === key) openContext.value = null
+}
+/** Odak: panodan gelen gorev once; yoksa hepsi. */
+const liveShown = computed(() => {
+  const f = props.focusTask
+  return f && live.value.some(t => t.task === f) ? [...live.value].sort((a, b) => Number(b.task === f) - Number(a.task === f)) : live.value
+})
+function ago(ts: string): number { return Math.max(0, Math.floor((nowTick.value - new Date(ts).getTime()) / 1000)) }
+function fmtAgo(s: number): string { return s < 60 ? `${s} sn` : `${Math.floor(s / 60)} dk ${s % 60} sn` }
+/** Canlilik: yesil (yakin zamanda hareket), sari (esigin yarisini gecti), kirmizi (esige yaklasti — bekci keser). */
+function pulse(t: LiveTurn): 'ok' | 'slow' | 'stale' {
+  const s = ago(t.lastSeenAt)
+  return s < 90 ? 'ok' : s < t.idleLimitS * 0.6 ? 'slow' : 'stale'
+}
+function fmtTokens(n: number): string { return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n) }
+/** Kaba token tahmini (karakter / 3,5); kesin sayi tur sonunda turda. */
+function estTokens(chars: number): string { return fmtTokens(Math.round(chars / 3.5)) }
 
 // ------------------------------------------------------------------ gunluk (turlar + mesajlar + fazlar)
 
@@ -371,7 +517,29 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
       <form v-else-if="!runId" class="form" @submit.prevent="start">
         <div class="field">
           <label class="lbl" for="run-brief">Brief</label>
-          <textarea id="run-brief" v-model="brief" class="brief" placeholder="Ne yapılacak? Analist bunu plana çevirir; plan senin onayına gelir." required />
+          <textarea id="run-brief" v-model="brief" class="brief" placeholder="Ne yapılacak? Analist bunu plana çevirir; plan senin onayına gelir." required @paste="onPaste" />
+        </div>
+        <div class="field">
+          <span class="lbl">Ekler <span class="sub">(PDF, resim, Word, metin · en fazla {{ attachRules?.maxPerRun ?? 10 }} dosya, dosya başına {{ fmtSize(attachRules?.maxBytes ?? 20 * 1024 * 1024) }})</span></span>
+          <div
+            class="drop" :class="{ over: dragOver }"
+            @dragenter.prevent="dragOver = true" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop"
+          >
+            <button type="button" class="small" @click="fileInput?.click()">Dosya seç</button>
+            <span class="sub">ya da buraya sürükle · ekran görüntüsünü brief'e yapıştırabilirsin</span>
+            <input ref="fileInput" type="file" multiple :accept="acceptList" hidden @change="onPick">
+          </div>
+          <ul v-if="staged.length || uploading" class="att-list">
+            <li v-for="a in staged" :key="a.id">
+              <span class="att-kind" :class="a.kind">{{ KIND_LABEL[a.kind] }}</span>
+              <span class="att-name" :title="a.name">{{ a.name }}</span>
+              <span class="sub">{{ fmtSize(a.size) }}</span>
+              <button type="button" class="att-x" :aria-label="`${a.name} ekini kaldır`" @click="removeStaged(a.id)">×</button>
+            </li>
+            <li v-if="uploading" class="sub">{{ uploading }} dosya yükleniyor…</li>
+          </ul>
+          <span v-if="uploadError" class="err" role="alert">{{ uploadError }}</span>
+          <span v-if="staged.length" class="sub">İçerik isteme gömülmez: ajan dosyaların yolunu görür ve gerektiğinde okur (PDF ve resmi Claude okuyabilir; Word'ün metni çıkarılır).</span>
         </div>
         <div class="row">
           <div class="field">
@@ -394,7 +562,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
         </div>
         <p class="sub">Proje: <strong>{{ projectCard?.title ?? project }}</strong><template v-if="projectCard"> · hedef <code>{{ projectCard.targetDir }}</code></template>. Hassasiyet: <strong>anthropic</strong>. Plan onaylanmadan hiçbir ajan iş almaz.</p>
         <div class="actions">
-          <button class="primary" type="submit" :disabled="starting || !brief.trim()">{{ starting ? 'Başlatılıyor…' : 'Analize gönder' }}</button>
+          <button class="primary" type="submit" :disabled="starting || !brief.trim() || uploading > 0">{{ starting ? 'Başlatılıyor…' : uploading ? 'Ekler yükleniyor…' : 'Analize gönder' }}</button>
           <span v-if="startError" class="err" role="alert">{{ startError }}</span>
         </div>
 
@@ -427,6 +595,37 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
             <span class="lbl">Şu an</span>
             <span v-for="t in props.liveTools.slice(-6)" :key="t.ts" class="tool" :class="t.tool.toLowerCase()" :title="`${agentName(t.agent)} · ${t.tool} · ${t.target ?? ''}`"><b>{{ TOOL_SHORT[t.tool] ?? t.tool }}</b> {{ t.target ?? '' }}</span>
             <span class="sub">{{ props.liveTools.length }} çağrı</span>
+          </div>
+          <!-- Canli tur: dusunce/metin akisi, canlilik, anlik kullanim ve ajanin baglami (GET /runs/{id}/live). -->
+          <section v-for="t in liveShown" :key="liveKey(t)" class="live" :class="{ focus: t.task && t.task === props.focusTask }" aria-live="polite">
+            <div class="live-head">
+              <span class="pulse" :class="pulse(t)" :title="`Hareketsizlik eşiği ${Math.round(t.idleLimitS / 60)} dk: aşılırsa tur kesilir, Yeniden dene kaldığı yerden sürdürür.`" />
+              <strong>{{ agentName(t.agent) }}</strong>
+              <span v-if="t.task"><code>{{ t.task }}</code> · {{ stageTitle(t.stage ?? '') }}</span>
+              <span class="sub">son hareket <b>{{ fmtAgo(ago(t.lastSeenAt)) }}</b> önce · tur {{ fmtAgo(ago(t.startedAt)) }} · {{ t.toolCount }} araç</span>
+              <span class="sub right" title="Şu ana kadar: toplam girdi (önbellekten okunan) / çıktı">{{ fmtTokens(t.usage.inputTokens) }} ({{ fmtTokens(t.usage.cacheReadTokens) }} önb.) / {{ fmtTokens(t.usage.outputTokens) }} tk</span>
+            </div>
+            <p v-if="pulse(t) === 'stale'" class="warn">Ajan {{ fmtAgo(ago(t.lastSeenAt)) }} boyunca hareket etmedi. Uzun bir build/test sürüyor olabilir; {{ Math.round(t.idleLimitS / 60) }} dk dolunca tur kesilir ve "Yeniden dene" kaldığı yerden devam eder.</p>
+            <div :ref="(el) => { if (el) streamBox.set(liveKey(t), el as HTMLElement); else streamBox.delete(liveKey(t)) }" class="stream">
+              <p v-if="!t.stream.length" class="sub">Henüz akış yok — ajan bağlamı okuyor.</p>
+              <div v-for="(e, i) in t.stream.slice(-80)" :key="i" class="entry" :class="e.kind">
+                <span class="ts">{{ fmtClock(e.ts) }}</span>
+                <template v-if="e.kind === 'tool'"><b class="tool" :class="(e.tool ?? '').toLowerCase()">{{ TOOL_SHORT[e.tool ?? ''] ?? e.tool }}</b> <code>{{ e.target }}</code></template>
+                <span v-else class="txt">{{ e.kind === 'thinking' ? '💭 ' : '' }}{{ e.text }}</span>
+              </div>
+            </div>
+            <details class="ctx" :open="openContext === t.agent + t.startedAt" @toggle="(ev) => onContextToggle(t, (ev.target as HTMLDetailsElement).open)">
+              <summary>Ajanın bağlamı · {{ t.context.length }} parça · ~{{ estTokens(t.context.reduce((s, c) => s + c.chars, 0)) }} tk</summary>
+              <details v-for="(c, i) in t.context" :key="i" class="part">
+                <summary><span class="role" :class="c.role">{{ c.role }}</span> {{ c.name }} <span class="sub">{{ c.chars.toLocaleString('tr-TR') }} kr · ~{{ estTokens(c.chars) }} tk</span></summary>
+                <pre>{{ c.text ?? 'yükleniyor…' }}</pre>
+              </details>
+              <p class="sub">Claude Code'un kendi kılavuzu ve araç tanımları bu listeye dahil değil; ajan turda okuduğu dosyaları da bağlamına ekler (kullanım satırında görünür).</p>
+            </details>
+          </section>
+          <!-- Akis/maliyet + eylemler her durumda gorunur: once canli araç şeridinin icinde kaliyordu, dusmus iste
+               "Yeniden dene" hic cikmiyordu (2026-09-23). -->
+          <div class="runactions">
             <span class="sub right">{{ run.workflow }} · <span :title="COST_TITLE">{{ fmtCost(run.totalCostUsd, 4) }}</span><template v-if="run.maxCostUsd"> / {{ fmtCost(run.maxCostUsd) }}</template><template v-if="run.retries"> · {{ run.retries }}× yeniden</template></span>
             <button v-if="canRetry" type="button" class="small" :disabled="acting" @click="retry">Yeniden dene</button>
             <button v-if="canCancel" type="button" class="small danger" :disabled="acting" @click="cancel">{{ canRetry ? 'Kapat (iptal)' : 'İptal et' }}</button>
@@ -457,6 +656,18 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
           <details class="brief-box">
             <summary>Brief</summary>
             <pre>{{ run.brief }}</pre>
+          </details>
+
+          <details v-if="run.attachments?.length" class="brief-box" open>
+            <summary>Ekler ({{ run.attachments.length }})</summary>
+            <ul class="att-list">
+              <li v-for="a in run.attachments" :key="a.id">
+                <span class="att-kind" :class="a.kind">{{ KIND_LABEL[a.kind] }}</span>
+                <button type="button" class="link att-name" :title="`${a.name} — aç`" @click="openAttachment(a)">{{ a.name }}</button>
+                <span class="sub">{{ fmtSize(a.size) }}</span>
+                <button v-if="a.textFile" type="button" class="link small-link" title="Word'den çıkarılan metin (ajan bunu okur)" @click="openAttachment(a, a.textFile)">metni</button>
+              </li>
+            </ul>
           </details>
 
           <!-- Hata varsa en uste: "takildi" tek basina bilgi degildir. -->
@@ -564,7 +775,7 @@ const errorCount = computed(() => run.value?.messages.filter(m => m.subject === 
                       <span class="when">{{ fmtClock(e.ts) }}</span>
                       <span class="tag turn">LLM turu</span>
                       <strong>{{ agentName(e.turn.agent) }}</strong>
-                      <span class="sub">{{ e.turn.provider }} · <code>{{ e.turn.model }}</code> · {{ e.turn.durationS.toFixed(1) }} s · {{ e.turn.inputTokens ?? '?' }}→{{ e.turn.outputTokens ?? '?' }} tk · {{ fmtCost(e.turn.costUsd ?? 0, 4) }}<template v-if="e.turn.turns && e.turn.turns > 1"> · {{ e.turn.turns }} iç tur</template><template v-if="e.turn.stage"> · {{ stageTitle(e.turn.stage) }}</template><template v-if="e.turn.task"> · <code>{{ e.turn.task }}</code></template></span>
+                      <span class="sub">{{ e.turn.provider }} · <code>{{ e.turn.model }}</code> · {{ e.turn.durationS.toFixed(1) }} s · {{ e.turn.inputTokens ?? '?' }}→{{ e.turn.outputTokens ?? '?' }} tk · {{ fmtCost(e.turn.costUsd ?? 0, 4) }}<template v-if="e.turn.turns && e.turn.turns > 1"> · {{ e.turn.turns }} iç tur</template><template v-for="m in (e.turn.modelUsage ?? []).filter(m => m.model !== e.turn.model)" :key="m.model"> · <span title="Alt ajanın payı (toplamın içinde)">↳ <code>{{ m.model }}</code> {{ m.inputTokens }}→{{ m.outputTokens }} tk {{ fmtCost(m.costUsd ?? 0, 4) }}</span></template><template v-if="e.turn.stage"> · {{ stageTitle(e.turn.stage) }}</template><template v-if="e.turn.task"> · <code>{{ e.turn.task }}</code></template></span>
                     </div>
                     <details v-if="e.turn.toolUses?.length"><summary>Araçlar ({{ e.turn.toolUses.length }})</summary><ul class="tools"><li v-for="(t, k) in e.turn.toolUses" :key="k"><b>{{ t.tool }}</b> <code>{{ t.target }}</code></li></ul></details>
                     <details><summary>Gönderilen (son mesaj, {{ e.turn.promptChars }} kr)</summary><pre>{{ e.turn.prompt }}</pre></details>
@@ -626,6 +837,18 @@ input[type="text"], select, textarea {
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid #4f8ef7; outline-offset: 0; }
 .brief { min-height: 160px; resize: vertical; line-height: 1.45; }
+.drop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px; border: 1px dashed #b9b2a0; border-radius: 6px; background: #faf8f2; }
+.drop.over { border-color: #4f8ef7; background: #eef4ff; }
+.att-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.att-list li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.att-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-kind { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px; background: #e5e7ee; color: #4a5068; }
+.att-kind.document { background: #f7dcdc; color: #7a2323; }
+.att-kind.image { background: #dcf1d3; color: #2d5a22; }
+.att-kind.word { background: #d8ebfa; color: #1d4f7a; }
+.att-x { margin-left: auto; flex: none; width: 22px; height: 22px; padding: 0; border: none; background: none; font-size: 16px; line-height: 1; color: #6b7285; }
+.att-x:hover { background: rgba(35,40,58,0.10); color: #23283a; }
+.small-link { font-size: 11px; }
 .note { min-height: 70px; resize: vertical; }
 .sub { font-size: 11px; color: #6b7285; line-height: 1.4; }
 .sub.right { margin-left: auto; }
@@ -648,12 +871,39 @@ button:disabled { opacity: 0.5; cursor: default; }
 .status.running { background: #4fa3e0; color: #fff; }
 .status.paused { background: #a889e6; color: #fff; }
 .status.awaitingInput { background: #d23b3b; color: #fff; }
+.runactions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.runactions .right { margin-right: auto; }
 .livetools { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 6px; padding: 6px 8px; background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; }
 .livetools .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #4a5068; }
 .livetools .tool { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #e5e7ee; color: #23283a; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .livetools .tool b { color: #4a5068; margin-right: 3px; }
 .livetools .tool.write, .livetools .tool.edit, .livetools .tool.multiedit { background: #dcf1d3; }
 .livetools .tool.bash { background: #d8ebfa; }
+.live { margin-top: 6px; padding: 8px 10px; background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; display: flex; flex-direction: column; gap: 6px; }
+.live.focus { border-color: #4fa3e0; box-shadow: 0 0 0 2px rgba(79, 163, 224, 0.25); }
+.live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; }
+.live-head .right { margin-left: auto; font-variant-numeric: tabular-nums; }
+.pulse { width: 10px; height: 10px; border-radius: 50%; background: #7cc46b; box-shadow: 0 0 0 0 rgba(124, 196, 107, 0.6); animation: pulse 1.6s infinite; }
+.pulse.slow { background: #f3c34a; animation-duration: 3s; }
+.pulse.stale { background: #e0605e; animation: none; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(124, 196, 107, 0); } 100% { box-shadow: 0 0 0 0 rgba(124, 196, 107, 0); } }
+.live .warn { margin: 0; font-size: 12px; color: #8a4b12; background: #fdf1dc; border: 1px solid #efcf97; border-radius: 4px; padding: 4px 8px; }
+.stream { max-height: 260px; overflow: auto; font-size: 12px; line-height: 1.45; display: flex; flex-direction: column; gap: 2px; background: #faf8f2; border: 1px solid #e3ddcc; border-radius: 4px; padding: 6px 8px; }
+.stream .entry { display: flex; gap: 6px; align-items: baseline; }
+.stream .ts { flex: none; font-size: 10px; color: #8a90a2; font-variant-numeric: tabular-nums; }
+.stream .txt { white-space: pre-wrap; word-break: break-word; }
+.stream .thinking .txt { color: #6b7285; font-style: italic; }
+.stream .tool { font-size: 11px; padding: 0 6px; border-radius: 999px; background: #e5e7ee; color: #4a5068; }
+.stream .tool.write, .stream .tool.edit, .stream .tool.multiedit { background: #dcf1d3; }
+.stream .tool.bash { background: #d8ebfa; }
+.stream code { font-size: 11px; word-break: break-all; }
+.ctx > summary, .part > summary { cursor: pointer; font-size: 12px; }
+.ctx .part { margin: 3px 0 0 10px; }
+.ctx pre { max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: 11px; background: #faf8f2; border: 1px solid #e3ddcc; border-radius: 4px; padding: 6px; }
+.role { font-size: 10px; text-transform: uppercase; padding: 0 5px; border-radius: 3px; background: #e5e7ee; color: #4a5068; }
+.role.system { background: #efe3f7; }
+.role.user { background: #d8ebfa; }
+.role.assistant { background: #dcf1d3; }
 .elapsed { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-variant-numeric: tabular-nums; color: #4a5068; background: #fff; border: 1px solid #c9c3b3; border-radius: 999px; padding: 1px 8px; }
 .done-box { background: #e3f4dc; border: 2px solid #7cc46b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .done-box h3 { display: flex; align-items: center; gap: 8px; color: #2d5a22; font-size: 14px; text-transform: none; letter-spacing: 0; margin: 0; }

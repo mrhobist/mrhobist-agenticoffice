@@ -39,14 +39,21 @@ let ro: ResizeObserver | null = null
 let agentsTimer: ReturnType<typeof setInterval> | undefined
 let simTimer: ReturnType<typeof setInterval> | undefined
 let simLast = 0
+/** Son cizilen karenin zamani (performance.now). Zamanlayici yalniz kare cizilmiyorsa adim atar. */
+let lastFrameAt = 0
 
 /**
  * Simulasyon adimi, cizimden BAGIMSIZ. Sekme gizliyken requestAnimationFrame durur;
  * setInterval (kisitli da olsa) calisir ve gecen sureyi sabit adimlarla telafi eder.
  * Boylece arka planda kalan sahne donmaz, donusunde ajanlar yerlerine varmis olur.
+ *
+ * TEK saat (performance.now) ve tek surucu (2026-09-26): onceden kare rAF zaman damgasiyla, zamanlayici
+ * performance.now ile adim atiyordu. Zamanlayici bir karenin icinde araya girince sonraki karenin damgasi ondan
+ * GERIDE kaliyor, o karede kimse kipirdamiyor, sonrakinde iki adim atiliyordu: saniyede 5 kez yurume takilmasi.
+ * Simdi saat geri gitmez; kare cizildikce adimi kare atar, zamanlayici yalniz kare durmussa (gizli sekme) devreye girer.
  */
 function step(now: number) {
-  if (!world) return
+  if (!world || now <= simLast) return
   let elapsed = Math.min(5, (now - simLast) / 1000)
   simLast = now
   while (elapsed > 0) {
@@ -68,7 +75,9 @@ function onMove(ev: MouseEvent) {
   world.hovered = a?.key ?? null
   world.hoveredLight = a ? null : world.hitLight(p)
   world.hoveredCat = !a && world.hitCat(p)
-  cv.value!.style.cursor = a || world.hitBoard(p) || world.hoveredLight || world.hoveredCat ? 'pointer' : 'default'
+  const balcony = !a && !world.hoveredCat && world.hitBalcony(p)
+  if (world.balcony) world.balcony.hovered = balcony
+  cv.value!.style.cursor = a || world.hitBoard(p) || world.hoveredLight || world.hoveredCat || balcony ? 'pointer' : 'default'
 }
 
 function onLeave() {
@@ -76,9 +85,10 @@ function onLeave() {
   world.hovered = null
   world.hoveredLight = null
   world.hoveredCat = false
+  if (world.balcony) world.balcony.hovered = false
 }
 
-/** Tiklama sirasi: ajan > kedi > isik > pano (kucuk hedefler once). */
+/** Tiklama sirasi: ajan > kedi > isik > balkon kapisi > pano (kucuk hedefler once). */
 function onClick(ev: MouseEvent) {
   if (!world) return
   const p = toWorld(ev)
@@ -87,6 +97,7 @@ function onClick(ev: MouseEvent) {
   if (world.hitCat(p)) { world.petCat(); return }
   const light = world.hitLight(p)
   if (light) { world.toggleLight(light); return }
+  if (world.hitBalcony(p)) { world.toggleBalcony(); return }
   if (world.hitBoard(p)) { emit('board', world.board.snapshot()); return }
   emit('select', null)
 }
@@ -107,13 +118,25 @@ function focusAgent(key: string | null) {
 }
 defineExpose({ publishBoard, setAttention, focusAgent, reboot })
 
+/**
+ * Tuvalin arka tamponu (cihaz pikseli) icin ust sinir. Ekran karti surucusu olmayan makinede (Microsoft Basic Render
+ * Driver) tarayici ~3.3 Mpx ustundeki tuvali hizlandirilmis yoldan cikarip yazilimla rasterliyor: kare 0.6 ms'den
+ * 30-40 ms'ye cikiyor, ajanlar takilarak yuruyordu (olcum 2026-09-26: 3.22 Mpx 0.6 ms, 3.59 Mpx 29.5 ms). Sinirin
+ * ustunde tuval daha dusuk cozunurlukte cizilir, tarayici CSS boyutuna buyutur (piksel sahnede fark edilmez).
+ * `slowFrames` sigortasi: esik baska bir makinede daha dusukse kareler yavas kaldikca sinir %25 kucultulur.
+ */
+let maxCanvasPx = 2_400_000
+let slowFrames = 0
+let sampledFrames = 0
+
 function fit() {
   const el = host.value
   const canvas = cv.value
   if (!el || !canvas || !world) return
-  const dpr = Math.min(2, window.devicePixelRatio || 1)
   const cw = el.clientWidth
   const ch = el.clientHeight
+  let dpr = Math.min(2, window.devicePixelRatio || 1)
+  if (cw * ch * dpr * dpr > maxCanvasPx) dpr = Math.sqrt(maxCanvasPx / Math.max(1, cw * ch))
   canvas.width = Math.floor(cw * dpr)
   canvas.height = Math.floor(ch * dpr)
   canvas.style.width = `${cw}px`
@@ -123,10 +146,13 @@ function fit() {
   view = { scale, ox: (cw - w * scale) / 2, oy: (ch - h * scale) / 2 }
 }
 
-function frame(now: number) {
+function frame() {
   raf = requestAnimationFrame(frame)
   // Ilk karede tuval henuz olculmemis olabilir (0x0): drawImage firlatir.
   if (!world || !cv.value || cv.value.width === 0 || cv.value.height === 0) return
+  const now = performance.now()
+  if (import.meta.dev) notePerfGap(now)
+  lastFrameAt = now
   step(now)
 
   const ctx = cv.value.getContext('2d')!
@@ -137,7 +163,60 @@ function frame(now: number) {
   ctx.setTransform(view.scale * dpr, 0, 0, view.scale * dpr, view.ox * dpr, view.oy * dpr)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
+  const t0 = performance.now()
   world.draw(ctx, view.scale * dpr, now)
+  guardFrameCost(performance.now() - t0)
+}
+
+/** 60 karede 30'dan fazlasi 14 ms'yi asarsa tuval cozunurlugu %25 dusurulur (en az 0.8 Mpx). Geri buyutulmez. */
+function guardFrameCost(ms: number) {
+  if (document.visibilityState !== 'visible') return
+  sampledFrames++
+  if (ms > 14) slowFrames++
+  if (sampledFrames < 60) return
+  if (slowFrames > 30 && maxCanvasPx > 800_000) {
+    const cur = (cv.value?.width ?? 0) * (cv.value?.height ?? 0)
+    maxCanvasPx = Math.max(800_000, Math.floor(Math.min(maxCanvasPx, cur) * 0.75))
+    console.info('[sahne] kare yavas: tuval siniri', maxCanvasPx, 'px')
+    fit()
+  }
+  sampledFrames = 0
+  slowFrames = 0
+}
+
+/**
+ * Takilma kaydi (gelistirme, 2026-09-26): gorunur sekmede 50 ms'yi asan kare araliklari ve tarayicinin uzun animasyon
+ * kareleri (suclu betik/islevle). Konsoldan `__perf` okunur; `__perf.report()` ozet verir. Tahmin yerine olcum icin.
+ */
+const perf = {
+  gaps: [] as Array<{ at: number; ms: number }>,
+  loaf: [] as Array<{ at: number; ms: number; blame: string }>,
+  report() {
+    const g = [...this.gaps].sort((a, b) => b.ms - a.ms).slice(0, 5)
+    return { gaps: this.gaps.length, worst: g, loaf: this.loaf.slice(-10) }
+  },
+}
+function notePerfGap(now: number) {
+  const gap = now - lastFrameAt
+  if (lastFrameAt && gap > 50 && gap < 5000 && document.visibilityState === 'visible') {
+    perf.gaps.push({ at: Math.round(now), ms: Math.round(gap) })
+    if (perf.gaps.length > 200) perf.gaps.shift()
+  }
+}
+function watchLongFrames() {
+  ;(window as unknown as { __perf?: typeof perf }).__perf = perf
+  try {
+    const po = new PerformanceObserver(list => {
+      for (const e of list.getEntries() as Array<PerformanceEntry & { scripts?: Array<{ duration: number; invoker?: string; sourceFunctionName?: string; sourceURL?: string }> }>) {
+        const top = [...(e.scripts ?? [])].sort((a, b) => b.duration - a.duration)[0]
+        const src = top?.sourceURL?.split('/').pop()?.split('?')[0] ?? ''
+        const blame = top ? `${top.invoker ?? ''} ${top.sourceFunctionName ?? ''} ${src} (${Math.round(top.duration)} ms)` : 'betik disi (cizim/GC)'
+        perf.loaf.push({ at: Math.round(e.startTime), ms: Math.round(e.duration), blame })
+        if (perf.loaf.length > 100) perf.loaf.shift()
+      }
+    })
+    po.observe({ type: 'long-animation-frame', buffered: false })
+  } catch { /* tarayici desteklemiyor */ }
 }
 
 function publishAgents() {
@@ -149,6 +228,8 @@ function publishAgents() {
 async function reboot() {
   try {
     const next = await World.create(apiBase)
+    // Herkes oldugu yerden devam etsin: yeni dunya eskisinin konumlarini devralir (isinlanma yok).
+    if (world) next.adopt(world)
     next.onHud = h => emit('hud', h)
     if (import.meta.dev) (window as unknown as { __world?: World }).__world = next
     world = next
@@ -170,7 +251,7 @@ async function boot() {
   }
   world.onHud = h => emit('hud', h)
   // Gelistirme: konsoldan sahneyi sorgulamak icin (uretimde yok).
-  if (import.meta.dev) (window as unknown as { __world?: World }).__world = world
+  if (import.meta.dev) { (window as unknown as { __world?: World }).__world = world; watchLongFrames() }
   ready.value = true
   fit()
   feed = connectFeed(apiBase, (e: SceneEvent) => {
@@ -183,7 +264,10 @@ async function boot() {
   agentsTimer = setInterval(publishAgents, 1500)
   simLast = performance.now()
   clearInterval(simTimer)
-  simTimer = setInterval(() => step(performance.now()), 200)
+  simTimer = setInterval(() => {
+    const t = performance.now()
+    if (t - lastFrameAt > 400) step(t)
+  }, 200)
   cancelAnimationFrame(raf)
   raf = requestAnimationFrame(frame)
 }

@@ -25,6 +25,10 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
   sprite'ı (`sprites[]`, 8 karakter; bitince tekrar) + boş ilk masa (`seats`). Masa kalmadıysa `home: {}` →
   **ziyaretçi**: ofiste evi yoktur, arada kapıdan girip panoya bakar, çıkar; iş alınca panonun önünde çalışır.
   Silinince sahneden düşer. Her değişiklikte Api `scene.reload` yayımlar, UI sahneyi yeniden kurar.
+- **Karakter seçimi (2026-09-23, kullanıcı isteği).** Yeni ajan formunda ve ajan panelinde karakter (sprite) seçilir;
+  önizleme yürüyüş sayfasının ilk karesidir. Seçim md'ye değil `scene.json → agents[].sprite`'a yazılır (görünüm
+  yerleşimdir, ekip tanımı değil). Liste `sprites[]`'tır; dışındaki ad 400 `agent.unknown_sprite`. Aynı karakteri iki
+  ajan seçebilir (kullanıcının kararı; seçici kimin kullandığını gösterir); "otomatik" kullanılmayan ilk karakteri verir.
 
 | Ajan | Ne yapar | Kod mu prompt mu |
 |---|---|---|
@@ -34,6 +38,94 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 | `tester` | Kuralları denetler, testi çalıştırır, onaylar ya da reddeder | prompt |
 | `manager` | `ask` hedefi ve son karar kapısı (altı şapka) | prompt |
 | `organizer` | **Dağıtıcı.** Bekleyen iş var mı, boş ajan var mı bakar, işi verir. Bu mantık **koddadır** (`Dispatcher`), sıfır token. LLM'e yalnız **devir notu** için gider | kod + prompt |
+
+### MCP sunucuları (2026-09-23, kullanıcı isteği; ayrıntılar varsayımla ilerlenir)
+
+İstek: "MCP yönetim ekranı olsun, MCP eklenip yönetilebilsin, ekipteki kişilere MCP yetkisi verilsin."
+
+- **Tanım veritabanında** (`mcp_server`, betik 0004), `config/`'da **değil**. Gerekçe: çalıştırılabilir yol, yerel adres ve
+  belirteç (ortam değişkeni, `Authorization` başlığı) makineye özgüdür ve git'e girmemeli. Alternatif — `config/mcp.json` +
+  `${ENV}` genişletme — reddedildi: yönetim ekranından yazılan belirteç ya git'e girer ya da ayrı bir sır deposu ister.
+- **Yetki ajan md'sinde** (`mcp: [anahtar, …]`): yetki ekibin tanımıdır, ekip `config/`'dadır (CLAUDE.md §2). MCP paneli
+  kutu işaretlenince ilgili md'leri yeniden yazar (`PUT /mcp/{key}/access`); ajan panelinde salt okunur görünür.
+  Yeni verilen anahtar kayıtlı olmalı (400 `agent.unknown_mcp`); sonradan silinmiş/kapatılmış anahtar ajanı kaydetmeyi
+  engellemez, çalışma anında **atlanır** ve çalışmanın kaydına `subject: "mcp"` notu düşer (sessiz kabul yok).
+- **Kim, nerede alır.** Yetkili ajan yalnız **araçlı** turlarda (analiz, geliştirme, test, soru) sunucuyu alır; araçlar
+  `mcp__{anahtar}__{araç}` adıyla gelir. Araçsız tur (plan onayı) almaz. `strict_mcp_config` açık kalır: kullanıcının kendi
+  Claude Code MCP'leri değil, yalnız verilenler yüklenir. İzin kararı runtime'ın `_guard`'ında: dosya yazmayan araç serbest.
+- **Yalnız Anthropic.** MCP'yi bugün yalnız Claude Agent SDK çalıştırır; sağlayıcısı `anthropic` ya da boş (varsayılan)
+  olmayan ajana yetki 400 `agent.mcp_unsupported`. Codex (openai) destekler ama bağlanmadı; runtime istenirse 501
+  `runtime.mcp_unsupported` döner — .NET zaten göndermez.
+- **Sırlar.** `env`/`headers` değerleri hiçbir yanıta yazılmaz (`{ name, hasValue }`); güncellemede değeri `null` gelen
+  satır kayıtlı değeri korur, listede olmayan ad silinir. Canlı bağlam görünümü yalnız ad + komut/adres gösterir.
+- **Bağlantıyı dene** (`POST /mcp/{key}/test`): runtime sunucuyu açar, araçlarını listeler, kapatır (durumsuz, 45 s).
+  Bağlanamamak hata değil sonuçtur (`ok: false` + neden). Runtime kapalıysa 503.
+- **Maliyet notu.** Her aracın şeması her iç turda bağlama girer (2026-09-23 ölçümü: 48 araç ≈ 32K token/çağrı). Panel bunu
+  söyler; gereken sunucuyu gereken ajana vermek kullanıcının kararıdır.
+- Silme: bir ajana yetkiliyse 409 `mcp.in_use` (önce yetkiler kaldırılır; bilgi dosyası kuralıyla aynı).
+- **Katalog (2026-09-23, kullanıcı isteği: "hazır MCP'ler; token, basic auth… hangisini destekliyorsa hepsi seçenek olsun").**
+  `config/mcp-catalog.json` hazır sunucuları ve her birinin **bağlantı yöntemlerini** tanımlar: taşıma, komut/adres, form
+  alanları (ortam değişkeni, başlık ya da yalnız şablon girdisi), `Bearer {value}` / `Basic {base64:E-POSTA:TOKEN}` biçimleri,
+  seçimli alanlar (salt okuma), önkoşullar (Node.js, uv, Docker). Katalog `config/`'dadır çünkü sır taşımaz ve kaynak koddur;
+  sırlar kurulumda kullanıcıdan alınır, **sunucuda** birleştirilir (`McpCatalogBuilder`), veritabanına yazılır. Yüklenirken
+  denetlenir: bilinmeyen alana başvuran şablon ve **sır alanını argümana/adrese yazan** seçenek reddedilir (argüman yanıtta açık döner).
+- İlk katalog (kaynaklar resmi belgelerden doğrulandı, `docsUrl`): **Figma** (PAT · OAuth belirteci · masaüstü Dev Mode ·
+  uzak OAuth *henüz yok*), **Bitbucket** (Rovo MCP: e-posta+API token Basic · servis anahtarı Bearer (Bitbucket için
+  doğrulanmadı) · OAuth *henüz yok*; yerel Cloud e-posta+token; Server/DC HTTP erişim belirteci; Server/DC parola ve Cloud
+  uygulama parolası *henüz yok* — ilki npm'de yayımlı değil, ikincisini Atlassian Haziran 2026'da kaldırdı), **Jira** (Rovo MCP: e-posta+API token Basic · servis anahtarı Bearer · OAuth *henüz yok*;
+  mcp-atlassian: Cloud e-posta+token · Server/DC PAT · Server/DC kullanıcı+parola), **Slack** (xoxp · xoxb · xoxc+xoxd ·
+  resmi OAuth *henüz yok*), önerilen üç resmi sunucu: **GitHub** (uzak PAT · Docker · GHES), **Playwright** (Microsoft; görünmez /
+  görünür tarayıcı), **Context7** (Upstash; güncel kütüphane dokümanı). Seçim gerekçesi: ofis kod yazıp test eden bir ekip —
+  depo/PR, ön yüzü gerçek tarayıcıda denemek ve eski API tahminini azaltmak en çok işe yarayan üç yetenek.
+- **Araç seçimi (2026-09-23, kullanıcı isteği).** Sunucu başına izin listesi (`tools`; boş = hepsi). Seçenekler son başarılı
+  "Bağlantıyı dene"de görülen araçlardır (`knownTools`, sunucuda saklanır). Seçilmeyen araçlar SDK'ya `disallowed_tools` olarak
+  gider — şeması bağlama hiç girmez — ve runtime'ın izin denetimi (`_guard`) izin listesi dışındaki `mcp__{sunucu}__{araç}`
+  çağrısını ayrıca reddeder (iki kat: yeni eklenen, henüz görülmemiş bir araç da izin listesinde değilse açılmaz). Hiç araç
+  seçilmediyse sunucu verilmez, kayda neden düşer. Tanım düzenlemesi seçimi ve OAuth girişini silmez.
+- **Kullanım raporu (2026-09-23).** Her tur, ajana açılan sunucuları kaydeder (`Turn.McpServers`). `GET /mcp/usage` son N işte
+  sunucu başına: verildiği tur, kullanıldığı tur, çağrı, iş, son kullanım; araç ve ajan kırılımı; silinmiş sunucuların geçmişi.
+  "Verildi ama hiç kullanılmadı" işaretlenir: araç şemaları her iç turda ödenir, kullanılmayan sunucu boşuna bağlamdır. Şema
+  tokeni bilinmediği için rapora tahmin yazılmaz.
+- **OAuth girişi (2026-09-23, kullanıcı isteği).** Uzak (http/sse) sunucularda panelden "OAuth ile giriş yap". Akış .NET'tedir
+  (Python durumsuz kalır): kimliksiz istek → 401 `WWW-Authenticate: resource_metadata` → korunan kaynak bilgisi (RFC 9728) →
+  yetki sunucusu bilgisi (RFC 8414) → istemci (kullanıcının verdiği · aynı yetki sunucusu için saklanan · dinamik kayıt RFC 7591)
+  → PKCE S256 + `resource` (RFC 8707) ile yetkilendirme → loopback dönüş `http://127.0.0.1:5080/api/v1/mcp/oauth/callback` →
+  kod takası. Kapsam: önce `WWW-Authenticate: scope`, sonra korunan kaynağın `scopes_supported`, kullanıcı daraltabilir.
+  Dönüş ucu JWT'siz açıktır; yetki tek kullanımlık, 15 dk'lık `state`'tir (bellekte). Belirteç sunucu kaydına yazılır, yanıta
+  yazılmaz; her turda `Authorization: Bearer` olarak gider, 5 dk içinde dolacaksa tur **öncesi** yenilenir; yenilenemezse sunucu
+  "giriş yok" diye atlanır (iş durmaz). Uzak uçlar https olmalı (yalnız loopback'te http).
+  Canlı keşif (2026-09-23, salt okunur): Figma ve Atlassian dinamik kaydı ilan ediyor (token girmeden giriş); Slack ve GitHub
+  etmiyor — kullanıcının kendi OAuth uygulamasının istemci kimliği/gizli anahtarı gerekir (dönüş adresi o uygulamaya eklenir).
+  Alternatif (Claude Code'un saklı OAuth belirtecini paylaşmak) reddedildi: kullanıcının kişisel oturumu ajana sızardı.
+
+### Gerçek tarayıcıda test (2026-09-26, kullanıcı isteği; ayrıntılar varsayımla ilerlenir)
+
+Karşılaştırmada Claude Code ön yüzü tarayıcıda uçtan uca denedi, ofis denemedi; kullanıcı için önemli. **Karar:** yeni bir
+mekanizma değil, var olan MCP yolu — katalogdaki **Playwright MCP** (Microsoft, resmi; sürüm sabit `0.0.82`, `@latest` her
+kurulumda başka kod getirirdi) kurulur ve ajana yetki verilir. Makinedeki Edge kullanılır (`--browser=msedge`), tarayıcı
+indirilmez; `--headless --isolated`: her oturum temiz profil. Nasıl deneneceği ön yüz bilgisinde (sunucuyu kaldır → snapshot
+ile oku → ana akış + olumsuz yol → konsol → kapat); ajan md'si "ekran değiştiyse tarayıcıda dene, araç yoksa söyle" der.
+- **Bağlam bedeli:** her aracın şeması her iç turda gider; MCP panelinden yalnız gereken araçlar seçilir (navigate, snapshot,
+  click, type, fill_form, press_key, wait_for, console_messages, network_requests, close).
+- **Sınır:** MCP araçları runtime'ın yazma denetiminden (`_guard`) geçmez; tarayıcı yalnız yerel adres açsın diye kural md'de.
+  `--allowed-origins` 0.0.82'de var ama belgesi "güvenlik sınırı değildir, yönlendirmeyi etkilemez" diyor ve port jokeri
+  belirsiz (ajanın portları projeye göre değişir): eklenmedi. Dosya erişimi varsayılan olarak çalışma köküyle sınırlı.
+- **Kurulum (2026-09-26, kullanıcı: "görünür Edge"):** `playwright` sunucusu görünür Edge ile (`--isolated --browser=msedge`),
+  14 araç açık (ekran görüntüsü, `evaluate`, `run_code_unsafe`, dosya yükleme kapalı), yetki `tek-kisilik-dev-kadro`'da.
+- **Ofis standardı (2026-09-26, kullanıcı: "ikisini de yap"):** katalog girdisinde `default` (seçenek, değerler, açık araçlar,
+  `grantNewAgents`). (1) Api kalkışta md'si yetkili ama bu makinede kaydı olmayan sunucuyu bu varsayılanla kurar — yetki git'te,
+  kayıt `data/`'da; yeni makinede ya da silinen veritabanında yetki kalıp araç kaybolurdu. Kullanıcının sildiği sunucu geri
+  gelmez: silme önce yetkilerin kalkmasını ister. (2) Yeni ajan (`POST /agents`, `mcp` yok) varsayılan sunuculara yetkili
+  başlar; Ekip → Yeni ajan formunda "Ofis varsayılan araçları" kutusu (kaldırılırsa `mcp: []`). md içe aktarmada varsayılan
+  uygulanmaz: md ne diyorsa o.
+- **Sınırlar (2026-09-26 ilk kullanım):** görsel denetim yok (ekran görüntüsü kapalı: ajan metinden okur, yerleşim/renk
+  hatası görmez); araç şeması iç tur başına ~4K token (analiz tepesi 21,6K → 26,5K; md büyümesiyle karışık tahmin); MCP her
+  araçlı turda açılır (analizde de, gereksiz); çalışma köküne `.playwright-mcp` klasörü yazar (`_guard` dışında); görünür
+  modda pencere runtime'ın Windows oturumunda açılır (masaüstü yoksa headless şart); tarayıcı `npx` önbelleğinden kalkar,
+  ilk kullanım ağ ister; yalnız anthropic ajanları.
+- **Alternatif (reddedilmedi):** ajan projeye Playwright testleri yazar (`@playwright/test`) — kalıcı e2e testi bırakır ama her
+  projeye paket + tarayıcı indirmesi ekler ve brief istemeden test altyapısı kurar. Brief e2e testi isterse ajan bunu yapar.
+- Claude masaüstünün kendi tarayıcısı SDK alt sürecinden erişilebilir değil; bu yüzden kullanılmadı.
 
 ## Projeler (2026-09-19, kullanıcı kararı)
 
@@ -53,7 +145,11 @@ Ekip **açıktır** (zorunlu rol yok); hangi ajanın çalışacağını iş akı
 - **Hedef dizin seçimi (2026-09-20, kullanıcı kararı):** serbest metin **yok**; klasör seçici `GET /projects/dirs?path=` ile depo
   içini bir seviye bir seviye gezer (`.git`, `node_modules`, `bin`, `obj`, `runs`… gizli). Seçim: var olan klasör ya da
   gezilen klasörün içinde `<key>` adlı yeni klasör. Boş = varsayılan `projects/{key}`. İlke: **serbest metin yalnız ad ve
-  açıklama alanlarında**; diğer alanlar seçici/liste.
+  açıklama alanlarında**; diğer alanlar seçici/liste. 2026-09-26'dan beri seçici sürücü köklerinden (`C:/`, `D:/`) depo
+  dışını da gezer (yalnız klasör **adları**; erişilemeyen, gizli ve sistem klasörleri atlanır); sürücü kökü gezilir ama seçilemez.
+- **Bir klasör, bir proje (2026-09-26):** iki proje aynı klasöre — ya da biri diğerinin iç/dış klasörüne — bağlanamaz
+  (409 `project.dir_in_use`; oluşturma, içeri alma ve hedef dizin değişikliğinde). Neden: aynı-proje sıra kilidi anahtara
+  göre tutulur, iki iş aynı dosyalara aynı anda yazardı; üstteki projenin "son turu geri al"ı alttakinin yazdıklarını da silerdi.
 - **Renk ve sıra (2026-09-20, kullanıcı isteği):** her projenin bir rengi (`color`, `#rrggbb`; boşsa paletten
   kullanılmayan ilk renk) ve sırası (`order`) var. Ray kartı, Kanban sekme grupları ve Kanban **"Tümü"** sekmesi
   (tüm projelerin görevleri dört Kanban şeridinde, kart rengi = proje) aynı rengi ve sırayı okur. Sıra
@@ -70,6 +166,45 @@ açar (`POST /projects/{key}/launch`, `cmd /c start … cmd /k run.cmd`). Sözle
 sunucu + `start http://127.0.0.1:PORT`, kurulum gerekiyorsa o da içinde). Dosya yoksa düğme pasif (`launchable=false`)
 ve 404 `project.launch_missing`. Süreç Api'ye bağlanmaz; çıktı pencerede, kapatmak kullanıcıda. İlk `run.cmd`
 `hello-world-console` için elle yazıldı (varsayımla ilerlenir: Windows tek platform; Linux/mac gelirse `run.sh`).
+
+### Projeyi içeri alma ve dil şeridi (2026-09-26, kullanıcı isteği)
+
+> "Hep sıfır proje düşündük; hazırda başlamış projeleri içeri alıp devam ettirebilmeliyiz" + "projede kullanılan diller, GitHub'daki gibi".
+
+- **Akış:** Yeni proje → **Mevcut projeyi içeri al** → klasör seç (depo içi ya da başka sürücü) → sunucu inceler
+  (`GET /projects/inspect?path=`) → form öneriyle dolar → `POST /projects/import`. Dosyalar **yerinde kalır**: kopyalanmaz,
+  taşınmaz, klasöre hiçbir şey yazılmaz (MSBuild bariyeri yalnız depo içi hedefte). Depo dışı klasör proje silinse de silinmez.
+- **Ofisin kendi deposu bağlanamaz (2026-09-27):** sürücülü tam yol ofis deposunun kendisi, bir iç klasörü ya da depoyu içeren üst
+  klasör olamaz (`project.dir_reserved`, 400; kontrol `WorkspaceLocator`'da, yeni proje/güncelleme/içeri alma/inceleme hepsi
+  bağlı). Aksi halde ajanın `cwd`'si ofis olurdu: `config/` (canlı yeniden yüklenir), `src/`, `data/aiteam.db`. Depo içi hedef
+  eskisi gibi göreli yazılır (`projects/{key}`).
+- **Okuma uçları diske yazmaz (2026-09-27):** proje listesi ve `GET /projects/{key}/inspect` hedef dizini oluşturmaz, bariyer
+  yazmaz; dizin yoksa (ilk iş başlamadı ya da klasör taşındı) "0 dosya" / başlatılamaz görünür. Dizini işi başlatan oluşturur.
+- **Öneri:** anahtar klasör adından (alınmışsa `-2`, `-3`…); başlık README'nin ilk `#` başlığı → `package.json` `name` →
+  klasör adı; açıklama `package.json` `description` → README'nin ilk düzyazı paragrafı (rozet/resim/liste atlanır).
+- **Dil ölçüsü (`Domain/Projects/Codebase`, saf):** GitHub linguist'in özü — pay **baytla**; yalnız programlama ve işaretleme
+  dilleri (JSON/YAML/Markdown sayılmaz); üçüncü taraf klasörleri (`node_modules`, `vendor`, `third_party`…), kökteki
+  `docs/`, her derinlikte `documentation/`/`examples/`, küçültülmüş/üretilmiş dosyalar (`*.min.js`, `*.Designer.cs`,
+  `*.pb.go`, `wwwroot/lib/`…) elenir; `.h` komşularına göre C/C++/Objective-C. Renkler linguist'in. `run.cmd` de Batchfile
+  sayılır (GitHub da sayar). Birebir linguist değil: `.gitattributes` (`linguist-vendored` vb.) okunmaz.
+- **Dosya listesi (`Infrastructure/Storage/WorkspaceInspector`):** git deposunda `git ls-files --cached --others
+  --exclude-standard` — `.gitignore`'a uyar, devam eden işin henüz commit'lenmemiş dosyaları da görünür. Git yoksa ya da
+  başarısızsa (ör. depo başka Windows kullanıcısının: "dubious ownership") klasör yürünür ve çıktı/IDE/sanal ortam klasörleri
+  budanır; bu yolda `.gitignore` okunmaz. 50 bin dosya sınırı (`truncated`). Dal ve uzak adres `.git` dosyalarından,
+  süreçsiz okunur; uzak adresteki kullanıcı bilgisi (`https://ad:belirteç@`) **atılır** — değer ekrana ve istemde gider.
+  Sonuç 30 sn bellekte: ray kartı ve proje paneli aynı dizini art arda sorar. Önbellek **yalnız disk taramasını** (git süreci +
+  dosya başına stat) tekrarlamamak içindir, token ile ilgisi yoktur: istem metni aynı ölçüden üretilir. Tutulan ham dosya
+  listesi değil, ölçülmüş özettir (diller, manifestler, öneri); süresi dolan kayıt her yazımda atılır (2026-09-27: gezilen her
+  klasörün 50 bin yollu listesi süreç ömrü boyunca bellekte kalıyordu). Tarama sırasında silinen klasör atlanır, tarama düşmez.
+- **Ajan tarafı:** analiz istemi dizin doluysa "Dizinde kod olabilir" cümlesi yerine **"# Mevcut kod"** bölümü alır: dosya
+  sayısı, dil satırı (`C# %62,1 · TypeScript %30`), derleme/paket dosyaları, git dalı; "bu bir DEVAM işi: yapıyı, adlandırmayı,
+  komutları koru; brief istemedikçe yeniden yazma/taşıma/çatı değiştirme; kabul ölçütleri projenin kendi komutlarıyla";
+  git deposunda "geçmiş kullanıcının: commit, dal, push yok". Aynı bölüm ofisin kendi önceki işleri olan projede de çıkar
+  (doğru: orada da devam işi). `run.cmd` kuralı: yoksa ve uygulama çalışır hâldeyse yaz (içeri alınmış projede de), varsa güncel tut.
+- **Görünüm:** proje panelinin İşler sekmesinde şerit + lejant (ilk 6 dil, kalanı "Diğer") ve git dalı; ray kartında ince şerit
+  (kart ilk göründüğünde ve projenin iş/çalışan sayısı değişince; zamanlayıcı yok, 5 sn yoklamasına binmez).
+- **Varsayımla ilerlenir:** klasör seçicinin tüm diskin klasör adlarını listelemesi (tek kullanıcı, loopback + giriş). Alternatif
+  (reddedilmedi): yalnız belirli köklere (ör. kullanıcı klasörü) izin veren bir ayar.
 
 ## Çalışma yaşam döngüsü
 
@@ -131,6 +266,27 @@ bağımsız, boşken de durur, zille aynı kaynak; tıklanınca çalışma açı
 **Varsayımla ilerlenir:** gelen kutusu 5 s'de bir yoklanır (SSE gelince olaya bağlanır); "okundu" kavramı yok,
 madde ancak cevap verilince düşer.
 
+## Ekler (2026-09-23, kullanıcı isteği; ayrıntılar varsayımla ilerlenir)
+
+İstek: "İş verilirken PDF vb. doküman, resim verilebilsin."
+
+- **Akış.** Dosya seçilince (seç / sürükle-bırak / brief'e ekran görüntüsü yapıştır) hemen yüklenir: `POST /attachments`
+  → `data/attachments/_staging/` + kimlik. İş gönderilirken kimlikler `POST /runs` gövdesine (`attachments[]`) girer;
+  `RunService.CreateAsync` dosyaları `data/attachments/{runId}/`'ye taşır, üstveri `run.attachments` (JSON) sütununa yazılır.
+  Bilinmeyen/süresi dolmuş kimlik iş başlamadan 400 `attachment.not_found`. Bir günden eski geçici yüklemeler silinir.
+- **Türler ve sınır** (`AttachmentRules`, tek kaynak): PDF, resim (png/jpg/gif/webp), Word (docx), metin (md, txt, csv,
+  json, xml, yaml, log, html, sql). Dosya başına 20 MB, iş başına 10 ek. Ad sunucuda güvenli hâle getirilir (yol parçası,
+  özel karakter atılır; çakışmada `ad-2.pdf`).
+- **İçerik isteme gömülmez** — her iç turda yeniden ödenirdi. Analiz ve görev istemlerinde `# Ekler` bölümü yalnız ad, tür,
+  boyut ve **mutlak yol** listeler; ajan gerektiğinde Read ile okur (Claude'un Read aracı PDF'i sayfa sayfa, resmi görüntü
+  olarak okur). Word'ü Read okuyamaz: Api taşırken metnini çıkarır, yanına `.docx.txt` yazar, istem onu gösterir.
+- **Okuma izni.** Ekler çalışma dizininin dışındadır: araçlı turda `readDirs` = ek dizini (SDK `add_dirs`). Yazma araçları
+  yine yalnız cwd'de; Bash ek dizinindeki mutlak yolu kullanabilir (ör. logoyu projeye kopyalamak). Ek dizini bir **silme**
+  denetiminden geçmez — risk yalnız o çalışmanın kendi ekleri (varsayımla ilerlenir).
+- **Sağlayıcı.** PDF/resim yalnız Claude (Read aracı) ile okunur; Codex yolu metin eklerini okuyabilir, PDF/resmi okuyamaz.
+- **Silme.** Proje silinince çalışmalarıyla birlikte ek dizinleri de silinir. Revize/devam brief'ine ek eklemek bu turda yok.
+- İndirme: `GET /runs/{id}/attachments/{fileName}` (JWT'li; UI Blob alır, PDF/resmi yeni sekmede açar).
+
 ## Plan onayı (2026-09-19, kullanıcı kararı)
 
 > Developer'a iş gitmeden analistin çıkaracağı iş listesi, sırası ve detayları **insan onayından**
@@ -138,6 +294,12 @@ madde ancak cevap verilince düşer.
 
 1. Analist brief'i alır, `Spec` şemasıyla yapısal çıktı üretir → çalışma satırının `spec` alanı.
    Çalışma `AwaitingApproval` olur; sahnede analist `done`, not: "plan onay bekliyor".
+   Plan, maliyet için üç isteğe bağlı alan taşır: görev başına `ruleRefs` (yalnız o görevi bağlayan kurallar),
+   `knowledge` (işin gerçekten ihtiyaç duyduğu bilgi dosyaları) ve **`codeMap`** (2026-09-24): analizin okuduğu
+   dosyalardan uygulayıcının bilmesi gerekenler, yol + tek satır öz. Harita her görevin istemine "Kod haritası"
+   olarak girer — önce görevin kendi dosyaları, **3000 karakterde kesilir** (her iç turda yeniden okunur; büyürse
+   kazançtan çok maliyet olur). Uygulayıcıya "anlamak için yeniden okuma, yalnız değiştireceğini aç" denir.
+   Gerekçe: bir görev analizin okuduğu 11 dosyanın 6'sını yeniden okudu; analiz maliyetin %15'i.
 2. Kullanıcı UI'da planı görür: özet, mimari, kurallar, görevler (kimlik, başlık, açıklama,
    dosyalar, kabul ölçütleri, bağımlılıklar) ve **yürütme sırası** (topolojik).
 3. **Onayla** → `Running`; `board.set` ile görevler ilk görev-sütununda `queued` açılır; dağıtım başlar.
@@ -170,7 +332,23 @@ Kod (`Application/Runs/Dispatcher`), her tetiklemede (onay, bir adımın bitişi
 
 ## Paralellik, tekrar, iptal, bütçe (2026-09-19, kullanıcı kararları)
 
-- **Birden fazla çalışma aynı anda.** İş kanalı bir havuzdur (`AITeam:MaxParallelJobs`, varsayılan 3; 1 =
+- **Kopyalar (2026-09-26, kullanıcı: "iş verildikçe çoğalsınlar, ekip listesinde görünmesin"; ayrıntılar varsayımla
+  ilerlenir).** Ajan md'sinde `max_instances: N` (1..8): ekipte ve md'de TEK ajan kalır; iş geldikçe kopya açılır.
+  Kopya 1 ajan anahtarının kendisidir, sonrakiler `anahtar~2`, `anahtar~3`… (`~` anahtarda geçersiz, çarpışmaz;
+  `Domain/Agents/Workers`). **Kilit ve "boş" hesabı kopya başınadır**: `AgentCaller` kilidi kopya kimliğiyle, dağıtıcı
+  rolün boş kopyasını seçer (önce bu çalışmada son kullanılan — aynı karakter sürer — sonra en küçük numara); analiz de
+  boş kopyada koşar. Seçim ile çağrı arasında başka iş aynı kopyayı almasın diye **atomik ayırma** (`TryReserve`, 2 dk).
+  Kayıtlarda `Agent` hep md anahtarıdır (geçmiş, İşler, istatistik bozulmaz); kopya `Phase.Worker` / `Turn.Worker`'da.
+  Sahne olayları kopya kimliğiyle gider: kopya ilk işiyle kapıdan girer, boş masaya oturur, bitince 20 s bekleyip çıkar
+  (docs/SCENE.md → Kopyalar). İstem kopyaya port aralığı verir (kopya n: `5200+20(n−1)`'den 20 port).
+  - **Aynı proje sıra bekler:** aynı proje aynı klasör ve aynı gölge depodur. Bir çalışma yazarken (`Started` faz)
+    aynı projenin ikinci çalışması `WaitingSince` ile bekler ("proje başka bir çalışmada"), adım kapanınca uyanır.
+    Kopyalardan önce bunu ajan kilidi dolaylı sağlıyordu. Analiz (salt okunur) beklemez.
+  - **Bir çalışmanın görevleri hâlâ sırayla koşar** (kanal kilidi): kopyalar FARKLI işleri paralel yapar. Aynı işi bölüp
+    aynı projede birlikte çalışmak ayrı klasör (git worktree) + birleştirme ister; açık.
+  - İş havuzu varsayılanı 3 → **6** (5 kopya + devir payı). Kota: kopyalar aynı hesaptan harcar; limit koruması her
+    çağrıda ayrı bakar.
+- **Birden fazla çalışma aynı anda.** İş kanalı bir havuzdur (`AITeam:MaxParallelJobs`, varsayılan 6; 1 =
   eski sıralı davranış). İki kilit: **çalışma başına tek iş** (aynı `run.json`'a iki yazıcı olmaz; kanal kilidi)
   ve **ajan başına tek LLM çağrısı** (`AgentCaller` kilidi: analist A'da konuşurken B'nin analizi bekler).
   Dağıtımda "boş ajan" çalışmalar arası hesaplanır: başka bir **Running** çalışmada `Started` fazı olan ya da
@@ -301,6 +479,13 @@ Seçenek kimlikleri sabittir (`retry | skip | cancel`), etiket bağlama göre de
   tur sonunda `BudgetExceeded` olur ve `Detail` hangi ölçünün dolduğunu yazar. Harcama `run.input_tokens` /
   `run.output_tokens` sütunlarında birikir (tur başına kırılım `run_turn`'de kalır); 2026-09-22 öncesi işlerde
   bu sütunlar 0'dır: **ölçülmedi** demektir, sıfır harcandı demek değil.
+- **Kesilen tur da harcamadır (2026-09-23):** runtime tur sürerken mesaj başına kullanımı bildirir (`progress`,
+  `kind=usage`). Tur kesilirse (tur bekçisi, iptal, sağlayıcı hatası, çağrı sırasında limit) biriken kullanım
+  `run_turn`'e `cutShort=true` ile yazılır, maliyet `config/models.json → prices` tablosundan tahmin edilir (fiyat
+  yoksa null: token yazılır, `$` ölçülemedi) ve çalışmanın toplamına (bütçe) eklenir. İstemci bağlantıyı keserse
+  runtime turu **durdurur**: önceden `claude.exe` kimse beklemeden işi bitiriyordu (kayıtsız ~3 $, aynı dizinde iki ajan).
+- **Kim ne harcadı:** kota kaynağa göre ayrılmaz; `GET /usage/split` makinedeki CLI kayıtlarından ofis ajanı ile
+  Claude Code oturumlarını ayırır ve haftalık yüzdeyi eşdeğer `$` oranıyla böler (docs/API.md).
 - **Limit koruması** (asıl koruma): ayarlarda `limitGuards { provider: yüzde }`, varsayılan
   **%99**, Ayarlar ekranında platform bazında değiştirilir. Her LLM çağrısından önce (`LimitGuard`) sağlayıcının
   aktif kota pencereleri (saatlik, haftalık, modele özel) okunur (runtime 90 s önbellek); biri eşiğe ulaştıysa çağrı
@@ -331,9 +516,56 @@ LLM özeti (üçüncü kademe) **yoktur**, ölçüm onu hak ettiğini gösterene
   1,5–6 aralığı yoksa oran **4** kalır: ölçüm gelene kadar davranış değişmez.
 - **Ölçü kayda girer.** Geçmiş taşıyan her tur `Turn.context`'e sıkıştırma öncesi/sonrası mesaj ve karakteri,
   kullanılan oranı ve örnek sayısını yazar. Okuma: `python scripts/context-report.py`.
+- **Görev başında yazılan kod (2026-09-24, kullanıcı kararı: önce kodla, LLM yok).** Uygulama isteminde
+  "Bu işte şimdiye kadar yazılan kod": çalışmanın **ilk** anlık görüntüsünden (kapanmış fazların en eskisi) görevin
+  başlangıcına gölge depo farkı + değişen kod dosyalarının imzaları (`CodeDigest`: C# tür/genel üye/uç, TS/JS/Vue
+  dışa aktarılan + makrolar, Python üst düzey + genel metot + rota). Kaynak ajanın raporu değil **disk**: Bash'le
+  yazılan dosya da girer. Paket/derleme dizinleri ve kilit dosyaları farka hiç girmez; görevin dosyaları önce,
+  **3000 karakterde kesilir** (kod haritasıyla aynı gerekçe). İlk görevin ilk denemesinde ya da git yoksa bölüm
+  yoktur. Gerekçe (4 iş/14 görev): sonraki görevlerde 57 Read'in 18'i önceki görevin dosyasına, 12'si düzenlemeden.
+  Ölçüm: sonraki koşularda bu 12 düştü mü (`toolUses`), istem büyümesi iç tur başına girdiye oranla ne kadar.
 - **Üçüncü kademe (LLM özeti) için koşul:** raporda düşen geçmişin, özet turunun maliyetini aşacak kadar sık ve
   büyük olduğu görülmeli. Kurulursa `config/agents/` altında ucuz modelli bir ajan olur, `AgentCaller` üzerinden
   çağrılır (tur kaydı, bütçe ve limit koruması kendiliğinden).
+- **Tek ajanlı ekipte bu katman UYKUDADIR (2026-09-24 ölçümü, bilinçli).** 4 gerçek işin 18 turunda taşınan geçmiş
+  **0**, araçsız tur **0** (kalibrasyon örneği yok → oran 4'te). Geçmiş yalnız red döngüsünde taşınır, tek ajanlı
+  akışta red yok. Kod silinmedi: çok rollü akış geri gelirse kendiliğinden devreye girer. Yatırım yapılmaz.
+- **Bağlam asıl CLI oturumunun İÇİNDE büyür**: araç sonuçları, yazılan kod, düşünme. Ölçülen tepe tur başına 95–168K
+  token; CLI'nin kendi sıkıştırması hiç tetiklenmedi. Bu yüzden ölçü `Turn.peakContextTokens`'tır (turdaki en büyük
+  tek API çağrısı; `inputTokens` iç turların toplamı olduğu için büyümeyi söylemez) ve kaldıraçlar istem tarafındadır:
+  ajan md'sinde **okuma disiplini** (önce ara sonra dar oku, dosyaları topluca `cat` etme, taşan çıktıyı baştan
+  sona okuma), plandaki **kod haritası**. Etki `context-report.py`'nin ikinci bölümünden okunur.
+
+### Keşif alt ajanı (2026-09-26, kullanıcı: "fena değil"; şartları aşağıda, ayrıntılar varsayımla ilerlenir)
+
+- **Ne:** ajan md'sinde `explore_model` doluysa (ör. `claude-haiku-4-5-20251001`) ajanın **araçlı** turlarına salt okunur
+  bir alt ajan (`kesif`: Read/Glob/Grep, en çok 25 iç tur) açılır. Geniş kod aramasını o yapar; arama sonuçları onun
+  bağlamında kalır, ana modelin bağlamına yalnız özeti girer. Ana ajan ne zaman çağıracağına alt ajanın açıklamasından
+  karar verir ("yolunu bildiğin tek dosya için kullanma").
+- **Karar .NET'te** (`Application/Runs/Explorer`): yalnız araçlı turda, yalnız anthropic ajanında (SDK `agents`).
+  Başka sağlayıcıya verilirse 400 `agent.explore_unsupported`. Runtime yalnız eşler ve `Agent` aracını **yalnız verilen
+  alt ajanlarla** sınırlar: Claude Code'un yerleşik alt ajanları (general-purpose, Explore) reddedilir — araçlarını ve
+  modelini .NET'in seçmediği bir ajan koşmasın. Alt ajanın araçları da aynı izin denetiminden geçer.
+- **Kayıt (şart 1):** turun `inputTokens`/`costUsd`'si toplamdır; model başına pay `Turn.modelUsage`'dadır (SDK
+  `model_usage`). Kesilen turda alt ajanın mesajları kendi modelinin fiyatıyla sayılır (Opus fiyatıyla 4–5 kat
+  yazılırdı). Tepe bağlam (`peakContextTokens`) ana ajanındır, alt ajanın ayrı bağlamı ölçüye girmez. Alt ajanın araç
+  çağrıları kayıtta `kesif/Grep` diye görünür.
+- **Ölçüm (şart 2):** aynı brief'le önce/sonra karşılaştırması yapılmadan varsayılan açılmaz. `tek-kisilik-dev-kadro`
+  bu karşılaştırma için açıldı; sonuç PHASES'te. Alternatif (reddedilmedi): keşfi ayrı bir `config/agents` ajanı
+  olarak `AgentCaller` üzerinden koşmak — ama o zaman ana ajan keşfi kendisi başlatamaz, .NET'in önceden bilmesi gerekir.
+
+### İstem önbelleği ömrü (2026-09-24, kullanıcı onayı; varsayılan değişmedi)
+
+- Ölçüm: CLI **tüm** önbellek yazmalarını 1 saatlik yapıyor (oturum kayıtlarında `ephemeral_5m` = 0). 1 sa yazma baz
+  girdinin 2 katı, 5 dk yazma 1,25 katı. 4 işte ($35) yazma %40, çıktı %38, okuma %22; 5 dk ile hesapta **~%15** eder.
+- **Ayar:** Ayarlar → İstem önbelleği (`app_settings.cacheTtl`): boş = CLI varsayılanı · `5m` · `1h`. Yalnız Anthropic'e
+  gider; runtime yalnız CLI değişkenine eşler (`FORCE_PROMPT_CACHING_5M` / `ENABLE_PROMPT_CACHING_1H`), karar .NET'te.
+- **Bedeli:** iç turlar saniyeler arayla gelir, ama 5 dk'yı aşan bir araç çağrısından (npm install, uzun test) sonra
+  bağlamın tamamı yeniden yazılır; görevler arası ortak önek de (~20K) 5 dk'dan uzun arada düşer. Net etki ölçülmeli.
+- **Ölçü:** runtime yazmanın 5 dk payını ayırır (`Turn.cacheWrite5mTokens`), istenen ömür `Turn.cacheTtl`'a yazılır.
+  Fiyat tablosunda `cacheWrite5m` (yoksa girdi × 1,25): kesilen turun tahmini ve "Kim ne harcadı" bununla doğru kalır.
+  Abonelikte eşdeğer $ düşse de **kotanın aynı oranda düştüğü ölçülmedi**.
+- Karar ölçümden sonra: bir iş 5 dk ile koşar, `context-report.py` + kota yüzdesi karşılaştırılır; iyiyse varsayılan olur.
 
 ## Model, efor ve kimlik (2026-09-19, kullanıcı kararı)
 

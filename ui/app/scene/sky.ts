@@ -154,3 +154,91 @@ function paint(g: CanvasRenderingContext2D, w: number, h: number, hour: number):
   g.fillStyle = 'rgba(255,255,255,0.10)'
   for (let y = horizon + 1; y < h; y += 4) g.fillRect(0, y, w, 1)
 }
+
+// ------------------------------------------------------------------ vapur
+
+/** Karsiya gecis ve iskelede bekleme suresi: vapur gider, bekler, doner, bekler. */
+const FERRY_CROSS_MS = 80_000
+const FERRY_DOCK_MS = 20_000
+
+/**
+ * Vapur (kullanici istegi 2026-09-26: "camdan disarida denizde vapur gidip gelsin"): pencerenin denizinde ufuk cizgisinin
+ * hemen altinda soldan saga gider, pencere disinda bekler, sagdan sola doner. Konum duvar saatinden (Date.now) hesaplanir:
+ * sayfa yenilense de iki sekmede de ayni yerdedir. Sehir Hatlari renkleri: beyaz govde, koyu karina, sari baca.
+ * Gece pencereleri ve direk feneri yanar. Gokyuzunun USTUNE, arka planin ALTINA cizilir (pencere kayitlari onunde kalir).
+ */
+export function drawFerry(ctx: CanvasRenderingContext2D, rect: { x: number; y: number; w: number; h: number }, hour: number, wallMs: number): void {
+  const period = 2 * (FERRY_CROSS_MS + FERRY_DOCK_MS)
+  const t = wallMs % period
+  let dir: 1 | -1
+  let p: number
+  if (t < FERRY_CROSS_MS) { dir = 1; p = t / FERRY_CROSS_MS }
+  else if (t < FERRY_CROSS_MS + FERRY_DOCK_MS) return
+  else if (t < 2 * FERRY_CROSS_MS + FERRY_DOCK_MS) { dir = -1; p = (t - FERRY_CROSS_MS - FERRY_DOCK_MS) / FERRY_CROSS_MS }
+  else return
+
+  // Olcek: sehir binalari 16-42 px; 1.5 kat vapur ufukta okunur ama binalardan kucuk kalir.
+  const k1 = 1.5
+  const len = 46 * k1
+  const span = rect.w + len * 2
+  const cx = Math.round(dir > 0 ? rect.x - len + p * span : rect.x + rect.w + len - p * span)
+  const wl = Math.round(rect.y + rect.h * 0.72 + 14)
+  const k = at(hour)
+  const night = Math.max(0, 1 - k.light)
+
+  // Yerel koordinat: pruva +x, yukari -y. `dir` ile aynalanir.
+  const box = (x: number, y: number, w: number, h: number, color: string) => {
+    ctx.fillStyle = color
+    ctx.fillRect(dir > 0 ? cx + x * k1 : cx - (x + w) * k1, wl + y * k1, w * k1, h * k1)
+  }
+  const body: Array<[number, number, number, number, string]> = [
+    [-21, -3, 42, 3, '#2b2f3a'],
+    [-22, -6, 42, 3, '#f4f3ee'],
+    [20, -6, 3, 2, '#f4f3ee'],
+    [-22, -4, 44, 1, '#c8352e'],
+    [-16, -11, 30, 5, '#f7f6f1'],
+    [-10, -14, 16, 3, '#e8e7e1'],
+    [-6, -19, 5, 5, '#f2c230'],
+    [-6, -19, 5, 1, '#1f2126'],
+  ]
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(rect.x, rect.y, rect.w, rect.h)
+  ctx.clip()
+
+  // Kopuk izi: kicin arkasinda sonen beyaz cizgiler.
+  const shimmer = (wallMs / 400) % 1
+  ctx.globalAlpha = 0.45
+  box(-40 - shimmer * 4, 0, 18, 1, 'rgba(255,255,255,0.8)')
+  ctx.globalAlpha = 0.28
+  box(-52 - shimmer * 6, 1, 14, 1, 'rgba(255,255,255,0.8)')
+  box(22, 0, 4, 1, 'rgba(255,255,255,0.8)')
+  ctx.globalAlpha = 1
+
+  for (const [x, y, w, h, c] of body) box(x, y, w, h, c)
+  // Gece govde koyulasir (golge tonu), sonra yanan pencereler ustune.
+  if (night > 0) for (const [x, y, w, h] of body) box(x, y, w, h, `rgba(12,16,42,${0.6 * night})`)
+  const win = night > 0.4 ? '#ffd98a' : '#3b4a66'
+  for (let i = 0; i < 7; i++) box(-14 + i * 4, -10, 2, 2, win)
+  box(2, -13, 3, 1, win)
+
+  // Baca dumani: arkaya ve yukari suzulur, soner.
+  for (let i = 0; i < 3; i++) {
+    const age = ((wallMs / 1000 + i * 0.9) % 2.7) / 2.7
+    const lx = -4 - age * 16
+    const ly = -21 - age * 9
+    const r = 1.5 + age * 2.8
+    ctx.fillStyle = night > 0.5 ? `rgba(150,150,165,${0.35 * (1 - age)})` : `rgba(240,240,245,${0.5 * (1 - age)})`
+    ctx.beginPath()
+    ctx.arc(dir > 0 ? cx + lx * k1 : cx - lx * k1, wl + ly * k1, r * k1, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // Direk feneri ve pruva feneri (gece).
+  if (night > 0.4) {
+    box(0, -17, 1, 1, '#fff6d6')
+    box(21, -7, 1, 1, dir > 0 ? '#5fe07a' : '#ff5a4f')
+  }
+  ctx.restore()
+}

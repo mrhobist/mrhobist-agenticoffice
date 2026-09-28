@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import type { CreateProjectRequest, InboxItem, LaunchResult, ProjectCard, ProjectDeleteResult, ProjectModel, ReorderRequest, RunSummary, WorkflowListItem } from '~/api/types'
+import type { CreateProjectRequest, ImportProjectRequest, InboxItem, LaunchResult, ProjectCard, ProjectDeleteResult, ProjectInspection, ProjectModel, ReorderRequest, RunSummary, WorkflowListItem } from '~/api/types'
 import DirPicker from '~/components/DirPicker.vue'
+import LangBar from '~/components/LangBar.vue'
 import { useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, fmtCost as fmtCostLabel, fmtTokens } from '~/api/labels'
 
 /**
  * Proje karti acildi (docs/DOMAIN.md → Projeler): kagit pano, sekmeler Isler / Ayarlar.
- *  - projectKey null → yeni proje formu (baslik, aciklama, akis, hedef dizin; butce yok).
+ *  - projectKey null → yeni proje formu (baslik, aciklama, akis, hedef dizin; butce yok). Iki kip (2026-09-26):
+ *    "Sifirdan" bos klasor acar; "Mevcut projeyi iceri al" var olan bir klasoru secer, sunucu inceler (dil seridi,
+ *    git, derleme dosyalari) ve baslik/aciklama/anahtari onerir. Dosyalar yerinde kalir.
+ *  - Isler sekmesinde projenin dil seridi (GitHub'daki gibi) ve git dali.
  *  - Isler: bu projenin calismalari; satira tiklaninca calisma paneli. "Yeni is" YALNIZ burada.
  *  - Ayarlar: proje alanlari (hedef dizin klasor seciciyle, serbest metin degil); silme iki adimda onaylanir:
  *    suren is varsa kapali, gecmis projeyle gider, dosyalarin silinip silinmeyecegi ayrica isaretlenir.
@@ -46,7 +50,70 @@ function budget(v: string): number | null {
 }
 
 const keyTouched = ref(false)
-watch(nTitle, (t) => { if (!keyTouched.value) nKey.value = slug(t) })
+/** Sifirdan: anahtar basliktan. Iceri alma: anahtar klasor adindan gelir (sunucunun onerisi), baslik onu ezmesin. */
+const newMode = ref<'fresh' | 'import'>('fresh')
+watch(nTitle, (t) => { if (!keyTouched.value && newMode.value === 'fresh') nKey.value = slug(t) })
+watch(newMode, (m) => {
+  if (!keyTouched.value) nKey.value = m === 'fresh' ? slug(nTitle.value) : (inspection.value?.suggestedKey ?? '')
+})
+
+// ------------------------------------------------------------------ iceri alma (GET /projects/inspect, POST /projects/import)
+
+const iPath = ref('')
+const inspection = ref<ProjectInspection | null>(null)
+const inspecting = ref(false)
+const inspectError = ref<string | null>(null)
+const titleTouched = ref(false)
+const descTouched = ref(false)
+
+watch(iPath, async (path) => {
+  inspection.value = null
+  inspectError.value = null
+  if (!path) return
+  inspecting.value = true
+  try {
+    const r = await api.get<ProjectInspection>(`/api/v1/projects/inspect?path=${encodeURIComponent(path)}`)
+    if (iPath.value !== path) return // bu arada baska klasor secildi
+    inspection.value = r
+    // On dolum: kullanicinin elle yazdigina dokunulmaz.
+    if (!titleTouched.value) nTitle.value = r.suggestedTitle
+    if (!descTouched.value) nDesc.value = r.suggestedDescription
+    if (!keyTouched.value) nKey.value = r.suggestedKey
+  } catch (e) {
+    if (iPath.value === path) inspectError.value = errorText(e)
+  } finally {
+    if (iPath.value === path) inspecting.value = false
+  }
+})
+
+async function importProject() {
+  if (creating.value || !iPath.value || !inspection.value || inspection.value.usedBy) return
+  creating.value = true
+  createError.value = null
+  try {
+    // Anahtara dokunulmadiysa bos gider: sunucu klasor adini alir, o anahtar alinmissa sonuna -2 ekler.
+    const body: ImportProjectRequest = {
+      path: iPath.value,
+      key: keyTouched.value ? nKey.value.trim() || null : null,
+      title: nTitle.value.trim() || null,
+      description: nDesc.value.trim(),
+      workflow: nWorkflow.value || null,
+      maxCostUsd: budget(nMaxCost.value),
+      maxTokens: budget(nMaxTokens.value),
+    }
+    const card = await api.post<ProjectCard>('/api/v1/projects/import', body)
+    emit('created', card.key)
+  } catch (e) {
+    createError.value = errorText(e)
+  } finally {
+    creating.value = false
+  }
+}
+
+function submitNew() { void (newMode.value === 'import' ? importProject() : create()) }
+const canSubmit = computed(() => newMode.value === 'import'
+  ? !!inspection.value && !inspection.value.usedBy && !!nTitle.value.trim()
+  : !!nTitle.value.trim() && !!nKey.value.trim())
 
 async function loadWorkflows() {
   try { workflows.value = await api.get<WorkflowListItem[]>('/api/v1/workflows') } catch { workflows.value = [] }
@@ -71,6 +138,16 @@ async function create() {
 
 const card = ref<ProjectCard | null>(null)
 const runs = ref<RunSummary[] | null>(null)
+/** Projenin dil seridi ve git bilgisi (GET /projects/{key}/inspect). Yoklamada degil: acilista ve bir is bitince. */
+const code = ref<ProjectInspection | null>(null)
+async function loadCode() {
+  const key = props.projectKey
+  if (!key) return
+  try {
+    const r = await api.get<ProjectInspection>(`/api/v1/projects/${encodeURIComponent(key)}/inspect`)
+    if (props.projectKey === key) code.value = r
+  } catch { code.value = null }
+}
 const loadError = ref<string | null>(null)
 const tab = ref<'runs' | 'settings'>('runs')
 let timer: ReturnType<typeof setInterval> | undefined
@@ -171,11 +248,13 @@ async function load() {
 
 watch(() => props.projectKey, (k) => {
   clearInterval(timer)
-  card.value = null; runs.value = null; loadError.value = null; tab.value = 'runs'; editing.value = false; confirmingDelete.value = false; deleted.value = null
-  if (k) { void load(); timer = setInterval(() => { void load() }, 5000) }
+  card.value = null; runs.value = null; code.value = null; loadError.value = null; tab.value = 'runs'; editing.value = false; confirmingDelete.value = false; deleted.value = null
+  if (k) { void load(); void loadCode(); timer = setInterval(() => { void load() }, 5000) }
   else { void loadWorkflows() }
 }, { immediate: true })
 onMounted(() => { if (props.projectKey) void loadWorkflows() })
+// Is bittiginde ajan dosya yazmis olabilir: serit tazelenir (tarama sunucuda 30 sn onbellekte).
+watch(() => card.value?.completed, (n, o) => { if (o !== undefined && n !== o) void loadCode() })
 onBeforeUnmount(() => clearInterval(timer))
 
 async function save() {
@@ -241,18 +320,45 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
           <h2 id="project-title">Yeni proje</h2>
           <button class="x" type="button" aria-label="Kapat" @click="emit('close')">×</button>
         </header>
-        <form class="form" @submit.prevent="create">
+        <nav class="tabs" role="tablist" aria-label="Proje nasıl başlasın">
+          <button type="button" role="tab" :class="{ on: newMode === 'fresh' }" :aria-selected="newMode === 'fresh'" @click="newMode = 'fresh'">Sıfırdan</button>
+          <button type="button" role="tab" :class="{ on: newMode === 'import' }" :aria-selected="newMode === 'import'" @click="newMode = 'import'">Mevcut projeyi içeri al</button>
+        </nav>
+        <form class="form" @submit.prevent="submitNew">
+          <!-- Iceri alma: once klasor, sunucu inceler; form onerilerle dolar. -->
+          <template v-if="newMode === 'import'">
+            <div class="field">
+              <label class="lbl" for="p-path">Proje klasörü <span class="sub">(var olan; depo içi ya da başka sürücü)</span></label>
+              <DirPicker id="p-path" v-model="iPath" mode="import" :project-key="nKey" />
+            </div>
+            <div v-if="iPath" class="preview" aria-live="polite">
+              <p v-if="inspecting" class="sub">Klasör inceleniyor…</p>
+              <p v-else-if="inspectError" class="err" role="alert">{{ inspectError }}</p>
+              <template v-else-if="inspection">
+                <LangBar v-if="inspection.languages.length" :languages="inspection.languages" />
+                <p v-else class="sub">Tanınan kod dosyası yok: boş ya da yalnız belge/veri içeren bir klasör.</p>
+                <p class="sub">
+                  {{ inspection.files.toLocaleString('tr-TR') }}{{ inspection.truncated ? '+' : '' }} dosya ·
+                  <template v-if="inspection.isGit">git <code>{{ inspection.gitBranch ?? '?' }}</code></template><template v-else>git deposu değil</template>
+                  <template v-if="inspection.gitRemote"> · <code>{{ inspection.gitRemote }}</code></template>
+                </p>
+                <p v-if="inspection.manifests.length" class="chips"><code v-for="m in inspection.manifests" :key="m">{{ m }}</code></p>
+                <p class="sub">{{ inspection.launchable ? '“Projeyi başlat” hazır: kökte run.cmd var.' : 'Kökte run.cmd yok: ajan uygulamayı çalıştırılabilir bulunca yazar.' }}</p>
+                <p v-if="inspection.usedBy" class="err" role="alert">Bu klasör zaten «{{ inspection.usedBy }}» projesinin (ya da onun iç/dış klasörü). Aynı klasöre iki proje bağlanamaz.</p>
+              </template>
+            </div>
+          </template>
           <div class="field">
             <label class="lbl" for="p-title">Başlık</label>
-            <input id="p-title" v-model="nTitle" type="text" required placeholder="Hello World Console">
+            <input id="p-title" v-model="nTitle" type="text" required placeholder="Hello World Console" @input="titleTouched = true">
           </div>
           <div class="field">
-            <label class="lbl" for="p-key">Anahtar <span class="sub">(klasör ve adres; küçük harf, tire)</span></label>
-            <input id="p-key" v-model="nKey" type="text" required pattern="[a-z0-9][a-z0-9_-]*" spellcheck="false" @input="keyTouched = true">
+            <label class="lbl" for="p-key">Anahtar <span class="sub">{{ newMode === 'import' ? '(adres; boş = klasör adından)' : '(klasör ve adres; küçük harf, tire)' }}</span></label>
+            <input id="p-key" v-model="nKey" type="text" :required="newMode === 'fresh'" pattern="[a-z0-9][a-z0-9_\-]*" spellcheck="false" @input="keyTouched = true">
           </div>
           <div class="field">
             <label class="lbl" for="p-desc">Açıklama</label>
-            <textarea id="p-desc" v-model="nDesc" rows="3" placeholder="Ne üretiyoruz, kime, hangi kısıtlarla?" />
+            <textarea id="p-desc" v-model="nDesc" rows="3" placeholder="Ne üretiyoruz, kime, hangi kısıtlarla?" @input="descTouched = true" />
           </div>
           <div class="row">
             <div class="field">
@@ -262,8 +368,8 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
                 <option v-if="!workflows.length" value="default">Varsayılan</option>
               </select>
             </div>
-            <div class="field">
-              <label class="lbl" for="p-dir">Hedef dizin <span class="sub">(depo içinden seçilir)</span></label>
+            <div v-if="newMode === 'fresh'" class="field">
+              <label class="lbl" for="p-dir">Hedef dizin <span class="sub">(klasör seçilir)</span></label>
               <DirPicker id="p-dir" v-model="nDir" :project-key="nKey" />
             </div>
           </div>
@@ -278,9 +384,10 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
               <input id="p-maxtok" v-model="nMaxTokens" type="text" inputmode="numeric" placeholder="sınırsız">
             </div>
           </div>
-          <p class="sub">İşler bu projenin içinde açılır, akışı devralır. Bütçe hem iş başına (iş formunda) hem proje toplamı olarak verilebilir; ikisi de boşsa sınır yoktur.</p>
+          <p v-if="newMode === 'import'" class="sub">Dosyalar yerinde kalır: kopyalanmaz, taşınmaz. İlk işte ajan önce var olan kodu okur, yapıya ve komutlara uyar, projenin git geçmişine dokunmaz. Proje silinse de depo dışı klasör silinmez.</p>
+          <p v-else class="sub">İşler bu projenin içinde açılır, akışı devralır. Bütçe hem iş başına (iş formunda) hem proje toplamı olarak verilebilir; ikisi de boşsa sınır yoktur.</p>
           <div class="actions">
-            <button class="primary" type="submit" :disabled="creating || !nTitle.trim() || !nKey.trim()">{{ creating ? 'Oluşturuluyor…' : 'Projeyi oluştur' }}</button>
+            <button class="primary" type="submit" :disabled="creating || !canSubmit">{{ creating ? (newMode === 'import' ? 'İçeri alınıyor…' : 'Oluşturuluyor…') : (newMode === 'import' ? 'Projeyi içeri al' : 'Projeyi oluştur') }}</button>
             <span v-if="createError" class="err" role="alert">{{ createError }}</span>
           </div>
         </form>
@@ -331,6 +438,15 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
 
         <div v-else-if="tab === 'runs'" class="runs">
           <p v-if="card?.description" class="desc">{{ card.description }}</p>
+          <!-- Dil seridi (GitHub'daki gibi) + git: bos klasorde (sifirdan proje, henuz is yok) hic cizilmez. -->
+          <div v-if="code && (code.languages.length || code.isGit)" class="code">
+            <LangBar :languages="code.languages" />
+            <span class="sub">
+              {{ code.files.toLocaleString('tr-TR') }}{{ code.truncated ? '+' : '' }} dosya
+              <template v-if="code.isGit"> · git <code>{{ code.gitBranch ?? '?' }}</code></template>
+              <template v-if="code.gitRemote"> · <code>{{ code.gitRemote }}</code></template>
+            </span>
+          </div>
           <p v-if="runs && !runs.length" class="empty">Bu projede henüz iş yok. Aşağıdan ilk brief'i ver.</p>
           <template v-for="group in [['aktif', activeRuns], ['geçmiş', otherRuns]] as const" :key="group[0]">
             <h3 v-if="group[1].length" class="group">{{ group[0] }} <span class="sub">{{ group[1].length }}</span></h3>
@@ -362,7 +478,7 @@ function initials(t: string): string { return t.split(/\s+/).filter(Boolean).sli
               </select>
             </div>
             <div class="field">
-              <label class="lbl" for="e-dir">Hedef dizin <span class="sub">(depo içinden seçilir)</span></label>
+              <label class="lbl" for="e-dir">Hedef dizin <span class="sub">(klasör seçilir)</span></label>
               <DirPicker id="e-dir" v-model="eDir" :project-key="card?.key ?? ''" />
             </div>
           </div>
@@ -505,6 +621,12 @@ footer { margin-top: auto; padding: 10px 14px; border-top: 1px solid #cfcabb; ba
 .budget.crit .fill { background: #d23b3b; }
 .budget.crit .pct { color: #b3261e; }
 .unlimited { color: #6b7285; }
+.preview, .code { display: flex; flex-direction: column; gap: 6px; }
+.preview { border: 1px solid #d8d2c2; background: #f7f4ea; border-radius: 6px; padding: 10px; }
+.preview p { margin: 0; }
+.code { padding: 8px 0 2px; border-bottom: 1px dashed #d8d2c2; padding-bottom: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips code { font-size: 11px; padding: 2px 6px; background: #fff; border: 1px solid #e3ded0; }
 
 .launch { font: inherit; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 4px; background: #7cc46b; color: #14301a; border: 2px solid #3d6b2f; cursor: pointer; white-space: nowrap; }
 .launch:hover:not(:disabled) { background: #8fd47d; }

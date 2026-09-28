@@ -15,7 +15,7 @@ Developer'ın çıktısını denetlersin. İki işin var:
    ihlal edildiğini yaz.
 
 2. TEST — kodu gerçekten çalıştır. Test dosyası yaz, çalıştır, sonucu gör.
-   Tahmin etme; `tests_run` alanını ancak testi FİİLEN çalıştırdıysan true yap.
+   Tahmin etme; `testsRun` alanını ancak testi FİİLEN çalıştırdıysan true yap.
 
 Kurallar:
 - Şüphedeyken reddet. Yanlış onay, gereksiz bir tur tekrardan pahalıdır.

@@ -23,7 +23,51 @@ public sealed record RuntimeTurnRequest(
     /// Sistem promptunun SDK'ya nasil verildigi (<see cref="SystemPromptModes"/>). Karar burada, .NET'te;
     /// runtime yalniz esler. Yeni alan SONA eklendi (CLAUDE.md §5); yoksa eski davranis (<c>replace</c>).
     /// </summary>
-    string SystemPromptMode = SystemPromptModes.Replace);
+    string SystemPromptMode = SystemPromptModes.Replace,
+    /// <summary>
+    /// Ajana acilan MCP sunuculari (anahtar → baglanti). Yalniz aracli turda ve MCP destekleyen saglayicida dolu; hangi ajanin
+    /// hangisini aldigi .NET'in karari (ajan md'si <c>mcp</c>). Sona eklendi (CLAUDE.md §5); null = yok.
+    /// </summary>
+    IReadOnlyDictionary<string, RuntimeMcpServer>? McpServers = null,
+    /// <summary>
+    /// Cwd DISINDA okunabilecek dizinler (is ekleri). Yazma araclari yine yalniz <see cref="Cwd"/> altinda; Bash bu dizinlerdeki yollari
+    /// kullanabilir (ör. bir resmi projeye kopyalamak). Sona eklendi; null = yok.
+    /// </summary>
+    IReadOnlyList<string>? ReadDirs = null,
+    /// <summary>
+    /// Modele HIC sunulmayacak araclar (SDK <c>disallowed_tools</c>): MCP sunucusunda secilmemis araclar, <c>mcp__{key}__{arac}</c>.
+    /// Semalari baglama girmez. Sona eklendi; null = yok.
+    /// </summary>
+    IReadOnlyList<string>? DisallowedTools = null,
+    /// <summary>
+    /// Istem onbelleginin omru (<see cref="Domain.Settings.CacheTtls"/>): Ayarlar'dan, yalniz Anthropic'e. null = CLI varsayilani (2026-09-24
+    /// olcumu: 1 sa). Runtime yalniz CLI degiskenine esler. Sona eklendi (CLAUDE.md §5).
+    /// </summary>
+    string? CacheTtl = null,
+    /// <summary>
+    /// Ajanin cagirabilecegi alt ajanlar (ad → tanim; SDK <c>agents</c>, <c>Agent</c> araci <see cref="Tools"/>'ta olmali). Hangi ajanin
+    /// hangi alt ajani aldigi .NET'in karari (<see cref="Runs.Explorer"/>); runtime yalniz esler. Sona eklendi; null = yok.
+    /// </summary>
+    IReadOnlyDictionary<string, RuntimeSubagent>? Subagents = null);
+
+/// <summary>Runtime'a giden alt ajan tanimi (SDK <c>AgentDefinition</c>): ana ajana gorunen aciklama, kendi istemi, araclari, modeli.</summary>
+public sealed record RuntimeSubagent(string Description, string Prompt, IReadOnlyList<string> Tools, string Model, int? MaxTurns = null);
+
+/// <summary>Runtime'a giden MCP baglantisi (SDK bicimi): <c>stdio</c> komut/args/env · <c>http</c>|<c>sse</c> url/basliklar.</summary>
+public sealed record RuntimeMcpServer(
+    string Type,
+    string? Command = null,
+    IReadOnlyList<string>? Args = null,
+    IReadOnlyDictionary<string, string>? Env = null,
+    string? Url = null,
+    IReadOnlyDictionary<string, string>? Headers = null,
+    /// <summary>Izin listesi (arac adlari, oneksiz); null = hepsi. Runtime'in izin denetimi disindakileri reddeder. Sona eklendi.</summary>
+    IReadOnlyList<string>? Tools = null);
+
+/// <summary>MCP baglanti denemesinin sonucu: sunucu acildi mi, hangi araclari sunuyor. Durum degil, anlik olcum.</summary>
+public sealed record RuntimeMcpProbe(bool Ok, string Detail, IReadOnlyList<RuntimeMcpTool> Tools, string? ServerName = null, string? ServerVersion = null);
+
+public sealed record RuntimeMcpTool(string Name, string? Description);
 
 /// <summary>
 /// Claude Code'un KENDI sistem promptu korunsun mu. Olculdu 2026-09-21 (ayni brief/model/efor):
@@ -48,8 +92,10 @@ public sealed record RuntimeMessage(string Role, string Content);
 /// Tur kullanimi. <paramref name="InputTokens"/> TOPLAMDIR: dogrudan + onbellege yazilan + onbellekten okunan.
 /// <paramref name="CacheReadTokens"/> ve <paramref name="CacheWriteTokens"/> o toplamin icindeki paylardir
 /// (ikisi de 0 = saglayici onbellek bildirmiyor). Yeni alanlar SONA eklendi (CLAUDE.md §5).
+/// <paramref name="CacheWrite5mTokens"/>: yazmanin 5 dakikalik payi (ucuz omur); 0 = hepsi 1 saatlik ya da bildirilmedi.
+/// <paramref name="PeakContextTokens"/>: turdaki en buyuk tek API cagrisinin girdisi, yani baglamin tepesi (0 = olculemedi).
 /// </summary>
-public sealed record RuntimeUsage(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0);
+public sealed record RuntimeUsage(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0, int CacheWrite5mTokens = 0, int PeakContextTokens = 0);
 
 public sealed record RuntimeToolUse(string Tool, string? Target);
 
@@ -64,7 +110,12 @@ public sealed record RuntimeTurnResponse(
     double DurationS,
     int Attempts,
     IReadOnlyList<RuntimeToolUse>? ToolUses = null,
-    int Turns = 1);
+    int Turns = 1,
+    /// <summary>Model basina kullanim (ana model + alt ajanlar; SDK <c>model_usage</c>). Tek model ya da bildirilmediyse null. Sona eklendi.</summary>
+    IReadOnlyList<RuntimeModelUsage>? ModelUsage = null);
+
+/// <summary>Turdaki tek modelin kullanimi. <paramref name="InputTokens"/> TOPLAMDIR (dogrudan + onbellek okuma + yazma), <see cref="RuntimeUsage"/> gibi.</summary>
+public sealed record RuntimeModelUsage(string Model, int InputTokens, int OutputTokens, int CacheReadTokens, int CacheWriteTokens, decimal? CostUsd);
 
 /// <summary>Katalogda gorunmek erisilebilir olmak DEGILDIR; <see cref="Reachable"/> fiilen cagirarak dogrulanir.</summary>
 public sealed record RuntimeModelInfo(Provider Provider, string Model, bool Reachable, string Detail);
@@ -108,13 +159,34 @@ public interface IAgentRuntimeService
 
     /// <summary>Kalan kullanim (kota pencereleri). Runtime 30 s onbellekler; <paramref name="refresh"/> atlar.</summary>
     Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct);
+
+    /// <summary>
+    /// Makinedeki CLI oturum kayitlarindan kaynak/klasor/model basina token (kim ne harcadi). Kaynak CLI'nin giris noktasidir:
+    /// ofis ajani <c>sdk-py</c>, etkilesimli oturumlar <c>cli</c> / <c>claude-desktop</c>... Fiyat ve pay burada degil, .NET'te.
+    /// </summary>
+    Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct);
+
+    /// <summary>
+    /// MCP sunucusuna baglanip araclarini listeler (yonetim ekrani "Baglantiyi dene"). Durumsuz: runtime sunucuyu acar, listeler,
+    /// kapatir. Baglanamazsa hata degil <see cref="RuntimeMcpProbe.Ok"/> = false + neden.
+    /// </summary>
+    Task<RuntimeMcpProbe> ProbeMcpAsync(RuntimeMcpServer server, CancellationToken ct);
 }
+
+public sealed record RuntimeLocalUsage(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens, long CacheWrite5mTokens = 0);
 
 /// <summary>Runtime'a ulasilamiyor: Api 503 <c>runtime.unavailable</c> doner.</summary>
 public sealed class RuntimeUnavailableException(string message) : Exception(message);
 
 /// <summary>Runtime cevap verdi ama hata dondu (5xx): kapali degil, ucu bozuk. Api 502 <c>runtime.error</c> doner.</summary>
 public sealed class RuntimeErrorException(string message) : Exception(message);
+
+/// <summary>
+/// Tur zamaninda bitmedi: hareketsiz kaldi ya da ust sinira dayandi (2026-09-23). Kullanici iptali DEGIL -- o
+/// <see cref="OperationCanceledException"/> olarak kalir. Faz <c>Timeout</c> nedeniyle kapanir; yazilan dosyalar diskte
+/// oldugu icin "Yeniden dene" gorevi "devam et" notuyla surdurur. Otomatik tekrar YOK: ayni uzun turu bastan kostururdu.
+/// </summary>
+public sealed class RuntimeTimeoutException(string message) : Exception(message);
 
 /// <summary>
 /// Saglayici turu kota penceresi doldugu icin reddetti (<c>runtime.provider_limit</c>). Hata degil BEKLEMEDIR:

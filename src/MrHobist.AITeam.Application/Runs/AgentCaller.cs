@@ -36,7 +36,8 @@ public sealed record AgentReply(
 /// Ajanin araclari ve calisma dizini (kullanici karari 2026-09-19: developer/testci dosyayi kendisi yazar, testi kendisi kosar).
 /// Hangi adimin hangi araci aldigi <see cref="ForKind"/>'da; runtime yalniz iletir, yazma <see cref="Cwd"/> disina cikamaz.
 /// </summary>
-public sealed record ToolAccess(IReadOnlyList<string> Tools, string Cwd, int MaxTurns)
+/// <see cref="ReadDirs"/>: cwd disinda OKUNABILECEK dizinler (is ekleri, docs/DOMAIN.md → Ekler); yazma yine yalniz cwd'de.
+public sealed record ToolAccess(IReadOnlyList<string> Tools, string Cwd, int MaxTurns, IReadOnlyList<string>? ReadDirs = null)
 {
     public static readonly IReadOnlyList<string> ReadOnly = ["Read", "Glob", "Grep"];
 
@@ -72,20 +73,93 @@ public sealed record RetryPolicy(int Attempts, TimeSpan BaseDelay)
 }
 
 /// <summary>
+/// Tur bekcisi (2026-09-23): sabit HTTP suresi yerine HAREKETSIZLIK. Ajan arac cagirdikca (ilerleme bildirimi) sayac sifirlanir;
+/// <see cref="Idle"/> boyunca hic hareket yoksa ya da tur <see cref="HardCap"/>'e dayanirsa kesilir. Olcum: sabit 12 dk
+/// Opus 5.5 high'in 58 dosyalik iskelet turunu, ajan hala dosya yazarken kesti. Araci olmayan turda ilerleme yoktur;
+/// orada <see cref="Idle"/> turun baslangicindan sayilir (plan turu ~5 dk).
+/// </summary>
+public sealed record TurnWatch(TimeSpan Idle, TimeSpan HardCap, TimeSpan Poll)
+{
+    public static readonly TurnWatch Default = new(TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(180), TimeSpan.FromSeconds(30));
+}
+
+/// <summary>
 /// Bir ajan adina LLM cagrisi: ekipten ajani bulur, prompt'u kurar, hassasiyet politikasini cagridan ONCE denetler,
 /// runtime'i cagirir, turu calismanin tur kaydina yazar. Is kurali burada yok; yalniz "nasil cagrilir".
 /// Ajan basina tek is (kullanici karari): ayni ajanin iki LLM cagrisi ayni anda kosmaz, ikincisi bekler.
 /// Gecici hatalarda otomatik tekrar (docs/DOMAIN.md → Tekrar).
 /// </summary>
-public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null)
+public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime, IRunStore runs, ISceneEventPublisher scene, RetryPolicy? retry = null, LimitGuard? limits = null, ProgressRegistry? progress = null, TurnWatch? watch = null, IModelCatalog? catalog = null, IMcpStore? mcp = null, Mcp.IMcpTokenRefresher? mcpTokens = null, ISettingsStore? settings = null)
 {
+    /// <summary>Kesilen turun kismi yaniti bu anahtarla istisnaya eklenir; RunService maliyeti calismanin toplamina ekler.</summary>
+    public const string PartialReplyKey = "aiteam.partialReply";
+
+    private readonly TurnWatch _watch = watch ?? TurnWatch.Default;
+
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AgentLocks = new(StringComparer.Ordinal);
 
     private readonly RetryPolicy _retry = retry ?? RetryPolicy.Default;
 
-    /// <summary>Su anda LLM cagrisi icinde olan ajanlar (calismalar arasi "ajan basina tek is" icin).</summary>
+    /// <summary>
+    /// Secilmis ama cagrisi henuz baslamamis kopyalar: iki is ayni anda "kopya 1 bos" deyip ayni kopyayi secmesin (ikincisi
+    /// kilitte sessizce beklerdi, paralellik kaybolurdu). Cagri kilidi alinca duser; cagri hic gelmezse <see cref="ReservationTtl"/> sonra.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, DateTimeOffset> Reserved = new(StringComparer.Ordinal);
+
+    private static readonly TimeSpan ReservationTtl = TimeSpan.FromMinutes(2);
+
+    /// <summary>Su anda LLM cagrisi icinde olan ya da yeni ayrilmis KOPYALAR (calismalar arasi "kopya basina tek is"; docs/DOMAIN.md → Kopyalar).</summary>
     public static IReadOnlySet<string> BusyAgents
-        => AgentLocks.Where(kv => kv.Value.CurrentCount == 0).Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
+    {
+        get
+        {
+            var fresh = DateTimeOffset.UtcNow - ReservationTtl;
+            var busy = AgentLocks.Where(kv => kv.Value.CurrentCount == 0).Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
+            busy.UnionWith(Reserved.Where(kv => kv.Value > fresh).Select(kv => kv.Key));
+            return busy;
+        }
+    }
+
+    /// <summary>
+    /// Kopyayi atomik ayirir: kilidi tutulmuyor ve taze ayrilmamissa true. Ayirma, ayni kopyanin <see cref="CallAsync"/>'u kilidi
+    /// alinca duser; cagriya donusmeyen yol <see cref="Unreserve"/> ile birakir (yoksa sure dolunca kendiliginden).
+    /// </summary>
+    public static bool TryReserve(string worker)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(worker);
+        if (AgentLocks.TryGetValue(worker, out var gate) && gate.CurrentCount == 0)
+        {
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var added = false;
+        Reserved.AddOrUpdate(worker, _ => { added = true; return now; }, (_, at) =>
+        {
+            if (at > now - ReservationTtl)
+            {
+                return at;
+            }
+
+            added = true;
+            return now;
+        });
+        return added;
+    }
+
+    public static void Unreserve(string worker) => Reserved.TryRemove(worker, out _);
+
+    /// <summary>
+    /// Ajanin bos bir kopyasini secip ayirir: once <paramref name="preferred"/>, sonra en kucuk numarali. <paramref name="busy"/> kayitlardan
+    /// gelen mesgul kopyalar (baska calismada Started faz). Hepsi doluysa kopya 1 (cagri kilitte bekler; eski davranis).
+    /// </summary>
+    public static string ReserveWorker(string agentKey, int instances, IReadOnlySet<string> busy, string? preferred = null)
+    {
+        ArgumentNullException.ThrowIfNull(busy);
+        var all = Workers.All(agentKey, instances).ToList();
+        List<string> order = preferred is not null && all.Contains(preferred, StringComparer.Ordinal) ? [preferred, .. all.Where(w => w != preferred)] : all;
+        return order.FirstOrDefault(w => !busy.Contains(w) && TryReserve(w)) ?? agentKey;
+    }
 
     public async Task<AgentReply> CallAsync(
         Run run,
@@ -97,10 +171,19 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
         int? round,
         CancellationToken ct,
         ToolAccess? tools = null,
-        ContextStats? context = null)
+        ContextStats? context = null,
+        IReadOnlyCollection<string>? knowledge = null,
+        string? worker = null)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(messages);
+        // Kopya (docs/DOMAIN.md → Kopyalar): kilit ve sahne kopya kimligiyle, kayit ajan anahtariyla. null = kopya 1.
+        var workerId = worker ?? agentKey;
+        if (Workers.BaseOf(workerId) != agentKey)
+        {
+            throw new ArgumentException($"'{workerId}' kopyasi '{agentKey}' ajanina ait degil.", nameof(worker));
+        }
+
         var team = await agents.LoadTeamAsync(ct).ConfigureAwait(false);
         if (!team.Agents.TryGetValue(agentKey, out var agent))
         {
@@ -115,25 +198,73 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 $"{agentKey}: hedef '{target.Destination}' calismanin hassasiyetine ({run.Sensitivity}) aykiri.");
         }
 
-        var system = agent.ComposePrompt(team.Knowledge);
-        // Canli arac akisi: yalniz aracli turda; belirtec tur boyunca yasar.
-        var progressToken = tools is not null && progress?.BaseUrl is { } baseUrl ? progress.Register(new ProgressContext(run.Id, agentKey, task, stage)) : null;
-        var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
-        var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
-            Tools: tools?.Tools, Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
-            SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace);
+        var parts = agent.PromptParts(team.Knowledge, knowledge);
+        var system = string.Concat(parts.Select(p => p.Text));
 
-        var gate = AgentLocks.GetOrAdd(agentKey, _ => new SemaphoreSlim(1, 1));
+        var gate = AgentLocks.GetOrAdd(workerId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
+        Reserved.TryRemove(workerId, out _); // ayirma kilide donustu
+        string? progressToken = null;
         try
         {
             // Limit korumasi cagridan ONCE: esik asildiysa LimitReachedException; RunService calismayi bekletir.
             if (limits is not null)
             {
-                await limits.CheckAsync(target.Provider, ct).ConfigureAwait(false);
+                await limits.CheckAsync(target.Provider, target.Model, ct).ConfigureAwait(false);
             }
 
-            var response = await CallWithRetryAsync(run, agentKey, request, ct).ConfigureAwait(false);
+            // Kilit ALINDIKTAN sonra: ajan baska bir iste mesgulken beklenen sure turun parcasi degildir. Belirtec once
+            // kaydedilseydi bekci o bekleyisi hareketsizlik sayip turu ilk yoklamada keserdi; OAuth belirteci de beklerken eskirdi.
+            var resolvedMcp = await McpForAsync(run, agent, target, tools, stage, task, ct).ConfigureAwait(false);
+            var mcpServers = resolvedMcp?.Servers;
+            // Canli akis: yalniz aracli turda; belirtec tur boyunca yasar. Baglam (sistem parcalari + mesajlar) ekranda gorunsun diye kayda girer.
+            progressToken = tools is not null && progress?.BaseUrl is not null
+                ? progress.Register(new ProgressContext(run.Id, workerId, task, stage), LiveContext(parts, messages, mcpServers))
+                : null;
+            var progressUrl = progressToken is null ? null : $"{progress!.BaseUrl!.TrimEnd('/')}/{progressToken}";
+            var cacheTtl = await CacheTtlForAsync(target.Provider, ct).ConfigureAwait(false);
+            var subagents = Explorer.For(agent, target, tools);
+            var request = new RuntimeTurnRequest(system, messages, target.Provider, target.Model, schemaJson, ReasoningEffort: target.Effort,
+                Tools: Explorer.WithAgentTool(tools?.Tools, subagents), Cwd: tools?.Cwd, MaxTurns: tools?.MaxTurns, ProgressUrl: progressUrl,
+                SystemPromptMode: tools?.SystemPromptMode ?? SystemPromptModes.Replace,
+                McpServers: mcpServers, ReadDirs: tools?.ReadDirs,
+                DisallowedTools: resolvedMcp is { Disallowed.Count: > 0 } ? resolvedMcp.Disallowed : null,
+                CacheTtl: cacheTtl,
+                Subagents: subagents);
+
+            // Yarida kalan her deneme (tekrar edilen gecici hata dahil) kendi turu olarak kaydedilir ve maliyeti calismaya
+            // tasinir (CLAUDE.md §4). Once yalniz SON hata kaydediliyordu: tekrar basarili olursa dusen denemenin harcamasi kayboluyordu.
+            AgentReply? carried = null;
+            var attemptStarted = DateTimeOffset.UtcNow;
+            async Task<AgentReply?> RecordAttemptAsync(Exception ex)
+            {
+                if (progressToken is null || progress!.UsageOf(progressToken) is not { } spent)
+                {
+                    return null;
+                }
+
+                // 2026-09-23'te kesilen ilk t1 ~3 $ harcamis, run_turn'e hic yazilmamisti.
+                var partial = await RecordCutShortAsync(run, agentKey, stage, task, round, target, system, messages, spent, progress.UsageByModel(progressToken), ex, attemptStarted, tools is not null, context, cacheTtl, workerId == agentKey ? null : workerId).ConfigureAwait(false);
+                progress.ResetUsage(progressToken); // sonraki deneme sifirdan sayilir: ayni harcama iki kez yazilmasin
+                attemptStarted = DateTimeOffset.UtcNow;
+                return partial;
+            }
+
+            Attempted response;
+            try
+            {
+                response = await CallWatchedAsync(run, agentKey, workerId, request, progressToken, async ex => carried = Plus(carried, await RecordAttemptAsync(ex).ConfigureAwait(false)), ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (progressToken is not null)
+            {
+                // Tur yarida kesildi (zaman asimi, iptal, saglayici hatasi) ama token harcandi: kayda gecmeden kaybolmasin.
+                if (Plus(carried, await RecordAttemptAsync(ex).ConfigureAwait(false)) is { } spentSoFar)
+                {
+                    ex.Data[PartialReplyKey] = spentSoFar;
+                }
+
+                throw;
+            }
 
             // Runtime'in soyledigi hedef de politikaya uymali: adaptor yanlis yere gittiyse burada yakalanir.
             if (!SensitivityPolicy.Allows(run.Sensitivity, response.Response.Destination))
@@ -168,10 +299,18 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
                 r.Usage.CacheReadTokens,
                 r.Usage.CacheWriteTokens,
                 ToolsOffered: tools is not null,
-                Context: context);
+                Context: context,
+                McpServers: mcpServers is { Count: > 0 } ? [.. mcpServers.Keys] : null,
+                CacheWrite5mTokens: r.Usage.CacheWrite5mTokens > 0 ? r.Usage.CacheWrite5mTokens : null,
+                PeakContextTokens: r.Usage.PeakContextTokens > 0 ? r.Usage.PeakContextTokens : null,
+                CacheTtl: cacheTtl,
+                ModelUsage: r.ModelUsage is { Count: > 1 } mu ? [.. mu.Select(m => new ModelTokens(m.Model, m.InputTokens, m.OutputTokens, m.CacheReadTokens, m.CacheWriteTokens, m.CostUsd))] : null,
+                Worker: workerId == agentKey ? null : workerId);
             await runs.AppendTurnAsync(run.Id, turn, ct).ConfigureAwait(false);
 
-            return new AgentReply(r.Text, r.StructuredJson, r.CostUsd ?? 0m, turn.ToolUses ?? [], r.Usage.InputTokens, r.Usage.OutputTokens);
+            // Dusen denemeler ayri tur olarak zaten kayitta; calismanin toplamina bu yanitla birlikte girer.
+            return new AgentReply(r.Text, r.StructuredJson, (r.CostUsd ?? 0m) + (carried?.CostUsd ?? 0m), turn.ToolUses ?? [],
+                r.Usage.InputTokens + (carried?.InputTokens ?? 0), r.Usage.OutputTokens + (carried?.OutputTokens ?? 0));
         }
         finally
         {
@@ -186,7 +325,215 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
 
     private sealed record Attempted(RuntimeTurnResponse Response, TimeSpan Elapsed);
 
-    private async Task<Attempted> CallWithRetryAsync(Run run, string agentKey, RuntimeTurnRequest request, CancellationToken ct)
+    private static RuntimeUsage Add(RuntimeUsage a, RuntimeUsage b)
+        => new(a.InputTokens + b.InputTokens, a.OutputTokens + b.OutputTokens, a.ReasoningChars + b.ReasoningChars, a.CacheReadTokens + b.CacheReadTokens,
+            a.CacheWriteTokens + b.CacheWriteTokens, a.CacheWrite5mTokens + b.CacheWrite5mTokens, Math.Max(a.PeakContextTokens, b.PeakContextTokens));
+
+    /// <summary>Iki kismi harcamanin toplami; ikisi de yoksa null.</summary>
+    private static AgentReply? Plus(AgentReply? a, AgentReply? b)
+        => a is null ? b : b is null ? a : a with { CostUsd = a.CostUsd + b.CostUsd, InputTokens = a.InputTokens + b.InputTokens, OutputTokens = a.OutputTokens + b.OutputTokens };
+
+    /// <summary>
+    /// Istem onbellegi omru (Ayarlar): yalniz Anthropic'e gider, onbellek omrunu baska saglayici tanimiyor. Ayar okunamazsa
+    /// CLI varsayilani (null): bir olcum ayari turu durdurmamali.
+    /// </summary>
+    private async Task<string?> CacheTtlForAsync(Provider provider, CancellationToken ct)
+    {
+        if (settings is null || provider != Provider.Anthropic)
+        {
+            return null;
+        }
+
+        try
+        {
+            return (await settings.LoadAsync(ct).ConfigureAwait(false)).CacheTtl;
+        }
+        catch (DomainException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Ajana bu turda acilacak MCP sunuculari (docs/DOMAIN.md → MCP sunuculari): yalniz aracli turda ve MCP calistirabilen saglayicida.
+    /// md'de olup kayitli/acik olmayan anahtar sessizce degil, calismanin kaydina not olarak dusulur.
+    /// </summary>
+    private async Task<Mcp.ResolvedMcp?> McpForAsync(Run run, Agent agent, AgentTarget target, ToolAccess? tools, string? stage, string? task, CancellationToken ct)
+    {
+        if (tools is null || mcp is null || agent.McpServers.Count == 0 || !Domain.Mcp.McpSupport.Supports(target.Provider))
+        {
+            return null;
+        }
+
+        var servers = await mcp.ListAsync(ct).ConfigureAwait(false);
+        if (mcpTokens is not null)
+        {
+            // OAuth belirteci suresi dolmak uzereyse tur ONCESI yenilenir; yenilenemezse sunucu atlanir (asagida not duser).
+            servers = await mcpTokens.EnsureFreshAsync(servers, agent.McpServers, ct).ConfigureAwait(false);
+        }
+
+        var resolved = Mcp.McpService.Resolve(agent, servers, DateTimeOffset.UtcNow);
+        if (resolved.Skipped.Count > 0)
+        {
+            await runs.AppendMessageAsync(
+                run.Id,
+                new Message(DateTimeOffset.UtcNow, MessageKind.Note, agent.Key, agent.Key, $"MCP atlandı: {string.Join(", ", resolved.Skipped)}", Stage: stage, Task: task, Subject: "mcp"),
+                ct).ConfigureAwait(false);
+        }
+
+        return resolved.Servers.Count > 0 ? resolved : null;
+    }
+
+    /// <summary>Canli baglam gorunumu: sistem isteminin parcalari, acilan MCP sunuculari ve mesajlar, boyutlariyla.</summary>
+    private static List<LiveContextPart> LiveContext(IReadOnlyList<(string Name, string Text)> parts, IReadOnlyList<RuntimeMessage> messages, IReadOnlyDictionary<string, RuntimeMcpServer>? mcpServers = null)
+    {
+        var list = parts.Select((p, i) => new LiveContextPart(i == 0 ? $"sistem · {p.Name}" : $"bilgi · {p.Name}", "system", p.Text.Length, p.Text)).ToList();
+        if (mcpServers is { Count: > 0 })
+        {
+            // Sir yok: yalniz ad ve baglanti bicimi. Araclarin semasi SDK'dan gelir, boyutu burada bilinmez (0).
+            var text = string.Join(Environment.NewLine, mcpServers.Select(kv => $"- {kv.Key} ({kv.Value.Type}{(kv.Value.Command is null ? "" : ": " + kv.Value.Command)}{(kv.Value.Url is null ? "" : ": " + kv.Value.Url)}) → araçlar " + (kv.Value.Tools is { } t ? string.Join(", ", t.Select(n => $"mcp__{kv.Key}__{n}")) : $"mcp__{kv.Key}__* (hepsi)")));
+            list.Add(new LiveContextPart("mcp sunucuları", "system", 0, text));
+        }
+
+        list.AddRange(messages.Select((m, i) => new LiveContextPart(i == messages.Count - 1 ? "görev istemi" : $"geçmiş {i + 1}", m.Role, m.Content.Length, m.Content)));
+        return list;
+    }
+
+    /// <summary>
+    /// Kesilen turu kaydeder: kullanim runtime'in mesaj basina bildiriminden, maliyet fiyat tablosundan tahmin (fiyat yoksa null).
+    /// Fiyat MODEL BASINA: kesif alt ajaninin mesajlari kendi modelinin fiyatiyla; modeli bildirilmeyen mesaj ana modelin fiyatiyla.
+    /// Bir modelin fiyati yoksa toplam maliyet olculemedi (null) kalir: eksik bir toplam yazmaktansa.
+    /// Bu yol hicbir zaman asil hatayi ortmemeli: kayit basarisizsa yutulur. Iptal belirteci kullanilmaz -- iptal edilmis
+    /// calismanin da harcamasi yazilmalidir.
+    /// </summary>
+    private async Task<AgentReply> RecordCutShortAsync(Run run, string agentKey, string? stage, string? task, int? round, AgentTarget target, string system, IReadOnlyList<RuntimeMessage> messages, RuntimeUsage spent, IReadOnlyList<(string? Model, RuntimeUsage Usage)> byModel, Exception ex, DateTimeOffset started, bool toolsOffered, ContextStats? context, string? cacheTtl, string? worker)
+    {
+        decimal? cost = null;
+        var parts = (byModel.Count > 0 ? byModel : [(target.Model, spent)])
+            .GroupBy(m => m.Model ?? target.Model, StringComparer.Ordinal)
+            .Select(g => (Model: g.Key, Usage: g.Select(x => x.Usage).Aggregate(Add)))
+            .ToList();
+        List<ModelTokens>? modelUsage = null;
+        try
+        {
+            if (catalog is not null)
+            {
+                var prices = await catalog.LoadPricesAsync(CancellationToken.None).ConfigureAwait(false);
+                modelUsage = [.. parts.Select(p => new ModelTokens(p.Model, p.Usage.InputTokens, p.Usage.OutputTokens, p.Usage.CacheReadTokens, p.Usage.CacheWriteTokens,
+                    prices.TryGetValue(p.Model, out var price) ? Math.Round(price.Estimate(p.Usage), 6) : null))];
+                cost = modelUsage.All(m => m.CostUsd is not null) ? modelUsage.Sum(m => m.CostUsd!.Value) : null;
+            }
+        }
+        catch (DomainException)
+        {
+            // bozuk fiyat tablosu turu kaydetmeyi engellemez; maliyet olculemedi kalir
+        }
+
+        var reason = ex is OperationCanceledException ? "iptal" : ex.Message;
+        var output = $"[tur yarıda kesildi: {reason}] Kullanım runtime'in canlı bildiriminden; maliyet {(cost is null ? "ölçülemedi (fiyat yok)" : "fiyat tablosundan tahmin")}.";
+        var turn = new Turn(
+            DateTimeOffset.UtcNow,
+            agentKey,
+            stage,
+            task,
+            round,
+            Providers.Wire(target.Provider),
+            target.Model,
+            target.Destination,
+            (DateTimeOffset.UtcNow - started).TotalSeconds,
+            system.Length + messages.Sum(m => m.Content.Length),
+            0,
+            cost,
+            messages.Count == 0 ? "" : messages[^1].Content,
+            output,
+            spent.InputTokens,
+            spent.OutputTokens,
+            null,
+            null,
+            spent.CacheReadTokens,
+            spent.CacheWriteTokens,
+            ToolsOffered: toolsOffered,
+            Context: context,
+            CutShort: true,
+            CacheWrite5mTokens: spent.CacheWrite5mTokens > 0 ? spent.CacheWrite5mTokens : null,
+            PeakContextTokens: spent.PeakContextTokens > 0 ? spent.PeakContextTokens : null,
+            CacheTtl: cacheTtl,
+            ModelUsage: modelUsage is { Count: > 1 } ? modelUsage : null,
+            Worker: worker);
+        try
+        {
+            await runs.AppendTurnAsync(run.Id, turn, CancellationToken.None).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // kayit asil hatayi ortmemeli
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return new AgentReply("", null, 0m, []);
+        }
+
+        return new AgentReply("", null, cost ?? 0m, [], spent.InputTokens, spent.OutputTokens);
+    }
+
+    /// <summary>
+    /// Turu bekci altinda kosar (<see cref="TurnWatch"/>). Bekci keserse <see cref="RuntimeTimeoutException"/>: is kanalinin
+    /// "kullanici iptali" yoluna (OperationCanceled) DUSMEZ -- dusseydi calisma sessizce Running'de asili kalirdi.
+    /// </summary>
+    private async Task<Attempted> CallWatchedAsync(Run run, string agentKey, string workerId, RuntimeTurnRequest request, string? progressToken, Func<Exception, Task> onAttemptFailed, CancellationToken ct)
+    {
+        using var turn = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var stopDog = new CancellationTokenSource();
+        string? reason = null;
+        var started = DateTimeOffset.UtcNow;
+        var dog = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    while (reason is null)
+                    {
+                        await Task.Delay(_watch.Poll, stopDog.Token).ConfigureAwait(false);
+                        var now = DateTimeOffset.UtcNow;
+                        // Hareketsizlik turun basindan once sayilmaz (kayit ile cagri arasi da turun parcasi degil).
+                        var seen = progressToken is null ? null : progress?.LastSeen(progressToken);
+                        var last = seen is { } s && s > started ? s : started;
+                        if (now - started > _watch.HardCap)
+                        {
+                            reason = $"tur {_watch.HardCap.TotalMinutes:0} dk üst sınırına dayandı";
+                        }
+                        else if (now - last > _watch.Idle)
+                        {
+                            reason = progressToken is null
+                                ? $"tur {_watch.Idle.TotalMinutes:0} dk içinde bitmedi"
+                                : $"ajan {_watch.Idle.TotalMinutes:0} dk boyunca hiç hareket etmedi (araç, metin, düşünce yok)";
+                        }
+                    }
+
+                    await turn.CancelAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // tur bitti, bekci durduruldu
+                }
+            },
+            CancellationToken.None);
+
+        try
+        {
+            return await CallWithRetryAsync(run, agentKey, workerId, request, onAttemptFailed, turn.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (reason is not null && !ct.IsCancellationRequested)
+        {
+            throw new RuntimeTimeoutException(reason);
+        }
+        finally
+        {
+            await stopDog.CancelAsync().ConfigureAwait(false);
+            await dog.ConfigureAwait(false);
+        }
+    }
+
+    /// <summary><paramref name="onAttemptFailed"/>: tekrar edilecek bir deneme dustu (harcamasi kaydedilsin), bekleme ONCESI.</summary>
+    private async Task<Attempted> CallWithRetryAsync(Run run, string agentKey, string workerId, RuntimeTurnRequest request, Func<Exception, Task> onAttemptFailed, CancellationToken ct)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -206,12 +553,13 @@ public sealed class AgentCaller(IAgentStore agents, IAgentRuntimeService runtime
             }
             catch (Exception ex) when (attempt < _retry.Attempts && IsTransient(ex))
             {
+                await onAttemptFailed(ex).ConfigureAwait(false);
                 var wait = _retry.DelayFor(attempt);
                 await runs.AppendMessageAsync(
                     run.Id,
                     new Message(DateTimeOffset.UtcNow, MessageKind.Note, agentKey, "user", $"geçici hata, tekrar {attempt + 1}/{_retry.Attempts} ({wait.TotalSeconds:0} s sonra): {ex.Message}", Subject: "retry"),
                     ct).ConfigureAwait(false);
-                scene.Publish(SceneEventTypes.AgentState, $$"""{"agent":"{{agentKey}}","state":"waiting","note":"yeniden deneniyor {{attempt + 1}}/{{_retry.Attempts}}","run":"{{run.Id}}"}""");
+                scene.Publish(SceneEventTypes.AgentState, $$"""{"agent":"{{workerId}}","state":"waiting","note":"yeniden deneniyor {{attempt + 1}}/{{_retry.Attempts}}","run":"{{run.Id}}"}""");
                 if (wait > TimeSpan.Zero)
                 {
                     await Task.Delay(wait, ct).ConfigureAwait(false);

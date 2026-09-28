@@ -55,6 +55,15 @@ public static class ErrorCodes
     public const string ProjectLaunchMissing = "project.launch_missing";
     public const string ProjectLaunchFailed = "project.launch_failed";
     public const string ProjectInvalidColor = "project.invalid_color";
+
+    /// <summary>Iceri alma / inceleme: verilen klasor diskte yok (2026-09-26).</summary>
+    public const string ProjectDirNotFound = "project.dir_not_found";
+
+    /// <summary>Klasor zaten baska bir projenin hedef dizini: ayni klasore iki proje yazarsa sira kilidi ve golge depo karisir.</summary>
+    public const string ProjectDirInUse = "project.dir_in_use";
+
+    /// <summary>Klasor ofisin kendi deposu, onun ic klasoru ya da onu iceren bir ust klasor: ajan config/, src/, data/'ya yazabilirdi.</summary>
+    public const string ProjectDirReserved = "project.dir_reserved";
     public const string RunNotCancellable = "run.not_cancellable";
     public const string RunBudgetInvalid = "run.budget_invalid";
     public const string RunNotAwaitingInput = "run.not_awaiting_input";
@@ -73,4 +82,49 @@ public static class ErrorCodes
 
     /// <summary>Projenin toplam butcesi asildi; yeni tur baslamaz (docs/DOMAIN.md → Butce ve limit).</summary>
     public const string ProjectBudgetExceeded = "project.budget_exceeded";
+
+    /// <summary>Secilen karakter sprite'i sahnenin <c>sprites[]</c> listesinde yok.</summary>
+    public const string AgentUnknownSprite = "agent.unknown_sprite";
+
+    /// <summary>Ajan md'sindeki <c>mcp</c> listesinde kayitli olmayan bir MCP sunucusu var.</summary>
+    public const string AgentUnknownMcp = "agent.unknown_mcp";
+
+    /// <summary>MCP yetkisi verilen ajanin saglayicisi MCP desteklemiyor (bugun yalniz <c>anthropic</c>).</summary>
+    public const string AgentMcpUnsupported = "agent.mcp_unsupported";
+
+    /// <summary>Kesif alt ajani (<c>explore_model</c>) verilen ajanin saglayicisi alt ajan calistiramiyor (bugun yalniz <c>anthropic</c>).</summary>
+    public const string AgentExploreUnsupported = "agent.explore_unsupported";
+
+    /// <summary>Ajan md'sindeki <c>max_instances</c> 1..8 araliginda degil.</summary>
+    public const string AgentInvalidInstances = "agent.invalid_instances";
+
+    public const string McpInvalidKey = "mcp.invalid_key";
+    public const string McpInvalid = "mcp.invalid";
+    public const string McpNotFound = "mcp.not_found";
+    public const string McpExists = "mcp.exists";
+    public const string McpInUse = "mcp.in_use";
+
+    /// <summary>OAuth yalniz uzak (http/sse) MCP sunucularinda.</summary>
+    public const string McpOAuthUnsupported = "mcp.oauth_unsupported";
+
+    /// <summary>Yetki sunucusu bulunamadi ya da uclari guvensiz (https degil).</summary>
+    public const string McpOAuthDiscoveryFailed = "mcp.oauth_discovery_failed";
+
+    /// <summary>Sunucu dinamik istemci kaydi yapmiyor/reddetti: kullanici kendi istemci kimligini girmeli.</summary>
+    public const string McpOAuthClientRequired = "mcp.oauth_client_required";
+
+    /// <summary>Tarayici donusundeki giris oturumu bilinmiyor ya da suresi doldu.</summary>
+    public const string McpOAuthStateInvalid = "mcp.oauth_state_invalid";
+
+    /// <summary>Yetkilendirme reddedildi ya da belirtec alinamadi.</summary>
+    public const string McpOAuthTokenFailed = "mcp.oauth_token_failed";
+
+    /// <summary>Katalogda boyle bir hazir sunucu ya da baglanti secenegi yok.</summary>
+    public const string McpCatalogNotFound = "mcp.catalog_not_found";
+
+    public const string AttachmentEmpty = "attachment.empty";
+    public const string AttachmentTooLarge = "attachment.too_large";
+    public const string AttachmentTypeUnsupported = "attachment.type_unsupported";
+    public const string AttachmentTooMany = "attachment.too_many";
+    public const string AttachmentNotFound = "attachment.not_found";
 }

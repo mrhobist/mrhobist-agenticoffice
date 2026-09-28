@@ -35,6 +35,11 @@ etiketli opak görsellerdir.
 | Pano, notlar | — | prosedürel |
 
 `blue-hoodie`, `sim2`'nin yeşil kapüşonu ton kaydırmasıyla maviye çevrilmiş türevidir (8. karakter).
+2026-09-23 (kullanıcı isteği: "yeni karakterler, çoğu bayan"): renk türevleriyle 6 karakter daha — `ponytail-blonde`,
+`ponytail-red`, `ponytail-black` (`sim3`), `bun-black`, `bun-auburn` (`sim4`), `shirt-tie-blond` (`sim1`). `recolor_ops`
+ton + doygunluk + parlaklık işler; kahverengi saç aynı tondaki tenden parlaklıkla ayrılır (sarı/siyah saç ton kaydırmayla
+elde edilemez). Yalnız yeni karakterleri üretmek: `build-sprites.py --only a,b` (diğer PNG'ler yeniden yazılmaz).
+Seçim: yeni ajan formu ve ajan panelindeki karakter seçici (`scene.json → agents[].sprite`, DOMAIN.md → Ekip yönetimi).
 V1'in 4 insan sayfası ve türetilmiş 2 renk varyantı artık atlasa girmez (stil V2'yle
 uyuşmuyor); ham dosyalar durur. `sim7`/`karma` çok karakterli küçük ölçekli kataloglar,
 kullanılmadı.
@@ -48,13 +53,14 @@ döngüsü oynar, ziyaretçi gelince yüzünü döner (ön kareler).
 **sandalyesizdi**: tasarımcı masasına oturunca ayakta duruyor gibi görünüyordu. Kısa süre sprite
 hattında sandalye monte edildi (başka bir katalogdan ayıklayıp ölçekleyerek); kullanıcı kataloğu
 sandalyeli olarak yeniden üretince bu ara çözüm kaldırıldı — `sim3.png` artık kendi sandalyeli
-karelerini taşıyor, hat hiçbir karakter için kare bileştirmiyor.
+karelerini taşıyor. 2026-09-24'te aynı sorun `hipster`de (`sim8`) görüldü ve bileştirme geri geldi, yalnız o karakter için
+(aşağıda "Boy ve oturma", `SEATED_BACK_DONOR`).
 
 **Hâlâ eksik / istenirse üretilecek**
 
 | Eksik | Bugünkü telafi |
 |---|---|
-| Kanepede oturma (yandan otur karesi var ama kanepe arka planda) | ajan kanepe önünde ayakta durur |
+| ~~Kanepede oturma~~ (2026-09-24: `lounge` koltukları, öne bakan kareler) | — |
 | Boşta nefes / el hareketi | yürüyüşün ilk karesi |
 | Kedinin yan oturuşu, esneme | ön oturuş + uzanma |
 | Kapı arka planda yok | V1 kapı sprite'ı sağ üstteki zemin girintisine (pencere yanındaki bitkiden sağ duvara, y 90–250) `door.w`/`door.h` ile oturtulur |
@@ -94,7 +100,9 @@ Koordinatlar arka plan görselinin pikselidir (V2: 1292 × 1218).
 | `spots` | yürünen duraklar: `coffee water board window sofa meeting door entrance deskA deskB deskC deskD`. `look` verilirse varan ajan durduğu noktadan oraya bakar (su sebili, pano); yoksa `facing`. `capacity` (varsayılan 1): dolu durağa gelen `queue` noktasında durağa dönük bekler, boşalınca girer; ambient turlar dolu durağı seçmez |
 | `blocked[]` | yürünemez dikdörtgenler; yol bulma bunlardan ızgara kurar |
 | `agents[]` | rol → sprite → ev (`seat` ya da `spot`). Bugün altı ajan: `analyst · designer · developer · tester · manager · organizer` (`intern`/`devops` Faz 2b'de çıkarıldı). Ekipte olup burada yeri olmayan ajan UI'da boş masaya ve kullanılmayan sprite'a otomatik yerleşir; olay almayan ajan ambient davranır |
-| `cat` | yatak ve gezinti noktaları. Yatak **açık alandadır** (koltuğun minderi): kedi oraya yürüyerek çıkar |
+| `lounge` | dinlenme koltukları (kanepe): `seats: [{x, y, facing}]`. `seats`'ten **ayrı** tutulur: Api ajana ev koltuğunu `seats`'ten atar, kanepe kimsenin evi olmasın. Boştaki ajanlar ve misafirler burada oturur (öne bakan yazma kareleri: sandalye gövdenin arkasında kalır). Koltuk sırası gelince tutulur, kalkınca bırakılır; sol minder kedinin yatağı olduğu için koltuklar sağda |
+| `guests` | misafirler (2026-09-24, kullanıcı: "çalışmayanlar da gelsin gitsin, kahve/su alsın, kanepede otursun, kapıdan gitsin"): `max` (aynı anda, varsayılan 2), `firstMs`, `everyMs: [min,max]`, `sprites` (boş = ekibin ve sahnedeki misafirlerin kullanmadığı karakterler). Misafir kapıdan girer, 2–3 durak gezer (kahve/su önce alınır; kanepe, pencere, pano, masada oturan birine uğrama), kapıdan çıkar ve sahneden silinir. Durak sırası ve kapasiteleri ajanlarla ortaktır; tıklanmaz, iş almaz, sunucu olayı üretmez (yalnız UI). Gece (21–07) üç kat seyrek |
+| `cat` | yatak ve gezinti noktaları. Yatak **açık alandadır** (koltuğun minderi): kedi oraya yürüyerek çıkar. `bowls` (2026-09-25): mama/su kapları `food`, `water` (kabın zemine değen ortası) ve altındaki paspas `mat [x,y,w,h]`; sol alt köşede, alanı `blocked`'da. Kaplar ve paspas prosedürel çizilir (`bowls.ts`) |
 | `lights[]` | tıklanınca açılıp kapanan ışık: `hit` (tıklama dikdörtgeni), `on` (varsayılan açık) ve iki kullanımdan biri — **oda ışığı**: `room` sönünce karartılır, `glow` açıkken hale düşer (müdür odasının sarkıtı); **abajur**: yalnız `bulb`, sönünce sadece başlık koyulaşır (`multiply`), çevresi etkilenmez (kanepenin yanındaki abajur) |
 
 `object` katmanı varlıklarla birlikte **alt kenara göre** sıralanır; oturan ajan, masasının
@@ -104,13 +112,39 @@ hemen ardına çizilir.
 `spriteOff`), `seats`'e koltuk (`monitor` ile), `blocked`'a masanın dikdörtgeni eklenir; bir ajanı
 oturtmak için `agents[].home.seat` o koltuğa çevrilir. Üçüncü ada (`deskC-*`) böyle eklendi; arka plandaki A/B masaları da `background.erase` ile silinip aynı sprite'la yeniden kuruldu, böylece altı masa tek stilde.
 
+**Boy ve oturma (2026-09-24, kullanıcı: "simler masaya göre küçük, masaya uzak oturuyor").** Karakter ayakta dünyada
+94 px (`CHAR_V2_HEIGHT_WORLD`; önce 78 — masanın ön yüzü ~55 px iken oturan karakterin başı masa üstünün kenarına
+yetişmiyordu). Masa koltuğu (`seats[].y`) = masa dikdörtgeninin alt kenarı + 16 px: sandalye masanın önüne yanaşır,
+baş masa üstünün kenarına biner; `blocked` kutusunun dışında kalır ki yürüyüş ızgarası oraya ulaşsın. Önceki değerler
+masaya 37–45 px uzaktı ve masadan masaya tutarsızdı. Ölçüm çevrimdışı bir sahne kopyasıyla yapıldı (arka plan +
+props + karakterler, aynı sıralama/ölçek). `hipster`in kaynak kataloğunda "yazma" paneli sandalyesiz (ayakta, laptopla):
+arkadan oturma kareleri `bun`un sandalyesi + hipster'ın arkadan yürüyüş karesinin üst gövdesiyle üretilir
+(`SEATED_BACK_DONOR`); öne bakan oturma kareleri hâlâ ayakta — bugün öne bakan koltuk yok.
+
 ## Ajan yerleşimi ve ziyaretçi (2026-09-20)
 
 `agents[]` artık Api tarafından da yazılır (`JsonSceneLayoutStore`): yeni ajan → `sprites[]` içinden kullanılmayan
 ilk karakter (hepsi doluysa sırayla tekrar) + `seats` içinde hiçbir ajanın evi olmayan ilk masa. Masa yoksa
-`home: {}` → **ziyaretçi**: dışarıda başlar, 15–45 s içinde kapıdan girip panoya bakar (6–10 s), çıkar; 60–150 s
-sonra yine. İş alınca (`agent.state working`) hemen girer, panonun önünde durur; bitince çıkar. Koordinatlara ve
-diğer alanlara dokunulmaz. Elle düzenleme serbest; Api yalnız `agents[]`'e ekler/siler.
+`home: {}` → **ziyaretçi**: dışarıda başlar, 15–45 s içinde kapıdan girer, **2–3 durak dolaşır** ve çıkar;
+60–150 s sonra yine uğrar. İş alınca (`agent.state working`) hemen girer, panonun önünde durur; bitince çıkar.
+Koordinatlara ve diğer alanlara dokunulmaz. Elle düzenleme serbest; Api yalnız `agents[]`'e ekler/siler.
+
+**Ziyaretçi turu (2026-09-22, kullanıcı kararı).** Ofise masa eklemek yerine ziyaretçi hayatı zenginleştirildi:
+masasız ajan `coffee`, `board`, `water`, `window` duraklarından **karışık sırayla** 2–3 tanesini gezer; kahve/su
+durağında içeceğini alır ve elinde taşır, pano/pencere durağında 4–8 s bekler. Çıkarken elini boşaltır — kupa
+dışarı taşınmaz. Başka bir ofisten uğramış gibi görünür; oturacak yeri olmadığı için hiçbir masayı işgal etmez.
+
+⚠ Çok duraklı tur bir şeye dikkat ister: durak rezervasyonu (`a.spot`) **yalnız yeni komutta** sıfırlanır
+(`entities.ts` → `command`). Tek kuyrukta birden çok durak gezen ajan her durağı **elle bırakmalıdır**, yoksa
+panonun önünde dururken kahve makinesini de tutar ve sıradakini kilitler.
+
+## Kopyalar (2026-09-26)
+
+Bir ajanın kopyaları (`anahtar~n`, docs/DOMAIN.md → Kopyalar) `agents[]`'e YAZILMAZ: ekipte tek ajan kalır. UI kopyayı ilk
+iş olayında (`agent.state` çalışıyor/bekliyor/engelli ya da `agent.tool`) kurar: ad = ana ajanın adı + numara, karakter
+= kullanılmayan ilk sayfa, ev = boş ilk masa (yoksa pano önü). Kapıdan girer, masasına oturur. `idle`/`done` gelince
+**20 s** bekler (aynı çalışmanın sonraki görevi gelirse masasında kalır), sonra kapıdan çıkar ve listeden düşer.
+Tıklanınca ana ajanın paneli açılır. `scene.reload`'da çalışan kopyalar korunur.
 
 ## Olaylar
 
@@ -125,7 +159,7 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 | `meet` | `from, to, kind: handoff/ask/reject, ms?` | `from` gider, karşılıklı balon, döner; oturan `to` arkasına döner |
 | `board.set` / `board.move` | `tasks[]`, `run?` / `task, stage, state, run?` | not eklenir, sütun değişimi zıplayarak animasyonlanır. Görev kimliği **çalışmayla** anahtarlanır (`run:task`): iki çalışmanın aynı görev kimliği çarpışmaz |
 | `run.stage` | `stage, task, round` | üst şerit |
-| `cat` | `action: sleep/wander/sit, spot?` | kedi |
+| `cat` | `action: sleep/wander/sit/eat, spot?` | kedi (`eat`: mama kabına gider, yer, içer) |
 | `door` | `state` | kapı; 6 s sonra kapanır |
 | `agent.leave` / `agent.enter` | `agent` | sağ üstteki kapıya yürür ve sahneden çıkar / kapıdan girip evine yürür. Dışarıdaki ajan çizilmez, ambient almaz, `meet` hedefi olamaz |
 | `clock.set` | `hour: 0-24 \| null` | pencere manzarasının saati; `null` gerçek yerel saat |
@@ -140,10 +174,57 @@ reddeder (`errorCode: scene.command.type_unknown`). UI tarafı `ui/app/scene/con
 arka planda kalsa da ajanlar yerlerine varır. Geliştirmede `window.__world` sahneyi konsoldan
 sorgulamak için açıktır.
 
+**Tuval çözünürlüğü sınırlıdır** (2026-09-26): arka tampon en fazla 2,4 Mpx; üstünde sahne daha düşük
+çözünürlükte çizilip CSS boyutuna büyütülür. Ekran kartı sürücüsü olmayan makinede büyük tuval yazılımla
+rasterleniyor ve kare 30–40 ms'ye çıkıyordu (`docs/LESSONS.md`). 60 karenin yarısından çoğu 14 ms'yi aşarsa
+sınır %25 küçülür. Tileset nesneleri de o anki ölçekte bir kez örneklenip saklanır (`Sprites.drawObject`).
+
 **Kedi koltukta uyur.** Uyku 60–150 s, gezinti kısa; komutla `sleep` 120 s. Koltuk köşesi
 (2026-09-20): tek büyük engel dikdörtgeni yerine **koltuk gövdesi** ve **sehpa** ayrı ayrı
 engellendi; arada kalan minder şeridi yürünebilir. Yatak orada olduğu için kedi artık ışınlanmaz
 (`snapTo` gerekmez), yürüyerek mindere çıkar; koltuğa gelen ajan da minderin önünde durur.
+
+**Işınlanma yok** (kullanıcı isteği 2026-09-24: "kapı dışından girilmesin, ışınlanma olmasın"). Sahnede
+bir kişinin konumu hiçbir karede sıçramaz:
+
+- **Kapı:** giren kapı boşluğunda (`door.y + door.h − 8`) belirir ve kapı önündeki durağa **yürür**
+  (`step`: yol bulmadan düz yürüyüş); çıkan durağa yürür, kapıyı açar, boşluğa yürür, sonra kaybolur.
+  Ambient "dışarı çık" da aynı çıkışı kullanır.
+- **Oturma/kalkma:** koltuk engelli alanda olsa da son parça yürünür (`sit`), kalkınca en yakın açık
+  hücreye yürünür (`stand`, oturandan `walk`). Kedinin engelli hedefe son parçası da yürünür.
+- **Sahne yeniden kurulumu** (`scene.reload`): yeni dünya eskisini devralır (`World.adopt`): herkes
+  olduğu yerden devam eder, evi değişen yürür; yeni ajan kapıdan girer, silinen ajan kapıdan çıkar.
+
+**Yönler:** kedinin yürüyüş sayfası 4 yönlü; çapraz gidişte yan profil seçilir (önceden kameraya dönük
+"aşağı" kare çiziliyordu). `sim1/sim5/sim6` kataloglarında "SW" paneli neredeyse önden çizilmiş;
+sprite hattı SW'yi SE'nin aynasından üretir (`MIRROR_SW_FROM_SE`).
+
+**İş önce gelir** (kullanıcı isteği 2026-09-26: "ajan gerçek işleri kesinlikle aksatmamalı"). Sahne yalnız
+görseldir: gerçek iş sunucuda animasyonu beklemeden koşar. Sahnede de ajan `idle`/`done` dışı bir durum ya da
+bir `agent.tool` olayı alınca `World.backToWork` her süslemeyi (kahve, balkon, kanepe, kedi) **anında** keser:
+dışarıdaysa hemen kapıdan girer, evinde değilse masasına yürür, elindeki içeceği masaya bırakır. Tuttuğu
+kanepe/balkon yeri de düşer. Ambient davranış yalnız `idle`/`done` ajanlarda başlar.
+
+**Balkon ve vapur** (2026-09-26, yalnız UI). `balcony`: alt duvardaki cam sürgülü kapı (`door`), balkon zemini
+(`floor`), korkuluk (`rail`), sohbet noktaları (`spots`). Kapı **her durumda** prosedürel çizilir (iki cam
+kanat, sabit kenar dikmeleri; arka plandaki cam yalnız zemin): kapalıdan açığa geçişte hiçbir parça bir anda
+değişmez. Ona doğru **yürüyen** biri 80 px kala açılmaya başlar (0,4 s'de tam açık, kişi cama varmadan);
+duran kişi yalnız kapı boşluğundaysa tutar. Boş kalınca 1,2 s sonra kapanır; tıklanınca açık tutulur
+("Balkon kapısı · açık tutuluyor"). Hedefe varınca değer sabit kalır (önceden tam açıkken 1↔0,93 titriyordu). Korkuluk balkondakilerin önüne çizilir. Boştaki ajan (~%14)
+ve misafirler elinde kahve/su ile balkona çıkar (eli boşsa önce alır); bir arkadaşı da gelebilir. İki ya da
+daha çok kişi olunca sırayla konuşurlar (konuşan diğerine döner). Kedi de balkona gezmeye çıkabilir.
+Pencerede **vapur** (`sky.ts → drawFerry`) ufkun altında 80 s'de karşıya geçer, 20 s bekler, geri döner; konum
+duvar saatinden hesaplanır, gece pencereleri ve feneri yanar.
+
+**Kediyle etkileşim** (2026-09-24, yalnız UI, olay yayımlanmaz):
+
+| Ne | Ne zaman |
+|---|---|
+| **Sevme** (`catVisit`) | boştaki ajanın ambient turunda (~%10) ve misafir durağı olarak: kedi yerinde tutulur, kişi kedinin önüne/yanına yürür (`besideCat`, koltuğa binmesin), kediye döner, ♥ balonu; kedi kalp + "mırr" (her üçüncüde uzanır). Aynı anda tek kişi |
+| **Karşılama** | kapıdan biri girince (~%30, kedi uyanık ve boşsa) kapı önüne yürür, "miyav" |
+| **Dilenme** | kahve/su dolarken (~%30) tezgâhın yanına gelir, "miyav?" |
+| **Kanepe** | biri kanepeye oturunca (~%45) minderine yürüyüp kıvrılır |
+| **Öğün** (2026-09-25) | kendi ritminde acıktıkça (son öğünden 90 s sonra ~%20, 4 dk sonra ~%75): mama kabına yürür, yan profilde öne eğilip yer ("nom nom", 6–9 s), su kabına geçer, içer (halkalar, 4–7 s), oturup "mırr" der. Sayfada yeme karesi yok: yürüyüş karesi arka ayaklar etrafında ~15–20° eğilir, kap kedinin önüne çizilir. Doluluk yalnız UI'da: öğünde azalır, ~4 dk'da kendiliğinden dolar. Öğün sürerken dilenme/karşılama/sevmeye gitmez (kullanıcının tıklaması hariç) |
 
 **Küçük pano iki kaynaktan beslenir.** SSE (`board.set`/`board.move`) yalnız bu oturumda olan biteni
 taşır; sahne ayrıca 6 saniyede bir `GET /runs` + `GET /runs/{id}` ile panoyu **sunucudan eşitler**

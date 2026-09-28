@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AppSettings, LoginMode, LoginStarted, Provider, ProviderLoginRequest, ProviderStatus, UsageItem } from '~/api/types'
+import type { AppSettings, LoginMode, LoginStarted, Provider, ProviderLoginRequest, ProviderStatus, SpendReport, UsageItem } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { providerLabel, fmtCost as fmtCostLabel, COST_TITLE } from '~/api/labels'
@@ -59,7 +59,11 @@ function guardOf(p: string): number { return settings.value?.limitGuards[p] ?? 9
 function setGuard(p: string, v: string) {
   if (!settings.value) return
   const n = Math.round(Number(v))
-  settings.value = { limitGuards: { ...settings.value.limitGuards, [p]: Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : 99 } }
+  settings.value = { ...settings.value, limitGuards: { ...settings.value.limitGuards, [p]: Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : 99 } }
+}
+function setCacheTtl(v: string) {
+  if (!settings.value) return
+  settings.value = { ...settings.value, cacheTtl: v === '5m' || v === '1h' ? v : null }
 }
 
 async function load(refresh = false) {
@@ -83,7 +87,23 @@ async function loadUsage() {
     usage.value = null
     usageError.value = errorText(e)
   }
+  void loadSpend()
 }
+
+/** Kim ne harcadi (kullanici istegi 2026-09-23): haftalik pencerede ofis ajani / Claude Code oturumlari, CLI kayitlarindan. */
+const spend = ref<SpendReport | null>(null)
+const spendError = ref<string | null>(null)
+const spendOpen = ref<string | null>(null)
+async function loadSpend() {
+  try {
+    spend.value = await api.get<SpendReport>('/api/v1/usage/split')
+    spendError.value = null
+  } catch (e) {
+    spend.value = null
+    spendError.value = errorText(e)
+  }
+}
+const spendTotal = computed(() => (spend.value?.sources ?? []).reduce((s, x) => s + (x.costUsd ?? 0), 0))
 
 /** Giris basladiktan sonra 5 s'de bir 3 dakika boyunca yeniden kontrol: kullanici tarayicida onaylayinca ekran kendi guncellenir. */
 let watchTimer: ReturnType<typeof setInterval> | undefined
@@ -155,7 +175,8 @@ onMounted(() => { void load(); void loadUsage(); void loadSettings() })
 onBeforeUnmount(() => clearInterval(watchTimer))
 
 const totalCost = computed(() => (usage.value ?? []).reduce((s, u) => s + u.costUsd, 0))
-function fmtCost(v: number): string { return fmtCostLabel(v, 4) }
+/** Kucuk tutarda kurus alti anlamli (4 hane); 1 $ ustunde 2 hane yeter ("≈$600.0200" okunmuyordu). */
+function fmtCost(v: number): string { return fmtCostLabel(v, Math.abs(v) >= 1 ? 2 : 4) }
 function fmtNum(v: number): string { return v.toLocaleString('tr-TR') }
 function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '—' }
 </script>
@@ -242,6 +263,66 @@ function fmtWhen(s: string | null): string { return s ? new Date(s).toLocaleStri
         <p v-else class="sub">Yükleniyor…</p>
       </section>
 
+      <!-- ---------------------------------------------------------- istem onbellegi (deneme) -->
+      <section class="block">
+        <div class="block-head">
+          <h3>İstem önbelleği</h3>
+          <button type="button" class="small primary" :disabled="savingSettings || !settings" @click="saveSettings">{{ savingSettings ? '…' : settingsSaved ? 'Kaydedildi ✓' : 'Kaydet' }}</button>
+        </div>
+        <p class="sub">Anthropic ajanlarının bağlamı önbelleğe kaç süreliğine yazılsın. Ölçüm: önbelleğe yazma maliyetin ~%40'ı ve bugün hepsi 1 saatlik (2×). 5 dakikalık yazma 1,25× — hesapta ~%15 ucuz; ama 5 dakikayı aşan bir araç çağrısından (npm install, uzun test) sonra bağlam yeniden yazılır. Etki <code>scripts/context-report.py</code> ile okunur.</p>
+        <label v-if="settings" class="guard">
+          <span>Önbellek süresi</span>
+          <select :value="settings.cacheTtl ?? ''" @change="setCacheTtl(($event.target as HTMLSelectElement).value)">
+            <option value="">Varsayılan (1 saat)</option>
+            <option value="5m">5 dakika (deneme)</option>
+            <option value="1h">1 saat (açıkça)</option>
+          </select>
+        </label>
+      </section>
+
+      <!-- ---------------------------------------------------------- kim ne harcadi -->
+      <section class="block">
+        <div class="block-head">
+          <h3>Kim ne harcadı</h3>
+          <button type="button" class="small" @click="loadSpend">Yenile</button>
+        </div>
+        <p class="sub">Haftalık kota ortak: ofis ajanı ile Claude Code oturumların aynı hesaptan harcar. Makinedeki her çağrının kaydından (<code>~/.claude/projects</code>) okunur; kota payı eşdeğer $ oranıyla bölünür.</p>
+        <p v-if="spendError" class="err">{{ spendError }}</p>
+        <p v-else-if="!spend" class="sub">Yükleniyor…</p>
+        <template v-else>
+          <p class="sub">Pencere: {{ fmtWhen(spend.since) }} → {{ spend.until ? fmtWhen(spend.until) : 'şimdi' }}<template v-if="spend.weeklyResetsAt"> · sıfırlanma {{ fmtWhen(spend.weeklyResetsAt) }}</template><template v-if="spend.weeklyPercent !== null"> · haftalık <strong>%{{ Math.round(spend.weeklyPercent) }}</strong></template></p>
+          <div class="spendbar" role="img" :aria-label="spend.sources.map(s => `${s.label} ${s.quotaPoints ?? '?'} puan`).join(', ')">
+            <span v-for="s in spend.sources" :key="s.key" :class="s.key" :style="{ flexGrow: s.costUsd ?? 0 }" :title="s.label" />
+          </div>
+          <!-- Genis sayilar (1.104.887.867 tk) panelden tasiyordu: son sutun kirpiliyordu. Tablo kendi icinde kayar. -->
+          <div class="tablewrap">
+          <table class="usage">
+            <thead><tr><th>Kaynak</th><th class="num">Mesaj</th><th class="num">Giriş tk</th><th class="num">Çıkış tk</th><th class="num" :title="COST_TITLE">≈ Maliyet</th><th class="num">Kota payı</th></tr></thead>
+            <tbody>
+              <template v-for="s in spend.sources" :key="s.key">
+                <tr class="src" @click="spendOpen = spendOpen === s.key ? null : s.key">
+                  <td><span class="dot" :class="s.key" /> {{ s.label }} <span class="sub">{{ spendOpen === s.key ? '▾' : '▸' }}</span></td>
+                  <td class="num">{{ fmtNum(s.messages) }}</td><td class="num">{{ fmtNum(s.inputTokens) }}</td><td class="num">{{ fmtNum(s.outputTokens) }}</td>
+                  <td class="num" :title="s.unpricedModels?.length ? `Fiyatsız: ${s.unpricedModels.join(', ')} (hariç)` : undefined">{{ s.costUsd === null ? 'ölçülemedi' : s.unpricedModels?.length ? '≥ ' + fmtCost(s.costUsd).replace('≈', '') : fmtCost(s.costUsd) }}</td>
+                  <td class="num">{{ s.quotaPoints === null ? '—' : `${s.unpricedModels?.length ? '≥' : '~'}${s.quotaPoints} puan` }}</td>
+                </tr>
+                <template v-if="spendOpen === s.key">
+                  <tr v-for="l in s.lines" :key="l.source + l.project + l.model" class="line">
+                    <td :title="l.project"><code>{{ l.project.replace(/^C--/, '').slice(-42) }}</code> <span class="sub">{{ l.source }} · {{ l.model }}</span></td>
+                    <td class="num">{{ fmtNum(l.messages) }}</td><td class="num">{{ fmtNum(l.inputTokens) }}</td><td class="num">{{ fmtNum(l.outputTokens) }}</td>
+                    <td class="num">{{ l.costUsd === null ? '—' : fmtCost(l.costUsd) }}</td><td />
+                  </tr>
+                </template>
+              </template>
+            </tbody>
+            <tfoot><tr><td colspan="4">Toplam</td><td class="num">{{ fmtCost(spendTotal) }}</td><td class="num">{{ spend.weeklyPercent === null ? '' : `%${Math.round(spend.weeklyPercent)}` }}</td></tr></tfoot>
+          </table>
+          </div>
+          <p class="sub">Ofisin kendi tur kaydı aynı pencerede: {{ spend.officeRecordedTurns }} tur · {{ fmtCost(spend.officeRecordedUsd) }} (kesilen turlar dahil).</p>
+          <p v-for="(n, i) in spend.notes" :key="i" class="sub note">{{ n }}</p>
+        </template>
+      </section>
+
       <!-- ---------------------------------------------------------- kullanim -->
       <section class="block">
         <div class="block-head">
@@ -309,6 +390,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .primary { background: #23283a; color: #fff; border-color: #23283a; }
 .guards { display: flex; flex-direction: column; gap: 6px; }
 .guard { display: grid; grid-template-columns: 140px 90px auto; align-items: center; gap: 8px; font-size: 13px; }
+.guard select { font: inherit; font-size: 13px; background: #fff; color: #23283a; border: 1px solid #c9c3b3; border-radius: 4px; padding: 5px 8px; grid-column: span 2; }
 .guard input { font: inherit; font-size: 13px; background: #fff; color: #23283a; border: 1px solid #c9c3b3; border-radius: 4px; padding: 5px 8px; }
 .ghost { background: transparent; }
 .small { padding: 3px 8px; font-size: 11px; }
@@ -317,9 +399,19 @@ button:disabled { opacity: 0.5; cursor: default; }
 .models summary { cursor: pointer; font-size: 12px; font-weight: 600; color: #4a5068; }
 .models ul { margin: 4px 0 0; padding-left: 16px; font-size: 12px; }
 code { font-size: 10px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
+.tablewrap { overflow-x: auto; }
 .usage { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: 1px solid #c9c3b3; border-radius: 6px; }
 .usage th, .usage td { padding: 5px 8px; border-bottom: 1px solid rgba(0,0,0,0.08); text-align: left; }
 .usage th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7285; }
 .usage .num { text-align: right; font-variant-numeric: tabular-nums; }
 .usage tfoot td { font-weight: 700; border-bottom: none; }
+.usage tr.src { cursor: pointer; }
+.usage tr.src:hover { background: #f6f3ea; }
+.usage tr.line td { font-size: 11px; color: #4a5068; padding-left: 18px; }
+.spendbar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: #e5e7ee; border: 1px solid #c9c3b3; margin: 4px 0 6px; }
+.spendbar span { flex-basis: 0; }
+.spendbar .office, .dot.office { background: #4fa3e0; }
+.spendbar .sessions, .dot.sessions { background: #ef9b4f; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; }
+.note { font-style: italic; }
 </style>

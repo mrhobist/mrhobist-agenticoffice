@@ -10,6 +10,8 @@ dependencies = [
     "pydantic>=2.11",
     # Anthropic saglayicisi (app/providers/anthropic.py): Claude Code oturumunu kullanan Agent SDK.
     "claude-agent-sdk>=0.2",
+    # MCP baglanti denemesi (app/mcp_probe.py). Agent SDK zaten getiriyor; dogrudan kullanildigi icin acikca yazilir.
+    "mcp>=2.2",
 ]
 
 [project.optional-dependencies]

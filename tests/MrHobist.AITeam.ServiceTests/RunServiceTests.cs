@@ -15,6 +15,7 @@ namespace MrHobist.AITeam.ServiceTests;
 /// Faz 4a "biten sayilir": Python calismadan, sahte runtime ile analiz → onay/revize → dagitim → Paused akisi
 /// ve runs/ dosyalari (docs/DOMAIN.md, docs/PHASES.md).
 /// </summary>
+[Collection(AgentCallerTests.Collection)]
 public sealed class RunServiceTests : IDisposable
 {
     private readonly StorageFixture _fx = new();
@@ -570,6 +571,306 @@ public sealed class RunServiceTests : IDisposable
         _runtime.FailTransientTimes = 0;
     }
 
+    /// <summary>
+    /// 2026-09-23: sabit 12 dk HTTP suresi calisan Opus turunu kesti, zaman asimi "kullanici iptali" sanilip yutuldu ve calisma
+    /// Running'de asili kaldi. Artik: bekci hareketsiz turu keser → faz Timeout (sistem), calisma Failed; "Yeniden dene" ayni
+    /// adimi DEVAM notuyla kosar (ajan diskteki yarim isi bastan yazmaz).
+    /// </summary>
+    [Fact]
+    public async Task Hareketsiz_tur_zaman_asimina_duser_yeniden_dene_devam_notuyla_surer()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, watch: new TurnWatch(TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(50)));
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
+
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        _runtime.HangImplementTimes = 1;
+        run = await svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Failed, run.Status); // asili Running degil
+        Assert.True(run.IsRetryable);
+        Assert.Contains("zaman aşımı", run.Detail, StringComparison.Ordinal);
+        var t1 = await _store.ReadPhasesAsync(run.Id, "t1", Ct);
+        Assert.Equal((PhaseStatus.Failed, PhaseCause.Timeout), (t1[^1].Status, t1[^1].Cause));
+        Assert.True(t1[^1].IsSystemFailure && t1[^1].IsCutShort);
+
+        var before = _runtime.Calls.Count;
+        await svc.RetryAsync(run.Id, Ct);
+        run = await svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        var resumed = _runtime.Calls.Skip(before).First(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true);
+        Assert.Contains("DEVAM", resumed.Messages[^1].Content, StringComparison.Ordinal);
+        // Yalniz kesilen gorev devam notu alir; t2 temiz baslar.
+        var fresh = _runtime.Calls.Skip(before).Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).Skip(1).First();
+        Assert.DoesNotContain("DEVAM", fresh.Messages[^1].Content, StringComparison.Ordinal);
+    }
+
+    private sealed class FixedPrices(string model, ModelPrice price) : IModelCatalog
+    {
+        public Task<IReadOnlyList<CatalogModel>> LoadAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<CatalogModel>>([]);
+
+        public Task<IReadOnlyDictionary<string, ModelPrice>> LoadPricesAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyDictionary<string, ModelPrice>>(new Dictionary<string, ModelPrice> { [model] = price });
+    }
+
+    /// <summary>
+    /// 2026-09-23: kesilen ilk t1 denemesi ~3 $ harcadi, run_turn'e hic yazilmadi (CLAUDE.md §4 deliniyordu). Artik runtime'in
+    /// mesaj basina canli kullanim bildirimi birikir; tur kesilince kullanim + fiyattan tahmin edilen maliyet kayda ve calismanin
+    /// toplamina girer.
+    /// </summary>
+    [Fact]
+    public async Task Kesilen_turun_harcamasi_kaydedilir_ve_calismanin_toplamina_girer()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var progress = new ProgressRegistry(_scene) { BaseUrl = "http://127.0.0.1:5080/api/v1/progress" };
+        var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, progress: progress,
+            watch: new TurnWatch(TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(50)),
+            catalog: new FixedPrices(RunDefaults.Model, new ModelPrice(4m, 20m, 0.2m, 8m)));
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
+
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        var before = (await _reader.GetAsync(run.Id, Ct)).TotalCostUsd;
+        _runtime.HangImplementTimes = 1;
+        _runtime.HangReports = (progress, new RuntimeUsage(1_110_000, 50_000, 0, 1_000_000, 100_000));
+        run = await svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Failed, run.Status);
+        var cut = Assert.Single(await _store.ReadTurnsAsync(run.Id, "developer", Ct), t => t.CutShort == true);
+        Assert.Equal(("t1", 2.04m, 1_110_000, 50_000, 1_000_000, 100_000), (cut.Task, cut.CostUsd, cut.InputTokens, cut.OutputTokens, cut.CacheReadTokens, cut.CacheWriteTokens));
+        Assert.Contains("yarıda kesildi", cut.Output, StringComparison.Ordinal);
+        Assert.Equal(before + 2.04m, run.TotalCostUsd);
+        Assert.Empty(progress.Snapshot(run.Id)); // tur bitti, canli kayit dustu
+    }
+
+    [Fact]
+    public async Task Bagimli_gorev_onceki_gorevin_raporunu_alir_kurallar_goreve_bilgi_dosyalari_ise_daraltilir()
+    {
+        _runtime.SpecJson = """
+            {"summary":"s","architecture":"a","rules":["genel kural","arka yuz kurali","on yuz kurali"],"knowledge":["yok-boyle-dosya"],
+             "tasks":[
+               {"id":"t1","title":"api","description":"...","files":["a.cs"],"acceptance":["build"],"dependsOn":[],"ruleRefs":[0,1]},
+               {"id":"t2","title":"ekran","description":"...","files":["b.vue"],"acceptance":["build"],"dependsOn":["t1"],"ruleRefs":[0,2]}]}
+            """;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Contains("ruleRefs", _runtime.Calls[0].Messages[0].Content, StringComparison.Ordinal);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+
+        var impl = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).Select(c => c.Messages[^1].Content).ToList();
+        var t1 = impl.First(m => m.Contains("# Görev t1", StringComparison.Ordinal));
+        var t2 = impl.First(m => m.Contains("# Görev t2", StringComparison.Ordinal));
+        Assert.Contains("arka yuz kurali", t1, StringComparison.Ordinal);
+        Assert.DoesNotContain("on yuz kurali", t1, StringComparison.Ordinal);
+        Assert.Contains("on yuz kurali", t2, StringComparison.Ordinal);
+        Assert.DoesNotContain("arka yuz kurali", t2, StringComparison.Ordinal);
+        Assert.Contains("diğer 1 kural", t2, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bağımlı olduğun biten görevler", t1, StringComparison.Ordinal);
+        Assert.Contains("Bağımlı olduğun biten görevler", t2, StringComparison.Ordinal);
+        Assert.Contains("## t1 — api", t2, StringComparison.Ordinal);
+        _runtime.SpecJson = null;
+    }
+
+    [Fact]
+    public async Task Kod_haritasi_gorev_istemine_gider_gorevin_dosyalari_once_ust_sinirda_kesilir()
+    {
+        var filler = string.Join(",", Enumerable.Range(0, 40).Select(i => $$"""{"path":"src/Dolgu{{i}}.cs","note":"{{new string('x', 150)}}"}"""));
+        _runtime.SpecJson = $$"""
+            {"summary":"s","architecture":"a","rules":["r"],
+             "codeMap":[{{filler}},{"path":"./b.vue","note":"ekran: useB() kompozisyonu"},{"path":"a.cs","note":"AService.Get(id) -> Dto\nikinci satir"}],
+             "tasks":[
+               {"id":"t1","title":"api","description":"...","files":["a.cs"],"acceptance":["build"],"dependsOn":[]},
+               {"id":"t2","title":"ekran","description":"...","files":["b.vue"],"acceptance":["build"],"dependsOn":["t1"]}]}
+            """;
+        var run = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await _svc.AnalyzeAsync(run.Id, Ct);
+        Assert.Contains("codeMap", _runtime.Calls[0].Messages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("codeMap", _runtime.Calls[0].SchemaJson, StringComparison.Ordinal);
+        await _svc.BeginApproveAsync(run.Id, Ct);
+        run = await _svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+
+        var impl = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).Select(c => c.Messages[^1].Content).ToList();
+        var t1 = impl.First(m => m.Contains("# Görev t1", StringComparison.Ordinal));
+        var t2 = impl.First(m => m.Contains("# Görev t2", StringComparison.Ordinal));
+        var map1 = t1[t1.IndexOf("# Kod haritası", StringComparison.Ordinal)..];
+        // Gorevin kendi dosyasi haritanin sonunda olsa da ilk satirda; not tek satira iner.
+        Assert.StartsWith("- `a.cs` — AService.Get(id) -> Dto ikinci satir", map1.Split('\n')[2], StringComparison.Ordinal);
+        Assert.Contains("- `./b.vue` — ekran", t2, StringComparison.Ordinal); // ./ onekiyle de gorevin dosyasi sayilir
+        // Ust sinir: 42 satirin hepsi sigmaz, istem 3000 karakterlik haritayla sinirli kalir.
+        var lines = map1.Split('\n').Count(l => l.StartsWith("- `", StringComparison.Ordinal));
+        Assert.InRange(lines, 5, 41);
+        Assert.DoesNotContain("src/Dolgu39.cs", t1, StringComparison.Ordinal);
+        _runtime.SpecJson = null;
+    }
+
+    /// <summary>
+    /// Gorev basinda "bu iste yazilan kod": calismanin ilk anlik goruntusunden simdiye fark + imzalar, LLM'siz (CodeDigest).
+    /// Ilk gorevde fark yok, bolum acilmaz; ikinci gorev t1'in yazdigini imzasiyla gorur, gizli uye ve silinen dosyanin govdesi gelmez.
+    /// </summary>
+    [Fact]
+    public async Task Sonraki_gorev_bu_iste_yazilan_kodu_farktan_ve_imzalardan_alir()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        var snap = new FakeSnapshot();
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene, new WorkspaceLocator(_fx.Paths), _scheduler, snapshots: snap);
+        _runtime.SpecJson = """
+            {"summary":"s","architecture":"a","rules":["r"],
+             "tasks":[
+               {"id":"t1","title":"api","description":"...","files":["a.cs"],"acceptance":["build"],"dependsOn":[]},
+               {"id":"t2","title":"ekran","description":"...","files":["b.vue"],"acceptance":["build"],"dependsOn":["t1"]}]}
+            """;
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        run = await svc.DispatchAsync(run.Id, Ct);
+        Assert.Equal(RunStatus.Completed, run.Status);
+
+        var impl = _runtime.Calls.Where(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true).Select(c => c.Messages[^1].Content).ToList();
+        var t1 = impl.First(m => m.Contains("# Görev t1", StringComparison.Ordinal));
+        var t2 = impl.First(m => m.Contains("# Görev t2", StringComparison.Ordinal));
+        Assert.DoesNotContain("# Bu işte şimdiye kadar yazılan kod", t1, StringComparison.Ordinal);
+        var section = t2[t2.IndexOf("# Bu işte şimdiye kadar yazılan kod", StringComparison.Ordinal)..];
+        Assert.Contains("- `a.cs` — yeni, +40\n  public sealed class AService\n  public Task<Dto> GetAsync(string id)\n", section, StringComparison.Ordinal);
+        Assert.Contains("- `src/liste.ts` — değişti, +3 −1\n  export function useListe(filtre: string): Ref<Satir[]>", section, StringComparison.Ordinal);
+        Assert.Contains("- `eski.cs` — silindi", section, StringComparison.Ordinal);
+        Assert.DoesNotContain("Gizli", section, StringComparison.Ordinal);
+
+        // Fark calismanin ILK halinden (t1 yazmadan once) t2'nin baslangicina; paket dizinleri git'e hic verilmez.
+        var diff = Assert.Single(snap.Diffs);
+        Assert.Equal(("s1", "s2"), (diff.From, diff.To));
+        Assert.Contains("**/*.cs", diff.Include);
+        Assert.Contains("**/node_modules/**", diff.Exclude);
+        Assert.DoesNotContain("eski.cs", snap.Reads); // silinen dosya okunmaz
+        _runtime.SpecJson = null;
+    }
+
+    /// <summary>
+    /// Kopyalar (docs/DOMAIN.md → Kopyalar): ayni proje ayni klasordur; bir calisma YAZARKEN (Started faz) ayni projenin ikinci
+    /// calismasi sira bekler ("proje baska bir calismada"), ilki bitince surer. Kopyalardan once bunu ajan kilidi dolayli sagliyordu.
+    /// </summary>
+    [Fact]
+    public async Task Ayni_projede_yazan_calisma_varken_ikincisi_sira_bekler()
+    {
+        var first = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "birinci"), Ct);
+        await _store.UpdateAsync((await _reader.GetAsync(first.Id, Ct)) with { Status = RunStatus.Running }, Ct);
+        await _store.AppendPhaseAsync(first.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Started, Worker: "developer~2"), Ct);
+
+        var second = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "ikinci"), Ct);
+        await _svc.AnalyzeAsync(second.Id, Ct);
+        await _svc.BeginApproveAsync(second.Id, Ct);
+        second = await _svc.DispatchAsync(second.Id, Ct);
+        Assert.Equal(RunStatus.Running, second.Status);
+        Assert.Contains("proje başka bir çalışmada", second.Detail, StringComparison.Ordinal);
+        Assert.NotNull(second.WaitingSince);
+
+        await _store.AppendPhaseAsync(first.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Done, Worker: "developer~2"), Ct);
+        await _store.UpdateAsync((await _reader.GetAsync(first.Id, Ct)) with { Status = RunStatus.Completed }, Ct);
+        second = await _svc.DispatchAsync(second.Id, Ct);
+        Assert.Equal(RunStatus.Completed, second.Status);
+    }
+
+    /// <summary>Anlik goruntu alinamazsa neden calismanin kaydina duser (eskiden yalniz konsol logu); is durmaz.</summary>
+    [Fact]
+    public async Task Anlik_goruntu_alinamazsa_neden_kayda_duser_is_surer()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var svc = new RunService(_store, new JsonWorkflowStore(_fx.Paths), agents, _projects, _reader, new AgentCaller(agents, _runtime, _store, _scene), _scene,
+            new WorkspaceLocator(_fx.Paths), _scheduler, snapshots: new BrokenSnapshot());
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        run = await svc.DispatchAsync(run.Id, Ct);
+
+        Assert.Equal(RunStatus.Completed, run.Status);
+        // Her uretici adim kendi notunu yazar: o adimin "geri al" secenegi kaybolur.
+        var notes = (await _store.ReadMessagesAsync(run.Id, Ct)).Where(m => m.Subject == "snapshot").ToList();
+        Assert.NotEmpty(notes);
+        Assert.All(notes, n => Assert.Contains("Permission denied", n.Body, StringComparison.Ordinal));
+    }
+
+    private sealed class BrokenSnapshot : IWorkspaceSnapshot
+    {
+        public Task<string?> TrackAsync(string workDir, CancellationToken ct) => Task.FromResult<string?>(null);
+
+        public Task<bool> RestoreAsync(string workDir, string snapshot, CancellationToken ct) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<WorkspaceChange>> DiffAsync(string workDir, string fromSnapshot, string toSnapshot, IReadOnlyList<string> include, IReadOnlyList<string> exclude, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<WorkspaceChange>>([]);
+
+        public Task<string?> ReadAsync(string workDir, string snapshot, string path, CancellationToken ct) => Task.FromResult<string?>(null);
+
+        public string? LastTrackFailure(string workDir) => "git add (128): error: open(\".vs/x.vsidx\"): Permission denied";
+    }
+
+    private sealed class FakeSnapshot : IWorkspaceSnapshot
+    {
+        private int _n;
+
+        public List<(string From, string To, IReadOnlyList<string> Include, IReadOnlyList<string> Exclude)> Diffs { get; } = [];
+
+        public List<string> Reads { get; } = [];
+
+        public Task<string?> TrackAsync(string workDir, CancellationToken ct) => Task.FromResult<string?>($"s{++_n}");
+
+        public Task<bool> RestoreAsync(string workDir, string snapshot, CancellationToken ct) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<WorkspaceChange>> DiffAsync(string workDir, string fromSnapshot, string toSnapshot, IReadOnlyList<string> include, IReadOnlyList<string> exclude, CancellationToken ct)
+        {
+            Diffs.Add((fromSnapshot, toSnapshot, include, exclude));
+            return Task.FromResult<IReadOnlyList<WorkspaceChange>>(
+                [new("eski.cs", 'D', 0, 12), new("src/liste.ts", 'M', 3, 1), new("a.cs", 'A', 40, 0)]);
+        }
+
+        public Task<string?> ReadAsync(string workDir, string snapshot, string path, CancellationToken ct)
+        {
+            Reads.Add(path);
+            return Task.FromResult<string?>(path switch
+            {
+                "a.cs" => "namespace X;\n\npublic sealed class AService\n{\n    public Task<Dto> GetAsync(string id)\n    {\n        return Gizli(id);\n    }\n\n    private Task<Dto> Gizli(string id) => null!;\n}\n",
+                "src/liste.ts" => "import { ref } from 'vue'\n\nexport function useListe(filtre: string): Ref<Satir[]> {\n  const x = ref([])\n  return x\n}\n",
+                _ => null,
+            });
+        }
+    }
+
+    [Fact]
+    public async Task Onbellek_omru_ayardan_runtimea_gider_tepe_baglam_ve_5dk_payi_tur_kaydina_yazilir()
+    {
+        var agents = new MarkdownAgentStore(_fx.Paths);
+        var workflows = new JsonWorkflowStore(_fx.Paths);
+        await _fx.Settings.SaveAsync(new Domain.Settings.AppSettings(Domain.Settings.AppSettings.Default.LimitGuards, Domain.Settings.CacheTtls.FiveMinutes), Ct);
+        var caller = new AgentCaller(agents, _runtime, _store, _scene, RetryPolicy.None, settings: _fx.Settings);
+        var svc = new RunService(_store, workflows, agents, _projects, _reader, caller, _scene, new WorkspaceLocator(_fx.Paths), _scheduler);
+        _runtime.ImplementUsage = new RuntimeUsage(900_000, 20, 0, 800_000, 99_000, 60_000, 120_000);
+
+        var run = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(run.Id, Ct);
+        await svc.BeginApproveAsync(run.Id, Ct);
+        await svc.DispatchAsync(run.Id, Ct);
+
+        Assert.NotEmpty(_runtime.Calls);
+        Assert.All(_runtime.Calls, c => Assert.Equal(c.Provider == Provider.Anthropic ? "5m" : null, c.CacheTtl));
+        var turn = (await _store.ReadTurnsAsync(run.Id, "developer", Ct)).First(t => t.Task == "t1" && t.Stage == "gelistirme");
+        Assert.Equal((120_000, 60_000, "5m"), (turn.PeakContextTokens, turn.CacheWrite5mTokens, turn.CacheTtl));
+        _runtime.ImplementUsage = null;
+
+        // Ayar bos -> CLI varsayilani, alan gitmez.
+        await _fx.Settings.SaveAsync(Domain.Settings.AppSettings.Default, Ct);
+        var before = _runtime.Calls.Count;
+        var again = await svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief"), Ct);
+        await svc.AnalyzeAsync(again.Id, Ct);
+        Assert.All(_runtime.Calls.Skip(before), c => Assert.Null(c.CacheTtl));
+    }
+
     [Fact]
     public async Task Yeniden_baslatmada_running_calismalar_interrupted()
     {
@@ -622,7 +923,9 @@ public sealed class RunServiceTests : IDisposable
         await _svc.BeginApproveAsync(a.Id, Ct);
         await _store.AppendPhaseAsync(a.Id, new Phase(DateTimeOffset.UtcNow, "t1", "gelistirme", "Geliştirme", "implement", "developer", 1, PhaseStatus.Started), Ct);
 
-        var b = await _svc.CreateAsync(new RunRequest(Project: "test", Brief: "brief b"), Ct);
+        // B ayri projede: ayni projede "proje baska bir calismada" kurali once devreye girer (kendi testi var); burada AJAN beklemesi sinanir.
+        await _projects.SaveAsync(new Project("test-b", "Test B", "", KlasikKey, "projects/test-b", Project.LocalOwner, DateTimeOffset.UtcNow), Ct);
+        var b = await _svc.CreateAsync(new RunRequest(Project: "test-b", Brief: "brief b"), Ct);
         await _svc.AnalyzeAsync(b.Id, Ct);
         await _svc.BeginApproveAsync(b.Id, Ct);
         var implementCalls = _runtime.Calls.Count(c => c.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true);
@@ -768,7 +1071,7 @@ public sealed class RunServiceTests : IDisposable
     // ------------------------------------------------------------------ sahteler
 
     /// <summary>Python yerine: sema istenirse plan JSON'u, yoksa devir notu metni. Cagrilari kaydeder.</summary>
-    private sealed class FakeRuntime : IAgentRuntimeService
+    internal sealed class FakeRuntime : IAgentRuntimeService
     {
         public List<RuntimeTurnRequest> Calls { get; } = [];
 
@@ -813,9 +1116,35 @@ public sealed class RunServiceTests : IDisposable
         /// <summary>Saglayici CAGRI SIRASINDA kota reddi versin (LimitGuard'in onbellegi kacirdiginda olan).</summary>
         public int LimitMidCallTimes { get; set; }
 
+        /// <summary>Ilk N gelistirme turu hic donmesin (iptal edilene kadar asili): tur bekcisi testi.</summary>
+        public int HangImplementTimes { get; set; }
+
+        /// <summary>Asili tur, asilmadan once bu kullanimi canli akisa bildirsin (kesilen turun maliyeti testi).</summary>
+        public (ProgressRegistry Registry, RuntimeUsage Usage)? HangReports { get; set; }
+
+        /// <summary>Uygulama turunun bildirdigi kullanim; null = sabit kucuk deger.</summary>
+        public RuntimeUsage? ImplementUsage { get; set; }
+
+        private static async Task<RuntimeTurnResponse> HangAsync(CancellationToken ct)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            throw new InvalidOperationException("ulasilmaz");
+        }
+
         public Task<RuntimeTurnResponse> TurnAsync(RuntimeTurnRequest request, CancellationToken ct)
         {
             Calls.Add(request);
+            if (HangImplementTimes > 0 && request.SchemaJson?.Contains("filesChanged", StringComparison.Ordinal) == true)
+            {
+                HangImplementTimes--;
+                if (HangReports is { } h && request.ProgressUrl is { } url)
+                {
+                    h.Registry.Report(url[(url.LastIndexOf('/') + 1)..], new ProgressEvent(null, null, "usage", MessageId: "m1", Usage: h.Usage));
+                }
+
+                return HangAsync(ct);
+            }
+
             if (LimitMidCallTimes > 0)
             {
                 LimitMidCallTimes--;
@@ -853,7 +1182,7 @@ public sealed class RunServiceTests : IDisposable
                 var report = blockNow
                     ? """{"summary":"takildim","filesChanged":[],"commandsRun":[],"blocked":true,"question":"Türkçe karakter: i mi I mı?"}"""
                     : """{"summary":"slug.py yazildi","filesChanged":["slug.py"],"commandsRun":["python -m pytest: 3 passed"],"blocked":false,"question":null}""";
-                return Task.FromResult(new RuntimeTurnResponse("", report, request.Provider, request.Model, destination, new RuntimeUsage(50, 20, 0), 0.01m, 2.0, 1, [new RuntimeToolUse("Write", "slug.py")], 5));
+                return Task.FromResult(new RuntimeTurnResponse("", report, request.Provider, request.Model, destination, ImplementUsage ?? new RuntimeUsage(50, 20, 0), 0.01m, 2.0, 1, [new RuntimeToolUse("Write", "slug.py")], 5));
             }
 
             if (request.SchemaJson.Contains("verdict", StringComparison.Ordinal))
@@ -889,13 +1218,24 @@ public sealed class RunServiceTests : IDisposable
         public Task<RuntimeAuthStatus> LogoutAsync(Provider provider, CancellationToken ct)
             => Task.FromResult(new RuntimeAuthStatus(provider, false, null, "sahte"));
 
+        public Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<RuntimeLocalUsage>>([]);
+
+        public List<RuntimeMcpServer> Probes { get; } = [];
+
+        public Task<RuntimeMcpProbe> ProbeMcpAsync(RuntimeMcpServer server, CancellationToken ct)
+        {
+            Probes.Add(server);
+            return Task.FromResult(new RuntimeMcpProbe(true, "", [new RuntimeMcpTool("echo", "yankı")], "sahte", "1.0"));
+        }
+
         public Task<IReadOnlyList<RuntimeProviderLimits>> ListLimitsAsync(Provider? provider, bool refresh, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<RuntimeProviderLimits>>(LimitPercent is { } p
                 ? [new RuntimeProviderLimits(Provider.Anthropic, true, "sahte", "max", DateTimeOffset.UtcNow, [new RuntimeUsageLimit("five_hour", null, p, "warning", DateTimeOffset.UtcNow.AddHours(1), null, true)])]
                 : []);
     }
 
-    private sealed class FakeScene : ISceneEventPublisher
+    internal sealed class FakeScene : ISceneEventPublisher
     {
         public List<(string Type, string Json)> Events { get; } = [];
 
@@ -903,7 +1243,7 @@ public sealed class RunServiceTests : IDisposable
     }
 
     /// <summary>Is kanali yerine: RunService'in kuyruga koydugu (calisma, adim) ciftlerini kaydeder.</summary>
-    private sealed class FakeScheduler : IRunScheduler
+    internal sealed class FakeScheduler : IRunScheduler
     {
         public List<(string RunId, RunStep Step)> Scheduled { get; } = [];
 

@@ -31,13 +31,36 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         string? Cwd,
         int? MaxTurns,
         string? ProgressUrl,
-        string SystemPromptMode);
+        string SystemPromptMode,
+        IReadOnlyDictionary<string, McpServerDto>? McpServers,
+        IReadOnlyList<string>? ReadDirs,
+        IReadOnlyList<string>? DisallowedTools,
+        string? CacheTtl,
+        IReadOnlyDictionary<string, SubagentDto>? Subagents);
+
+    private sealed record SubagentDto(string Description, string Prompt, IReadOnlyList<string> Tools, string Model, int? MaxTurns);
+
+    private sealed record ModelUsageDto(string Model, int InputTokens, int OutputTokens, int CacheReadTokens, int CacheWriteTokens, decimal? CostUsd);
+
+    /// <summary>SDK bicimi (<c>McpStdioServerConfig</c> / <c>McpHttpServerConfig</c> / <c>McpSSEServerConfig</c>); bos alan yazilmaz.</summary>
+    private sealed record McpServerDto(
+        string Type,
+        string? Command,
+        IReadOnlyList<string>? Args,
+        IReadOnlyDictionary<string, string>? Env,
+        string? Url,
+        IReadOnlyDictionary<string, string>? Headers,
+        IReadOnlyList<string>? Tools);
+
+    private sealed record McpToolDto(string Name, string? Description);
+
+    private sealed record McpProbeDto(bool Ok, string? Detail, IReadOnlyList<McpToolDto>? Tools, string? ServerName, string? ServerVersion);
 
     private sealed record MessageDto(string Role, string Content);
 
     private sealed record ToolUseDto(string Tool, string? Target);
 
-    private sealed record UsageDto(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0);
+    private sealed record UsageDto(int InputTokens, int OutputTokens, int ReasoningChars, int CacheReadTokens = 0, int CacheWriteTokens = 0, int CacheWrite5mTokens = 0, int PeakContextTokens = 0);
 
     private sealed record TurnResultDto(
         string Text,
@@ -50,7 +73,8 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         double DurationS,
         int Attempts,
         IReadOnlyList<ToolUseDto>? ToolUses,
-        int? Turns);
+        int? Turns,
+        IReadOnlyList<ModelUsageDto>? ModelUsage = null);
 
     private sealed record ModelDto(string Provider, string Model, bool Reachable, string? Detail);
 
@@ -98,6 +122,29 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         return (items ?? []).Select(l => new RuntimeProviderLimits(
             ParseProvider(l.Provider), l.Available, l.Detail ?? "", l.Subscription, l.FetchedAt,
             (l.Limits ?? []).Select(x => new RuntimeUsageLimit(x.Kind, x.Group, x.Percent, x.Severity, x.ResetsAt, x.Scope, x.IsActive)).ToList())).ToList();
+    }
+
+    private sealed record LocalUsageDto(string Source, string Project, string Model, int Messages, long InputTokens, long OutputTokens, long CacheReadTokens, long CacheWriteTokens, long CacheWrite5mTokens = 0);
+
+    public async Task<IReadOnlyList<RuntimeLocalUsage>> ListLocalUsageAsync(DateTimeOffset since, DateTimeOffset? until, CancellationToken ct)
+    {
+        var url = $"/v1/usage/local?since={Uri.EscapeDataString(since.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}"
+            + (until is { } u ? $"&until={Uri.EscapeDataString(u.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}" : "");
+        IReadOnlyList<LocalUsageDto>? items;
+        try
+        {
+            items = await http.GetFromJsonAsync<IReadOnlyList<LocalUsageDto>>(url, Json, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is not null)
+        {
+            throw new RuntimeErrorException($"runtime /v1/usage/local HTTP {(int)ex.StatusCode}");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new RuntimeUnavailableException($"runtime'a ulasilamadi: {ex.Message}");
+        }
+
+        return (items ?? []).Select(x => new RuntimeLocalUsage(x.Source, x.Project, x.Model, x.Messages, x.InputTokens, x.OutputTokens, x.CacheReadTokens, x.CacheWriteTokens, x.CacheWrite5mTokens)).ToList();
     }
 
     public async Task<RuntimeLoginStarted> LoginAsync(Provider provider, string mode, string? email, string? apiKey, CancellationToken ct)
@@ -179,7 +226,12 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             request.Cwd,
             request.MaxTurns,
             request.ProgressUrl,
-            request.SystemPromptMode);
+            request.SystemPromptMode,
+            request.McpServers is { Count: > 0 } mcp ? mcp.ToDictionary(kv => kv.Key, kv => ToDto(kv.Value), StringComparer.Ordinal) : null,
+            request.ReadDirs is { Count: > 0 } dirs ? dirs : null,
+            request.DisallowedTools is { Count: > 0 } denied ? denied : null,
+            request.CacheTtl,
+            request.Subagents is { Count: > 0 } subs ? subs.ToDictionary(kv => kv.Key, kv => new SubagentDto(kv.Value.Description, kv.Value.Prompt, kv.Value.Tools, kv.Value.Model, kv.Value.MaxTurns), StringComparer.Ordinal) : null);
 
         HttpResponseMessage response;
         try
@@ -189,6 +241,13 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
         catch (HttpRequestException ex)
         {
             throw new RuntimeUnavailableException($"runtime'a ulasilamadi: {ex.Message}");
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // HttpClient zaman asimi TaskCanceledException olarak gelir; kullanici iptaliyle ayni tip. Ayirt edilmezse
+            // is kanali "iptal" sanip sessizce biter, calisma sonsuza dek Running kalir (2026-09-23: 12 dk'da kesilen
+            // Opus turu). Kalici hata: tekrar denemek ayni uzun turu bastan kostururdu; karar kullanicinin ("Yeniden dene").
+            throw new RuntimeTimeoutException($"runtime turu {http.Timeout.TotalMinutes:0} dk icinde bitmedi (zaman asimi): {ex.Message}");
         }
 
         if (!response.IsSuccessStatusCode)
@@ -216,12 +275,13 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
             result.Model,
             Enum.Parse<Destination>(result.Destination, ignoreCase: true),
             new RuntimeUsage(result.Usage?.InputTokens ?? 0, result.Usage?.OutputTokens ?? 0, result.Usage?.ReasoningChars ?? 0,
-                result.Usage?.CacheReadTokens ?? 0, result.Usage?.CacheWriteTokens ?? 0),
+                result.Usage?.CacheReadTokens ?? 0, result.Usage?.CacheWriteTokens ?? 0, result.Usage?.CacheWrite5mTokens ?? 0, result.Usage?.PeakContextTokens ?? 0),
             result.CostUsd,
             result.DurationS,
             result.Attempts,
             result.ToolUses?.Select(t => new RuntimeToolUse(t.Tool, t.Target)).ToList(),
-            result.Turns ?? 1);
+            result.Turns ?? 1,
+            result.ModelUsage is { Count: > 0 } mu ? mu.Select(m => new RuntimeModelUsage(m.Model, m.InputTokens, m.OutputTokens, m.CacheReadTokens, m.CacheWriteTokens, m.CostUsd)).ToList() : null);
     }
 
     public async Task<IReadOnlyList<RuntimeModelInfo>> ListModelsAsync(Provider? provider, CancellationToken ct)
@@ -239,6 +299,22 @@ public sealed class PythonAgentRuntimeClient(HttpClient http) : IAgentRuntimeSer
 
         return (models ?? []).Select(m => new RuntimeModelInfo(ParseProvider(m.Provider), m.Model, m.Reachable, m.Detail ?? "")).ToList();
     }
+
+    public async Task<RuntimeMcpProbe> ProbeMcpAsync(RuntimeMcpServer server, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        var result = await PostAsync<McpServerDto, McpProbeDto>("/v1/mcp/probe", ToDto(server), ct).ConfigureAwait(false);
+        return new RuntimeMcpProbe(result.Ok, result.Detail ?? "", (result.Tools ?? []).Select(t => new RuntimeMcpTool(t.Name, t.Description)).ToList(), result.ServerName, result.ServerVersion);
+    }
+
+    private static McpServerDto ToDto(RuntimeMcpServer s) => new(
+        s.Type,
+        s.Command,
+        s.Args is { Count: > 0 } ? s.Args : null,
+        s.Env is { Count: > 0 } ? s.Env : null,
+        s.Url,
+        s.Headers is { Count: > 0 } ? s.Headers : null,
+        s.Tools);
 
     /// <summary>Runtime'in dondugu ad; bos donmez, bilinmeyen ad sozlesme hatasidir (500).</summary>
     private static Provider ParseProvider(string s)

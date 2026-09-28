@@ -19,6 +19,7 @@
           <span v-if="inboxCount" class="badge" :aria-label="`${inboxCount} iş senden cevap bekliyor`">{{ inboxCount }}</span>
         </button>
         <button type="button" class="chip action" :class="{ on: teamPanel }" aria-label="Ekip yönetimi" title="Ekip yönetimi (E): ajanlar ve takımlar" @click="toggleTeam">Ekip</button>
+        <button type="button" class="chip action" :class="{ on: mcpPanel }" aria-label="MCP sunucuları" title="MCP sunucuları (M): ekle, dene, ajanlara yetki ver" @click="toggleMcp">MCP</button>
         <span class="help-wrap">
           <button type="button" class="chip action help" aria-label="Kısayollar" title="Kısayollar" @click="help = !help">?</button>
           <div v-if="help" class="help-menu" role="dialog" aria-label="Kısayollar">
@@ -28,6 +29,7 @@
               <dt><kbd>I</kbd></dt><dd>İşler</dd>
               <dt><kbd>B</kbd></dt><dd>Sprint panosu (Kanban)</dd>
               <dt><kbd>E</kbd></dt><dd>Ekip yönetimi</dd>
+              <dt><kbd>M</kbd></dt><dd>MCP sunucuları</dd>
               <dt><kbd>S</kbd></dt><dd>Ayarlar</dd>
               <dt><kbd>Esc</kbd></dt><dd>Açık paneli kapat</dd>
             </dl>
@@ -105,6 +107,7 @@
           <span class="card-meta">{{ p.runs }} iş<template v-if="p.running"> · <b class="run-n">{{ p.running }} çalışıyor</b></template><template v-if="p.paused"> · {{ p.paused }} durakladı</template> · {{ fmtCost(p.totalCostUsd) }}<template v-if="projectTokens(p)"> · {{ fmtTokens(projectTokens(p)) }} tk</template></span>
           <span v-if="inboxOfProject(p.key)" class="card-ask"><Ico name="bell" :size="12" /> {{ inboxOfProject(p.key) }} senden bekliyor</span>
           <span v-else-if="p.lastActivityAt" class="card-detail">son hareket {{ fmtAgo(p.lastActivityAt) }}</span>
+          <LangBar v-if="langs[p.key]?.length" class="card-langs" :languages="langs[p.key]!" compact />
         </button>
         <p v-if="!projects.length" class="rail-empty">Henüz proje yok. "+" ile ilk projeyi aç; işler onun içinde başlar.</p>
         <button type="button" class="rail-all" @click="toggleJobs">Tüm işler <b v-if="overview">{{ overview.total }}</b></button>
@@ -125,7 +128,7 @@
         <!-- Ekip pusulasi: sahnede kim ne yapiyor; tiklaninca ajan paneli. Yari saydam, sahneyi kapatmaz. -->
         <!-- Ekip pusulasi: sahnede kim ne yapiyor. Kucultulebilir (kullanici istegi 2026-09-20): kapaliyken yalniz renkli
              noktalar + mesgul sayisi; tiklaninca acilir. Secim localStorage'da kalir. -->
-        <div v-if="!selected && !runPanel && !settings && !jobs && !board && !teamPanel" class="compass" :class="{ min: compassMin }" aria-label="Ekip">
+        <div v-if="!selected && !runPanel && !settings && !jobs && !board && !teamPanel && !mcpPanel" class="compass" :class="{ min: compassMin }" aria-label="Ekip">
           <button type="button" class="compass-head" :title="compassMin ? 'Ekibi göster' : 'Ekibi küçült'" @click="toggleCompass">
             <span class="compass-title">Ekip</span>
             <span v-if="compassMin" class="compass-dots"><span v-for="a in agents" :key="a.key" class="dot" :class="{ busy: a.state !== 'idle' && a.state !== 'done' }" :style="{ background: roleHex(a.key) }" :title="`${a.name}: ${a.note || STATE_LABEL[a.state as AgentState]}`" /></span>
@@ -162,13 +165,14 @@
         />
 
         <!-- Calisma paneli: yeni brief (projeye bagli), plan onayi, devir notlari. Diger panellerle ayni anda acilmaz. -->
-        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" :live-tools="runId ? (liveTools[runId] ?? []) : []" @close="closeRun" @open="openRun" @jobs="toggleJobs" @new-run="openNewRun" />
+        <RunPanel v-if="runPanel" :run-id="runId" :project="runProject" :agents="team" :live-tools="runId ? (liveTools[runId] ?? []) : []" :focus-task="runFocus" @close="closeRun" @open="openRun" @jobs="toggleJobs" @new-run="openNewRun" />
 
         <!-- Ekip yonetimi: ajan havuzu (ekle/sil) ve takimlar = is akislari (kullanici karari 2026-09-20). -->
         <TeamPanel v-if="teamPanel" :agents="team" @close="teamPanel = false" @select="k => { teamPanel = false; selectAgent(k) }" @changed="loadTeam(); loadProjects()" />
 
         <!-- Ayarlar: LLM baglantilari (tek tikla giris) ve kullanim. -->
         <SettingsPanel v-if="settings" @close="settings = false" @changed="loadProviders(); limitsBar?.reload()" />
+        <McpPanel v-if="mcpPanel" :agents="team" @close="mcpPanel = false" @changed="loadTeam()" />
 
         <AgentPanel
           v-if="selected"
@@ -190,15 +194,17 @@ import KanbanPanel, { type BoardSnapshot } from '~/components/KanbanPanel.vue'
 import AgentPanel from '~/components/AgentPanel.vue'
 import RunPanel from '~/components/RunPanel.vue'
 import SettingsPanel from '~/components/SettingsPanel.vue'
+import McpPanel from '~/components/McpPanel.vue'
 import LimitsBar from '~/components/LimitsBar.vue'
 import JobsPanel from '~/components/JobsPanel.vue'
 import ProjectPanel from '~/components/ProjectPanel.vue'
+import LangBar from '~/components/LangBar.vue'
 import LoginPanel from '~/components/LoginPanel.vue'
 import TeamPanel from '~/components/TeamPanel.vue'
 import { useAuth } from '~/composables/useAuth'
 import type { Hud } from '~/scene/world'
 import { roleHex, STATE_HEX, STATE_LABEL, type AgentState, type FeedStatus } from '~/scene/contract'
-import type { AgentDetail, AgentListItem, InboxKind, ProjectCard, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
+import type { AgentDetail, AgentListItem, InboxKind, LanguageShare, ProjectCard, ProjectInspection, ProviderStatus, RunSummary, RunsOverview } from '~/api/types'
 import { isApiError, useApiClient } from '~/api/client'
 import { errorText } from '~/api/errors'
 import { INBOX_KIND_LABEL, RUN_STATUS_LABEL, providerLabel, fmtCost as fmtCostLabel, fmtTokens } from '~/api/labels'
@@ -255,6 +261,22 @@ const projects = ref<ProjectCard[]>([])
 const runsList = ref<RunSummary[]>([])
 async function loadProjects() {
   try { projects.value = await api.get<ProjectCard[]>('/api/v1/projects') } catch { /* ray eski kalir */ }
+  void loadLangs()
+}
+
+/**
+ * Ray kartindaki ince dil seridi (2026-09-26, GitHub'daki gibi). Dil payi ancak bir is baslayip bitince degisir: kart ilk
+ * gorundugunde ve is sayisi / calisan sayisi degisince alinir. Zamanlayici yok (2026-09-27): 60 sn'lik tazeleme her projede
+ * git sureci + dosya basina stat demekti. Alinamayan proje, is durumu degisene kadar seritsiz kalir.
+ */
+const langs = ref<Record<string, LanguageShare[]>>({})
+const langsFor: Record<string, string> = {}
+async function loadLangs() {
+  const due = projects.value.filter(p => langsFor[p.key] !== `${p.runs}:${p.running}`)
+  if (!due.length) return
+  for (const p of due) langsFor[p.key] = `${p.runs}:${p.running}`
+  const got = await Promise.all(due.map(async p => [p.key, await api.get<ProjectInspection>(`/api/v1/projects/${encodeURIComponent(p.key)}/inspect`).then(r => r.languages, () => [])] as const))
+  langs.value = { ...langs.value, ...Object.fromEntries(got) }
 }
 async function loadRuns() {
   try { runsList.value = await api.get<RunSummary[]>('/api/v1/runs?limit=100') } catch { /* eski kalir */ }
@@ -392,7 +414,11 @@ const runPanel = ref(false)
 const runId = ref<string | null>(null)
 /** Yeni is formunun projesi; is yalniz bir projenin icinde baslar. */
 const runProject = ref<string | null>(null)
+/** Panodan acilan gorev: calisma paneli canli akisi bu goreve odaklar. */
+const runFocus = ref<string | null>(null)
 const settings = ref(false)
+/** MCP sunuculari paneli (docs/DOMAIN.md → MCP sunuculari). Diger yan paneller gibi tek basina acilir. */
+const mcpPanel = ref(false)
 const jobs = ref(false)
 const bell = ref(false)
 function toggleBell() { bell.value = !bell.value; if (bell.value) void loadOverview() }
@@ -412,6 +438,7 @@ function closeOthers() {
   selected.value = null
   board.value = null
   settings.value = false
+  mcpPanel.value = false
   jobs.value = false
   teamPanel.value = false
 }
@@ -449,7 +476,17 @@ function toggleSettings() {
   runPanel.value = false
   jobs.value = false
   teamPanel.value = false
+  mcpPanel.value = false
   settings.value = true
+}
+
+function toggleMcp() {
+  if (mcpPanel.value) { mcpPanel.value = false; return }
+  if (selected.value && !leaveAgent()) return
+  closeOthers()
+  runPanel.value = false
+  mcpPanel.value = true
+  void loadTeam()
 }
 
 function toggleJobs() {
@@ -459,6 +496,7 @@ function toggleJobs() {
   board.value = null
   runPanel.value = false
   settings.value = false
+  mcpPanel.value = false
   teamPanel.value = false
   jobs.value = true
   void loadOverview()
@@ -469,9 +507,11 @@ function leaveAgent(): boolean {
 }
 
 function selectAgent(key: string | null) {
+  // Kopya (`anahtar~n`, docs/DOMAIN.md → Kopyalar) ekipte ayri ajan degil: paneli ana ajanin md'sini acar.
+  if (key) key = key.replace(/~\d+$/, '')
   if (key === selected.value || !leaveAgent()) return
   selected.value = key
-  if (key) { board.value = null; runPanel.value = false; settings.value = false; jobs.value = false; teamPanel.value = false }
+  if (key) { board.value = null; runPanel.value = false; settings.value = false; mcpPanel.value = false; jobs.value = false; teamPanel.value = false }
 }
 
 function closeAgent() {
@@ -493,16 +533,19 @@ function openBoard(s: BoardSnapshot) {
   selected.value = null
   runPanel.value = false
   settings.value = false
+  mcpPanel.value = false
   jobs.value = false
   teamPanel.value = false
   board.value = s
 }
 
 
-/** Gelen kutusu, pano ya da proje panelinden: id → o calisma; '' → yeni is (acik projenin icinde, yoksa uyari). Proje paneli acik kalir. */
-function openRun(id: string) {
+/** Gelen kutusu, pano ya da proje panelinden: id → o calisma; '' → yeni is (acik projenin icinde, yoksa uyari). Proje paneli acik kalir.
+ *  `task`: panodaki kart — calisma paneli o gorevin canli akisina odaklanir. */
+function openRun(id: string, task?: string) {
   if (selected.value && !leaveAgent()) return
   closeOthers()
+  runFocus.value = task ?? null
   if (id) {
     runId.value = id
     const r = runsList.value.find(x => x.id === id)
@@ -522,6 +565,7 @@ function onKey(e: KeyboardEvent) {
     if (help.value) help.value = false
     else if (bell.value) bell.value = false
     else if (teamPanel.value) teamPanel.value = false
+    else if (mcpPanel.value) mcpPanel.value = false
     else if (settings.value) settings.value = false
     else if (jobs.value) jobs.value = false
     else if (runPanel.value) runPanel.value = false
@@ -537,6 +581,7 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 's' || e.key === 'S') toggleSettings()
   if (e.key === 'i' || e.key === 'I') toggleJobs()
   if (e.key === 'e' || e.key === 'E') toggleTeam()
+  if (e.key === 'm' || e.key === 'M') toggleMcp()
 }
 function bootData() {
   void loadTeam()
@@ -662,6 +707,7 @@ const STATUS_LABEL: Record<FeedStatus, string> = {
 .card-meta { font-size: 11px; color: #4a5068; }
 .card-ask { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #7a5a00; background: #f6e2a0; padding: 3px 8px; border-radius: 3px; margin-top: 2px; overflow: hidden; white-space: nowrap; }
 .card-detail { font-size: 10px; color: #6b7285; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-langs { margin-top: 3px; }
 .rail-empty { margin: 0; font-size: 11px; color: #d9b98f; line-height: 1.5; padding: 0 2px; }
 .rail-all {
   margin-top: auto; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 8px 10px; border-radius: 4px;

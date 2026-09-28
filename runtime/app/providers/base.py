@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
-from ..contracts import AuthStatus, LoginRequest, LoginStarted, ModelInfo, ProviderLimits, TurnRequest, TurnResponse
+from ..contracts import AuthStatus, LocalUsage, LoginRequest, LoginStarted, ModelInfo, ProviderLimits, TurnRequest, TurnResponse
 
 
 class LlmProvider(Protocol):
@@ -32,4 +33,8 @@ class LlmProvider(Protocol):
 
     def limits(self, refresh: bool = False) -> ProviderLimits:
         """Kalan kullanim (kota pencereleri). Saglayici vermiyorsa `available=False` + neden."""
+        ...
+
+    def local_usage(self, since: datetime, until: datetime | None = None) -> list[LocalUsage]:
+        """Makinedeki CLI oturum kayitlarindan kaynak/klasor/model basina kullanim; saglayici vermiyorsa bos."""
         ...

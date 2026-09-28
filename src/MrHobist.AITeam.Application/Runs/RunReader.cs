@@ -51,7 +51,7 @@ public sealed class RunReader(IRunStore runs) : IRunReader
         var order = spec is null ? [] : TaskGraph.Order(spec.Tasks).Select(t => t.Id).ToList();
         return new RunDetail(
             run.Id, run.Label, run.Brief, run.Sensitivity, run.Workflow, run.Status, run.StartedAt, run.FinishedAt,
-            run.TotalCostUsd, run.Detail, run.MaxCostUsd, run.Retries, run.Project, run.OwnerId, run.Question, run.ResumeAt, wf is null ? null : WorkflowMapping.ToDetail(wf), spec, order, tasks, messages, run.Step, run.WaitingSince);
+            run.TotalCostUsd, run.Detail, run.MaxCostUsd, run.Retries, run.Project, run.OwnerId, run.Question, run.ResumeAt, wf is null ? null : WorkflowMapping.ToDetail(wf), spec, order, tasks, messages, run.Step, run.WaitingSince, run.Attachments);
     }
 
     public async Task<IReadOnlyList<AgentRunWork>> GetAgentWorkAsync(string agentKey, int runLimit, CancellationToken ct)
@@ -159,7 +159,7 @@ public sealed class RunReader(IRunStore runs) : IRunReader
         // Karar: limit korumasi calismayi bekletti; kullanici isterse hemen surdurur (retry) ya da kapatir. Sifirlanmada kendisi surer.
         if (run.Status == RunStatus.Paused && run.ResumeAt is { } resume)
         {
-            items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Decision, lastTs, $"Limit doldu · {resume.ToLocalTime():HH:mm}'de sürer", run.Detail, null));
+            items.Add(new InboxItem(run.Id, run.Label, run.Status, InboxKind.Decision, lastTs, $"Limit doldu · {ResumeText.For(resume)}", run.Detail, null));
         }
 
         // Soru: bir ajan kullaniciya ask yazdi ve ref'i eslesen answer yok. Bugun uretilmiyor; sozlesme hazir.

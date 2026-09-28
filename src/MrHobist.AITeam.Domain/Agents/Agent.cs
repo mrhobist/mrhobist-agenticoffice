@@ -1,3 +1,5 @@
+using McpSupport = MrHobist.AITeam.Domain.Mcp.McpSupport;
+
 namespace MrHobist.AITeam.Domain.Agents;
 
 /// <summary>LLM saglayicisi. JSON'da adiyla tasinir; yeni uye sona eklenir.</summary>
@@ -53,8 +55,31 @@ public sealed record Agent(
     IReadOnlyList<string> Includes,
     string? CanAsk,
     string Prompt,
-    string? Effort = null)
+    string? Effort = null,
+    /// <summary>
+    /// Kullanabilecegi MCP sunucularinin anahtarlari (md frontmatter <c>mcp</c>; docs/DOMAIN.md → MCP sunuculari). Tanimlar
+    /// veritabanindadir; anahtarin kayitli oldugu ajan KAYDEDILIRKEN denetlenir, calisma aninda silinmis/kapali olan atlanir.
+    /// Sona eklendi (CLAUDE.md §5); null = yok.
+    /// </summary>
+    IReadOnlyList<string>? Mcp = null,
+    /// <summary>
+    /// Kesif alt ajaninin modeli (md frontmatter <c>explore_model</c>; docs/DOMAIN.md → Kesif alt ajani). Doluysa aracli turlarda
+    /// ajana salt okunur, ucuz bir alt ajan acilir: genis aramayi o yapar, ana model yalniz sonucu okur. Yalniz anthropic
+    /// (Agent SDK <c>agents</c>). Sona eklendi (CLAUDE.md §5); null = yok.
+    /// </summary>
+    string? ExploreModel = null,
+    /// <summary>
+    /// Ayni anda en fazla kac kopyasi calisir (md frontmatter <c>max_instances</c>; docs/DOMAIN.md → Kopyalar). Ekipte tek ajandir;
+    /// is geldikce kopya acilir (<see cref="Workers"/>), sahnede kapidan girer, bitince cikar. null/1 = tek. Sona eklendi.
+    /// </summary>
+    int? MaxInstances = null)
 {
+    /// <summary>Kopya siniri, 1..<see cref="Workers.MaxInstances"/>.</summary>
+    public int Instances => Math.Clamp(MaxInstances ?? 1, 1, Workers.MaxInstances);
+
+    /// <summary><see cref="Mcp"/>, bos liste olarak.</summary>
+    public IReadOnlyList<string> McpServers => Mcp ?? [];
+
     /// <summary>Kendi basina tutarli mi: anahtar, bos prompt, include anahtarlari, efor.</summary>
     public void Validate()
     {
@@ -75,23 +100,54 @@ public sealed record Agent(
         {
             Identifiers.Require(CanAsk, ErrorCodes.AgentUnknownCanAsk, "can_ask");
         }
+
+        foreach (var mcp in McpServers)
+        {
+            Identifiers.Require(mcp, ErrorCodes.AgentUnknownMcp, "MCP sunucusu");
+        }
+
+        // Saglayici bossa varsayilan (anthropic) kullanilir; MCP'yi calistiramayan saglayiciya yetki vermek sessizce hicbir sey yapmazdi.
+        if (McpServers.Count > 0 && Provider is { } p && !McpSupport.Supports(p))
+        {
+            throw new DomainException(ErrorCodes.AgentMcpUnsupported, $"{Key}: '{Providers.Wire(p)}' saglayicisi MCP araclarini calistiramiyor (yalniz anthropic).");
+        }
+
+        if (MaxInstances is { } mi && (mi < 1 || mi > Workers.MaxInstances))
+        {
+            throw new DomainException(ErrorCodes.AgentInvalidInstances, $"{Key}: max_instances 1..{Workers.MaxInstances} olmali ({mi}).");
+        }
+
+        if (ExploreModel is not null && Provider is { } ep && ep != Domain.Agents.Provider.Anthropic)
+        {
+            throw new DomainException(ErrorCodes.AgentExploreUnsupported, $"{Key}: '{Providers.Wire(ep)}' saglayicisi alt ajan calistiramiyor (explore_model yalniz anthropic).");
+        }
     }
 
     /// <summary>Govde + alt md'ler. Modele fiilen giden metin budur.</summary>
-    public string ComposePrompt(IReadOnlyDictionary<string, Knowledge> knowledge)
+    public string ComposePrompt(IReadOnlyDictionary<string, Knowledge> knowledge, IReadOnlyCollection<string>? only = null)
+        => string.Concat(PromptParts(knowledge, only).Select(p => p.Text));
+
+    /// <summary>
+    /// Sistem isteminin parcalari (ad, metin): govde, sonra her alt md. <paramref name="only"/> verilirse yalniz o alt md'ler
+    /// girer (2026-09-23 maliyet kaldiraci: is yalniz on yuzse arka yuz bilgisi her ic turda bosuna okunmasin). Bilinmeyen
+    /// ad yok sayilir; <paramref name="only"/> bossa ya da hicbiri eslesmiyorsa hepsi girer -- secim yanlissa bilgi eksik kalmasin.
+    /// </summary>
+    public IReadOnlyList<(string Name, string Text)> PromptParts(IReadOnlyDictionary<string, Knowledge> knowledge, IReadOnlyCollection<string>? only = null)
     {
-        var parts = new List<string> { Prompt.Trim() };
-        foreach (var include in Includes)
+        ArgumentNullException.ThrowIfNull(knowledge);
+        var selected = only is { Count: > 0 } && Includes.Any(only.Contains) ? Includes.Where(only.Contains).ToList() : Includes;
+        var parts = new List<(string Name, string Text)> { (Key, Prompt.Trim()) };
+        foreach (var include in selected)
         {
             if (!knowledge.TryGetValue(include, out var k))
             {
                 throw new DomainException(ErrorCodes.AgentUnknownInclude, $"{Key}: '{include}' bilgi dosyasi yok.");
             }
 
-            parts.Add($"\n\n---\n\n# {k.Title}\n\n{k.Body.Trim()}");
+            parts.Add((include, $"\n\n---\n\n# {k.Title}\n\n{k.Body.Trim()}"));
         }
 
-        return string.Concat(parts);
+        return parts;
     }
 }
 

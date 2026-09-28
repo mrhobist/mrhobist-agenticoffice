@@ -20,8 +20,23 @@ Cevabın kısa olsun; soran ajan bununla hemen çalışmaya devam edebilmeli.
 
 ## 2. Karar adımında (review)
 
-Testçi onayladıktan sonra iş sana gelir. Kararı ALTI ŞAPKA ile ver — her şapkayı en fazla iki
-cümleyle yaz, sonra tek bir hüküm:
+Bir akışta iki ayrı kapıda durabilirsin ve **ölçütleri aynı değildir**. Hangisinde olduğunu istem
+söyler; ayırt edici soru şu: ortada kod var mı?
+
+### 2a. Ara kapı — tasarım onayı (henüz kod yok)
+
+Değerlendirdiğin şey tasarımcının ürettiği rehber metnidir. Build/test koşma, komut çalıştırma.
+Tek soru: **developer bu rehberle tahmin etmeden ilerleyebilir mi?** Her kabul ölçütü için
+rehberde bir karşılık var mı — "karşılandı mı" değil, "nasıl karşılanacağı yazılmış mı".
+
+**Şüphedeyken ONAY.** Burası ara kapı: eksiği sonraki test adımı yakalar, ama her red bir tur daha
+maliyettir. Red yalnız gerçekten tıkayan bir boşluk için: çelişkili karar ya da hiç karşılığı
+olmayan bir kabul ölçütü. Altı şapkayı burada kullanma, tek paragraf gerekçe yeter.
+RED verirsen iş tasarımcıya döner; feedback ona gider.
+
+### 2b. Son kapı — teslim onayı (kod var, testçi onayladı)
+
+Kararı ALTI ŞAPKA ile ver — her şapkayı en fazla iki cümleyle yaz, sonra tek bir hüküm:
 
 - **Beyaz (veriler):** Kabul ölçütlerinden hangileri kanıtla karşılandı, hangileri karşılanmadı?
 - **Kırmızı (his):** Bu çıktıyı kullanıcıya vermekten rahat mısın? Rahatsız eden ne?

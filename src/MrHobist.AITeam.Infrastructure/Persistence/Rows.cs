@@ -89,6 +89,9 @@ internal sealed class RunRow
     /// <summary>JSON: calisma baslarken donan akis kopyasi.</summary>
     public string? WorkflowSnapshot { get; set; }
 
+    /// <summary>JSON: <see cref="RunAttachment"/>[] -- is verilirken eklenen dosyalar. NULL = ek yok.</summary>
+    public string? Attachments { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
@@ -181,6 +184,30 @@ internal sealed class SettingsRow
     public int Id { get; set; } = 1;
 
     public string Data { get; set; } = "";
+
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary><c>mcp_server</c>: kayitli MCP sunucusu. <c>Data</c> JSON (args, env, headers) sir tasir.</summary>
+internal sealed class McpServerRow
+{
+    public string Key { get; set; } = "";
+
+    public string Name { get; set; } = "";
+
+    public string Description { get; set; } = "";
+
+    public string Transport { get; set; } = "";
+
+    public string? Command { get; set; }
+
+    public string? Url { get; set; }
+
+    public bool Enabled { get; set; } = true;
+
+    public string Data { get; set; } = "{}";
+
+    public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }
 }
