@@ -272,3 +272,13 @@ Maliyet tek bir çağrıda görünmez: toplu rasterleştirme ilk senkron noktada
 40 ms görünür). **Kural:** tuval arka tamponu sınırlıdır (`OfficeScene.vue → maxCanvasPx`, 2,4 Mpx) ve kareler
 yavaş kaldıkça sınır kendini küçültür. Performansı küçük panelde ölçme; büyük tuvalde (`canvas.width = 2400`) ölç,
 `webgl` renderer adına bak.
+
+## Hata sözleşmesi (2026-09-26)
+
+### Minimal API bağlama hatası yalnız Development'ta istisna
+
+`ProblemMapping` `BadHttpRequestException`'ı `request.invalid`'e çeviriyordu ve Development'ta curl bunu
+doğruluyordu. Ama `RouteHandlerOptions.ThrowOnBadRequest` varsayılanı `IsDevelopment()`: başka ortamda çerçeve
+istisna atmadan 400 yazar, gövdeyi `UseStatusCodePages` **`errorCode`'suz** doldurur — bozuk JSON da, eksik zorunlu
+alan da. Artık `Program.cs`'te sabit `true`. Hata sözleşmesini doğrularken Api'yi `ASPNETCORE_ENVIRONMENT=Production`
+ile de kaldır; `dotnet run` launchSettings üzerinden hep Development'tır.

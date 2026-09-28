@@ -8,7 +8,9 @@ namespace MrHobist.AITeam.Api.Errors;
 /// <summary>
 /// Sinir: alan istisnalari Problem Details + <c>errorCode</c> olur (docs/error-codes.md).
 /// <see cref="DomainException"/> 400 · <see cref="NotFoundException"/> 404 ·
-/// <see cref="RuntimeUnavailableException"/> 503 · <see cref="RuntimeErrorException"/> 502 · kalanlar 500 (ayrinti sizdirilmaz).
+/// <see cref="RuntimeUnavailableException"/> 503 · <see cref="RuntimeErrorException"/> 502 ·
+/// <see cref="BadHttpRequestException"/> (govde/parametre baglanamadi; Program.cs ThrowOnBadRequest) 400 <c>request.invalid</c> ·
+/// kalanlar 500 (ayrinti sizdirilmaz).
 /// </summary>
 public sealed partial class ProblemMapping(ILogger<ProblemMapping> logger) : IExceptionHandler
 {
@@ -32,7 +34,7 @@ public sealed partial class ProblemMapping(ILogger<ProblemMapping> logger) : IEx
         }
 
         httpContext.Response.StatusCode = status;
-        await httpContext.Response.WriteAsJsonAsync(Problem(status, code, detail, httpContext), cancellationToken).ConfigureAwait(false);
+        await httpContext.Response.WriteAsJsonAsync(Problem(status, code, detail, httpContext), options: null, contentType: "application/problem+json", cancellationToken).ConfigureAwait(false);
         return true;
     }
 

@@ -33,6 +33,10 @@ builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.RespectRequiredConstructorParameters = true;
 });
 
+// Govde/parametre baglanamazsa (bozuk JSON, eksik zorunlu alan, yanlis tur) istisna firlatilir ki ProblemMapping
+// 400 request.invalid yazsin. Varsayilan yalniz Development'ta true; digerlerinde cerceve errorCode'suz 400 dondurur.
+builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
+
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 // Giris: gomulu admin/admin + JWT tek sema, rol claim'i (docs/DOMAIN.md → Giris). Ileride LDAP IUserDirectory ile gelir.

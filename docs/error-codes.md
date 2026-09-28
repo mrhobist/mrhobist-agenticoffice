@@ -80,15 +80,17 @@ Kaynak: `src/MrHobist.AITeam.Domain/ErrorCodes.cs`.
 | `project.dir_not_found` | 404 | `inspect` / `import`: klasör diskte yok |
 | `project.dir_in_use` | 409 | `import` / `POST` / `PUT /projects`: klasör başka bir projenin hedef dizini (iki proje aynı klasöre yazamaz) |
 | `project.dir_reserved` | 400 | `inspect` / `import` / `POST` / `PUT /projects`: sürücülü tam yol ofisin kendi deposu, onun iç klasörü ya da onu içeren üst klasör (ajan `config/`, `src/`, `data/`'ya yazabilirdi) |
-| `project.budget_invalid` | Proje bütçesi sıfır ya da negatif verildi; sınırsız için alan boş bırakılır | 400 |
-| `project.budget_exceeded` | Proje bütçesi dolu: yeni iş başlamaz, süren iş `BudgetExceeded` olur | 400 |
+| `project.budget_invalid` | 400 | Proje bütçesi sıfır ya da negatif verildi; sınırsız için alan boş bırakılır |
+| `project.budget_exceeded` | 400 | Proje bütçesi dolu: yeni iş başlamaz, süren iş `BudgetExceeded` olur |
 | `config.file_missing` | 404/500 | Yapılandırma dosyası yok |
 | `config.file_invalid` | 500 | Yapılandırma dosyası geçersiz JSON |
 | `runtime.unavailable` | 503 | Python runtime'a ulaşılamıyor |
 | `runtime.error` | 502 | Runtime ayakta ama istenen uç 5xx döndü (kapalı değil, uç bozuk) |
-
-Runtime'ın kendi kodları (`runtime/README.md`) Api'ye `runtime <kod>: mesaj` metniyle gelir, ayrı `errorCode` olmaz: `runtime.cli_missing`, `runtime.not_logged_in`, `runtime.provider_error`, `runtime.provider_unsupported`, `runtime.tools_unsupported` (OpenAI API anahtarı yolunda araçlı adım yok), `runtime.mcp_unsupported` (OpenAI sağlayıcısında MCP bağlanmadı).
 | `scene.command.type_missing` | 400 | Sahne komutunda `type` yok |
 | `scene.command.type_unknown` | 400 | Bilinmeyen sahne olayı türü |
 | `scene.command.data_missing` | 400 | Sahne komutunda `data` nesnesi yok |
 | `scene.command.body_invalid` | 400 | Sahne komutu gövdesi geçerli JSON/UTF-8 değil |
+| `request.invalid` | 400 | Gövde ya da parametre bağlanamadı: sözdizimi bozuk JSON (ör. `"C:\Users"` — geçersiz `\U` kaçışı), eksik/null zorunlu alan, yanlış tür. Her uçta ve her ortamda (`RouteHandlerOptions.ThrowOnBadRequest`, `Program.cs`) |
+| `internal` | 500 | Beklenmeyen hata; ayrıntı istemciye değil Api günlüğüne yazılır |
+
+Runtime'ın kendi kodları (`runtime/README.md`) Api'ye `runtime <kod>: mesaj` metniyle gelir, ayrı `errorCode` olmaz: `runtime.cli_missing`, `runtime.not_logged_in`, `runtime.provider_error`, `runtime.provider_unsupported`, `runtime.tools_unsupported` (OpenAI API anahtarı yolunda araçlı adım yok), `runtime.mcp_unsupported` (OpenAI sağlayıcısında MCP bağlanmadı).
